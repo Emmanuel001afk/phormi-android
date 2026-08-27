@@ -64,6 +64,14 @@ class MainActivity : AppCompatActivity() {
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: android.webkit.GeolocationPermissions.Callback? = null
 
+    // --- Two-finger-hold-to-reload gesture ---
+    // Chosen deliberately over pull-to-refresh: a normal page interaction
+    // never uses two fingers touching at once, so this can't be triggered
+    // by accident while scrolling or tapping a link.
+    private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var reloadRunnable: Runnable? = null
+    private var twoFingerHoldActive = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -73,6 +81,11 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
         swipeRefresh = findViewById(R.id.swipe_refresh)
+
+        findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab_ai)
+            .setOnClickListener {
+                startActivity(android.content.Intent(this, AiActivity::class.java))
+            }
 
         configureWebView()
         requestStartupPermissions()
@@ -237,5 +250,38 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         webView.saveState(outState)
+    }
+
+    /**
+     * Detects a two-finger hold anywhere on screen for 1 second and
+     * reloads the page when it fires. Runs alongside normal page touches
+     * without blocking them — it only watches pointer count, it never
+     * consumes the touch event, so scrolling/tapping/typing on the page
+     * underneath still works exactly as normal.
+     */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                if (ev.pointerCount == 2 && !twoFingerHoldActive) {
+                    twoFingerHoldActive = true
+                    val runnable = Runnable {
+                        webView.reload()
+                        Toast.makeText(this, "Reloading\u2026", Toast.LENGTH_SHORT).show()
+                    }
+                    reloadRunnable = runnable
+                    reloadHandler.postDelayed(runnable, 1000)
+                }
+            }
+            android.view.MotionEvent.ACTION_POINTER_UP,
+            android.view.MotionEvent.ACTION_UP,
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                if (ev.pointerCount != 2) {
+                    twoFingerHoldActive = false
+                    reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
+                    reloadRunnable = null
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 }
