@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Phormi</string>
+    <string name="accessibility_service_description">Lets the Phormi AI read what\'s on screen and act on your behalf — tapping, typing, and scrolling — only inside the Phormi app, only when you turn it on.</string>
 </resources>
