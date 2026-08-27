@@ -43,6 +43,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".AiActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Phormi" />
+
         <service
             android:name=".PhormiAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
