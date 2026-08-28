@@ -6,7 +6,10 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -15,9 +18,11 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -37,14 +42,6 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import org.json.JSONArray
 import java.net.URLEncoder
 
-/**
- * Phormi basic browser:
- * - Multi tabs (saved/restored), new tab = blank
- * - Address bar: type URL or search + Go button
- * - In-app Downloads list (DownloadsActivity)
- * - Long-press link/image → Open / Copy / Download
- * - Keep screen on toggle
- */
 class MainActivity : AppCompatActivity() {
 
     private data class Tab(
@@ -70,17 +67,24 @@ class MainActivity : AppCompatActivity() {
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
 
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var originalOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var fullscreenContainer: FrameLayout? = null
+
     companion object {
         private const val HOME_URL = "https://phormi.lovable.app"
         private const val NEW_TAB_URL = "about:blank"
         private const val SEARCH_URL = "https://www.google.com/search?q="
         private const val PREFS_NAME = "phormi_tabs"
         private const val KEY_TAB_URLS = "tab_urls"
+        private const val KEY_TAB_TITLES = "tab_titles"
         private const val KEY_ACTIVE_INDEX = "active_index"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         private const val REQ_MEDIA_PERMISSIONS = 1001
         private const val REQ_FILE_CHOOSER = 1002
         private const val REQ_STARTUP_PERMISSIONS = 1003
+        private const val REQ_TABS_OVERVIEW = 1004
         private const val MAX_TABS = 5
         private const val MENU_OPEN = 1
         private const val MENU_COPY = 2
@@ -118,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        CookieManager.getInstance().setAcceptCookie(true)
 
         swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
@@ -125,7 +130,6 @@ class MainActivity : AppCompatActivity() {
         switchKeepScreenOn = findViewById(R.id.switch_keep_screen_on)
         urlBar = findViewById(R.id.url_bar)
 
-        // Keep screen on toggle
         val keepOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
         switchKeepScreenOn.isChecked = keepOn
         applyKeepScreenOn(keepOn)
@@ -134,9 +138,13 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, isChecked).apply()
         }
 
-        // In-app Downloads (not phone file manager)
+        // Downloads = in-app list; long-press = Menu
         findViewById<TextView>(R.id.btn_open_downloads).setOnClickListener {
             startActivity(Intent(this, DownloadsActivity::class.java))
+        }
+        findViewById<TextView>(R.id.btn_open_downloads).setOnLongClickListener {
+            startActivity(Intent(this, MenuActivity::class.java))
+            true
         }
 
         findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab_ai)
@@ -144,6 +152,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, AiActivity::class.java))
             }
 
+        // + = new tab; long-press + = circular tab overview
         findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
             if (tabs.size >= MAX_TABS) {
                 Toast.makeText(this, "Tab limit reached ($MAX_TABS)", Toast.LENGTH_SHORT).show()
@@ -154,8 +163,12 @@ class MainActivity : AppCompatActivity() {
                 showKeyboard()
             }
         }
+        findViewById<TextView>(R.id.btn_new_tab).setOnLongClickListener {
+            saveTabs()
+            startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
+            true
+        }
 
-        // Address bar: Go button + keyboard Enter
         findViewById<TextView>(R.id.btn_go).setOnClickListener { navigateFromUrlBar() }
         urlBar.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO ||
@@ -167,8 +180,13 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
 
-        requestStartupPermissions()
         swipeRefresh.setOnRefreshListener { activeWebView()?.reload() }
+        swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            val wv = activeWebView() ?: return@setOnChildScrollUpCallback false
+            wv.canScrollVertically(-1)
+        }
+
+        requestStartupPermissions()
 
         val incomingUrl = intent?.dataString
         if (!incomingUrl.isNullOrBlank()) {
@@ -178,23 +196,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Type URL or search → load */
     private fun navigateFromUrlBar() {
         val raw = urlBar.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
-
         val url = when {
             raw.startsWith("http://") || raw.startsWith("https://") -> raw
             raw.contains(".") && !raw.contains(" ") -> "https://$raw"
             else -> SEARCH_URL + URLEncoder.encode(raw, "UTF-8")
         }
-
         val webView = activeWebView()
-        if (webView != null) {
-            webView.loadUrl(url)
-        } else {
-            createNewTab(url)
-        }
+        if (webView != null) webView.loadUrl(url) else createNewTab(url)
         hideKeyboard()
         urlBar.clearFocus()
     }
@@ -238,6 +249,8 @@ class MainActivity : AppCompatActivity() {
     private fun createNewTab(url: String) {
         val id = nextTabId++
         val webView = WebView(this)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
         webViewContainer.addView(
             webView,
             FrameLayout.LayoutParams(
@@ -260,7 +273,9 @@ class MainActivity : AppCompatActivity() {
         chipClose.setOnClickListener { closeTab(id) }
 
         webView.webChromeClient = buildChromeClient { newTitle ->
-            chipTitle.text = if (newTitle.isNullOrBlank()) getString(R.string.new_tab) else newTitle
+            val t = if (newTitle.isNullOrBlank()) getString(R.string.new_tab) else newTitle
+            chipTitle.text = t
+            tabs.find { it.id == id }?.title = t
         }
 
         webView.loadUrl(url)
@@ -305,14 +320,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveTabs() {
         val urls = JSONArray()
+        val titles = JSONArray()
         tabs.forEach { tab ->
             val u = tab.webView.url
-            if (!u.isNullOrBlank()) urls.put(u)
+            if (!u.isNullOrBlank()) {
+                urls.put(u)
+                titles.put(tab.title.ifBlank { "Tab" })
+            }
         }
-        if (urls.length() == 0) urls.put(HOME_URL)
+        if (urls.length() == 0) {
+            urls.put(HOME_URL)
+            titles.put("Home")
+        }
         val activeIndex = tabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
+            .putString(KEY_TAB_TITLES, titles.toString())
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
             .apply()
     }
@@ -347,9 +370,30 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            val fileName = URLUtil.guessFileName(
+            var fileName = URLUtil.guessFileName(
                 url, contentDisposition, mimeType ?: "application/octet-stream"
             )
+            if (fileName.endsWith(".bin", ignoreCase = true)) {
+                val lowerMime = (mimeType ?: "").lowercase()
+                when {
+                    lowerMime.contains("mp4") || lowerMime.contains("video") ->
+                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".mp4"
+                    lowerMime.contains("webm") ->
+                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".webm"
+                    url.contains(".mp4", ignoreCase = true) ->
+                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".mp4"
+                    url.contains(".apk", ignoreCase = true) ->
+                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".apk"
+                }
+            }
+
+            val webView = activeWebView()
+            val userAgent = webView?.settings?.userAgentString
+                ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"
+            val referer = webView?.url ?: url
+            val cookies = CookieManager.getInstance().getCookie(url)
+                ?: CookieManager.getInstance().getCookie(referer)
+
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 setMimeType(mimeType ?: "application/octet-stream")
                 setTitle(fileName)
@@ -359,6 +403,9 @@ class MainActivity : AppCompatActivity() {
                 allowScanningByMediaScanner()
                 setAllowedOverMetered(true)
                 setAllowedOverRoaming(true)
+                addRequestHeader("User-Agent", userAgent)
+                addRequestHeader("Referer", referer)
+                if (!cookies.isNullOrBlank()) addRequestHeader("Cookie", cookies)
             }
             (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
             Toast.makeText(this, "Downloading $fileName\nOpen Downloads in app when done", Toast.LENGTH_LONG).show()
@@ -433,9 +480,12 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
             setGeolocationEnabled(true)
-            mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             setSupportMultipleWindows(false)
-            userAgentString = userAgentString + " PhormiApp/1.0"
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            builtInZoomControls = true
+            displayZoomControls = false
         }
 
         webView.webViewClient = object : WebViewClient() {
@@ -461,6 +511,56 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 super.onReceivedTitle(view, title)
                 onTitleChanged(title)
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (customView != null) {
+                    callback?.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                originalOrientation = requestedOrientation
+
+                val container = FrameLayout(this@MainActivity).apply {
+                    setBackgroundColor(Color.BLACK)
+                    addView(
+                        view,
+                        FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.MATCH_PARENT
+                        )
+                    )
+                }
+                fullscreenContainer = container
+                (window.decorView as ViewGroup).addView(
+                    container,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                swipeRefresh.visibility = View.GONE
+                findViewById<View>(R.id.fab_ai).visibility = View.GONE
+            }
+
+            override fun onHideCustomView() {
+                val container = fullscreenContainer ?: return
+                (window.decorView as ViewGroup).removeView(container)
+                fullscreenContainer = null
+                customView = null
+                customViewCallback?.onCustomViewHidden()
+                customViewCallback = null
+                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                requestedOrientation = originalOrientation
+                swipeRefresh.visibility = View.VISIBLE
+                findViewById<View>(R.id.fab_ai).visibility = View.VISIBLE
+            }
+
+            override fun getDefaultVideoPoster(): Bitmap? {
+                return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
@@ -535,10 +635,46 @@ class MainActivity : AppCompatActivity() {
             filePathCallback = null
             return
         }
+        if (requestCode == REQ_TABS_OVERVIEW && resultCode == Activity.RESULT_OK && data != null) {
+            when (data.getStringExtra("action")) {
+                "new_tab" -> {
+                    if (tabs.size < MAX_TABS) {
+                        createNewTab(NEW_TAB_URL)
+                        urlBar.setText("")
+                        urlBar.requestFocus()
+                        showKeyboard()
+                    }
+                }
+                "select" -> {
+                    val index = data.getIntExtra("index", -1)
+                    tabs.getOrNull(index)?.let { switchToTab(it.id) }
+                }
+                "close" -> {
+                    val index = data.getIntExtra("index", -1)
+                    tabs.getOrNull(index)?.let { closeTab(it.id) }
+                }
+            }
+            return
+        }
         super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onBackPressed() {
+        if (customView != null) {
+            val container = fullscreenContainer
+            if (container != null) {
+                (window.decorView as ViewGroup).removeView(container)
+                fullscreenContainer = null
+                customView = null
+                customViewCallback?.onCustomViewHidden()
+                customViewCallback = null
+                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                requestedOrientation = originalOrientation
+                swipeRefresh.visibility = View.VISIBLE
+                findViewById<View>(R.id.fab_ai).visibility = View.VISIBLE
+            }
+            return
+        }
         val webView = activeWebView()
         if (webView != null && webView.canGoBack()) webView.goBack()
         else super.onBackPressed()
