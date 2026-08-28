@@ -6,7 +6,6 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- Tab strip + new tab -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="44dp"
@@ -28,10 +27,46 @@
             android:textColor="#38BDF8"
             android:textSize="20sp"
             android:gravity="center" />
-
     </LinearLayout>
 
-    <!-- Toolbar: Keep screen on + Open Downloads -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:background="#1E293B">
+
+        <EditText
+            android:id="@+id/url_bar"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:hint="@string/url_hint"
+            android:textColorHint="#94A3B8"
+            android:textColor="#F1F5F9"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:imeOptions="actionGo"
+            android:inputType="textUri"
+            android:background="@android:color/transparent"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+
+        <TextView
+            android:id="@+id/btn_go"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:gravity="center"
+            android:text="@string/go"
+            android:textColor="#38BDF8"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="40dp"
@@ -39,7 +74,7 @@
         android:gravity="center_vertical"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
-        android:background="#1E293B">
+        android:background="#0F172A">
 
         <TextView
             android:layout_width="0dp"
@@ -64,9 +99,7 @@
             android:gravity="center"
             android:text="@string/open_downloads"
             android:textColor="#38BDF8"
-            android:textSize="13sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
-
+            android:textSize="13sp" />
     </LinearLayout>
 
     <androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -83,7 +116,6 @@
                 android:id="@+id/webview_container"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
-
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -95,7 +127,5 @@
             android:contentDescription="@string/ask_ai"
             android:src="@android:drawable/ic_menu_send"
             app:backgroundTint="#38BDF8" />
-
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
-
 </LinearLayout>
