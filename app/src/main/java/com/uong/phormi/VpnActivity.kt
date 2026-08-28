@@ -78,7 +78,7 @@ class VpnActivity : AppCompatActivity() {
                         val t2 = v.findViewById<TextView>(android.R.id.text2)
                         t1.setTextColor(0xFFF1F5F9.toInt())
                         t2.setTextColor(0xFF94A3B8.toInt())
-                        t1.text = "\( {s.country} ( \){s.countryCode}) — ${s.ip}"
+                       t1.text = "${s.country} (${s.countryCode}) — ${s.ip}"
                         t2.text = "Score ${s.score} · Ping ${s.ping} ms"
                         return v
                     }
