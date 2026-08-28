@@ -36,6 +36,9 @@
         android:theme="@style/Theme.Phormi"
         android:usesCleartextTraffic="false"
         android:requestLegacyExternalStorage="true">
+        <activity android:name=".MenuActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".TabsOverviewActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".VpnActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
 
         <activity
             android:name=".MainActivity"
