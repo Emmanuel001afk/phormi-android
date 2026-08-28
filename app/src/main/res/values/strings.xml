@@ -12,4 +12,7 @@
     <string name="enter_instruction_first">Type an instruction first</string>
     <string name="no_api_key_saved">Save at least one API key first</string>
     <string name="accessibility_reminder">Turn on Phormi under Settings > Accessibility, then come back and press Run.</string>
+    <string name="plus_symbol">+</string>
+    <string name="new_tab">New Tab</string>
+    <string name="close_tab_symbol">×</string>
 </resources>
