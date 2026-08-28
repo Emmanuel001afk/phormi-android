@@ -17,4 +17,12 @@
     <string name="close_tab_symbol">×</string>
     <string name="keep_screen_on">Screen on</string>
     <string name="open_downloads">Downloads</string>
+    <string name="url_hint">Search or type URL</string>
+    <string name="go">Go</string>
+    <string name="downloads_title">Downloads</string>
+    <string name="no_downloads">No downloads yet</string>
+    <string name="open_file">Open</string>
+    <string name="download_status_running">Downloading…</string>
+    <string name="download_status_done">Done</string>
+    <string name="download_status_failed">Failed</string>
 </resources>
