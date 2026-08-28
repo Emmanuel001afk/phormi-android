@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
 import android.webkit.PermissionRequest
@@ -14,6 +15,9 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -22,15 +26,26 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
 /**
  * Phormi wrapper: a native Android shell around the EMA web app
- * (https://phormi.lovable.app). This activity itself contains no
- * browser-automation engine — it only displays the site and grants
- * it the device permissions (camera/mic) it may ask for. All AI /
- * Playwright / scheduling logic lives on the website side.
+ * (https://phormi.lovable.app). Supports multiple simultaneous tabs
+ * (each its own WebView instance), capped at MAX_TABS to stay safe
+ * on low-RAM phones (~4MB per WebView).
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var webView: WebView
+    private data class Tab(
+        val id: Int,
+        val webView: WebView,
+        var title: String,
+        val chipView: View
+    )
+
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var webViewContainer: FrameLayout
+    private lateinit var tabStripContainer: LinearLayout
+
+    private val tabs = mutableListOf<Tab>()
+    private var activeTabId: Int = -1
+    private var nextTabId = 1
 
     private var pendingPermissionRequest: PermissionRequest? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -40,9 +55,8 @@ class MainActivity : AppCompatActivity() {
         private const val REQ_MEDIA_PERMISSIONS = 1001
         private const val REQ_FILE_CHOOSER = 1002
         private const val REQ_STARTUP_PERMISSIONS = 1003
+        private const val MAX_TABS = 5
 
-        // Everything this private app is allowed to ask for up front,
-        // so the site never hits a silent wall later mid-task.
         private val STARTUP_PERMISSIONS = buildList {
             add(Manifest.permission.CAMERA)
             add(Manifest.permission.RECORD_AUDIO)
@@ -64,10 +78,6 @@ class MainActivity : AppCompatActivity() {
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: android.webkit.GeolocationPermissions.Callback? = null
 
-    // --- Two-finger-hold-to-reload gesture ---
-    // Chosen deliberately over pull-to-refresh: a normal page interaction
-    // never uses two fingers touching at once, so this can't be triggered
-    // by accident while scrolling or tapping a link.
     private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var reloadRunnable: Runnable? = null
     private var twoFingerHoldActive = false
@@ -76,26 +86,101 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Keep the screen on while the app is in the foreground.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        webView = findViewById(R.id.webview)
         swipeRefresh = findViewById(R.id.swipe_refresh)
+        webViewContainer = findViewById(R.id.webview_container)
+        tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
 
         findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab_ai)
             .setOnClickListener {
                 startActivity(android.content.Intent(this, AiActivity::class.java))
             }
 
-        configureWebView()
+        findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
+            if (tabs.size >= MAX_TABS) {
+                Toast.makeText(this, "Tab limit reached ($MAX_TABS) — close one first", Toast.LENGTH_SHORT).show()
+            } else {
+                createNewTab(HOME_URL)
+            }
+        }
+
         requestStartupPermissions()
 
-        swipeRefresh.setOnRefreshListener { webView.reload() }
+        swipeRefresh.setOnRefreshListener { activeWebView()?.reload() }
 
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState)
-        } else {
-            webView.loadUrl(HOME_URL)
+        // If the app was opened via a link (default-browser use), load that
+        // link in the first tab instead of the home URL.
+        val incomingUrl = intent?.dataString
+        createNewTab(incomingUrl ?: HOME_URL)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent)
+        val url = intent?.dataString
+        if (!url.isNullOrBlank()) {
+            if (tabs.size >= MAX_TABS) {
+                activeWebView()?.loadUrl(url)
+            } else {
+                createNewTab(url)
+            }
+        }
+    }
+
+    private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
+
+    private fun createNewTab(url: String) {
+        val id = nextTabId++
+        val webView = WebView(this)
+        webViewContainer.addView(
+            webView,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        )
+        configureWebView(webView)
+
+        val chip = LayoutInflater.from(this).inflate(R.layout.tab_chip, tabStripContainer, false)
+        val chipTitle = chip.findViewById<TextView>(R.id.tab_chip_title)
+        val chipClose = chip.findViewById<TextView>(R.id.tab_chip_close)
+
+        val tab = Tab(id, webView, getString(R.string.new_tab), chip)
+        tabs.add(tab)
+        tabStripContainer.addView(chip)
+
+        chip.setOnClickListener { switchToTab(id) }
+        chipClose.setOnClickListener { closeTab(id) }
+
+        webView.webChromeClient = buildChromeClient(webView) { newTitle ->
+            chipTitle.text = if (newTitle.isNullOrBlank()) getString(R.string.new_tab) else newTitle
+        }
+
+        webView.loadUrl(url)
+        switchToTab(id)
+    }
+
+    private fun switchToTab(id: Int) {
+        activeTabId = id
+        tabs.forEach { tab ->
+            val isActive = tab.id == id
+            tab.webView.visibility = if (isActive) View.VISIBLE else View.GONE
+            tab.chipView.alpha = if (isActive) 1f else 0.55f
+        }
+    }
+
+    private fun closeTab(id: Int) {
+        val index = tabs.indexOfFirst { it.id == id }
+        if (index == -1) return
+        val tab = tabs[index]
+
+        webViewContainer.removeView(tab.webView)
+        tabStripContainer.removeView(tab.chipView)
+        tab.webView.destroy()
+        tabs.removeAt(index)
+
+        if (tabs.isEmpty()) {
+            createNewTab(HOME_URL)
+        } else if (activeTabId == id) {
+            val fallback = tabs.getOrNull(index - 1) ?: tabs.first()
+            switchToTab(fallback.id)
         }
     }
 
@@ -110,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun configureWebView() {
+    private fun configureWebView(webView: WebView) {
         val settings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
@@ -124,13 +209,39 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                swipeRefresh.isRefreshing = false
+                if (view == activeWebView()) {
+                    swipeRefresh.isRefreshing = false
+                }
             }
         }
 
-        webView.webChromeClient = object : WebChromeClient() {
-            // Grant camera/mic access the site asks for (needed for
-            // any future voice-mode / getUserMedia features).
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            try {
+                val request = DownloadManager.Request(Uri.parse(url))
+                request.setMimeType(mimeType)
+                request.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                val fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
+                request.setDestinationInExternalPublicDir(
+                    android.os.Environment.DIRECTORY_DOWNLOADS, fileName
+                )
+                val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(request)
+                Toast.makeText(this, "Downloading $fileName", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun buildChromeClient(webView: WebView, onTitleChanged: (String?) -> Unit): WebChromeClient {
+        return object : WebChromeClient() {
+            override fun onReceivedTitle(view: WebView?, title: String?) {
+                super.onReceivedTitle(view, title)
+                onTitleChanged(title)
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 pendingPermissionRequest = request
                 val needed = mutableListOf<String>()
@@ -152,7 +263,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Site asking for the device's location (e.g. local search/results).
             override fun onGeolocationPermissionsShowPrompt(
                 origin: String?,
                 callback: android.webkit.GeolocationPermissions.Callback?
@@ -173,10 +283,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Lets the site's file input (e.g. uploading the .gguf model)
-            // open the phone's normal file picker.
             override fun onShowFileChooser(
-                webView: WebView?,
+                webViewParam: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
@@ -189,27 +297,6 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity.filePathCallback = null
                     false
                 }
-            }
-        }
-
-        // Let normal downloads (e.g. exported files) hand off to the
-        // system Download Manager instead of failing silently.
-        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-            try {
-                val request = DownloadManager.Request(Uri.parse(url))
-                request.setMimeType(mimeType)
-                request.setNotificationVisibility(
-                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-                )
-                val fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
-                request.setDestinationInExternalPublicDir(
-                    android.os.Environment.DIRECTORY_DOWNLOADS, fileName
-                )
-                val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                dm.enqueue(request)
-                Toast.makeText(this, "Downloading $fileName", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -240,32 +327,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (webView.canGoBack()) {
+        val webView = activeWebView()
+        if (webView != null && webView.canGoBack()) {
             webView.goBack()
         } else {
             super.onBackPressed()
         }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        webView.saveState(outState)
-    }
-
-    /**
-     * Detects a two-finger hold anywhere on screen for 1 second and
-     * reloads the page when it fires. Runs alongside normal page touches
-     * without blocking them — it only watches pointer count, it never
-     * consumes the touch event, so scrolling/tapping/typing on the page
-     * underneath still works exactly as normal.
-     */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
                 if (ev.pointerCount == 2 && !twoFingerHoldActive) {
                     twoFingerHoldActive = true
                     val runnable = Runnable {
-                        webView.reload()
+                        activeWebView()?.reload()
                         Toast.makeText(this, "Reloading\u2026", Toast.LENGTH_SHORT).show()
                     }
                     reloadRunnable = runnable
