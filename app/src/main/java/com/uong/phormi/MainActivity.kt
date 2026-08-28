@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
@@ -23,12 +24,16 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import org.json.JSONArray
 
 /**
  * Phormi wrapper: a native Android shell around the EMA web app
  * (https://phormi.lovable.app). Supports multiple simultaneous tabs
  * (each its own WebView instance), capped at MAX_TABS to stay safe
- * on low-RAM phones (~4MB per WebView).
+ * on low-RAM phones (\~4MB per WebView).
+ *
+ * New tabs open blank (about:blank) so the user can type any URL or search.
+ * Open tabs are saved and restored across app restarts.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -42,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var webViewContainer: FrameLayout
     private lateinit var tabStripContainer: LinearLayout
+    private lateinit var prefs: SharedPreferences
 
     private val tabs = mutableListOf<Tab>()
     private var activeTabId: Int = -1
@@ -52,6 +58,10 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val HOME_URL = "https://phormi.lovable.app"
+        private const val NEW_TAB_URL = "about:blank"
+        private const val PREFS_NAME = "phormi_tabs"
+        private const val KEY_TAB_URLS = "tab_urls"
+        private const val KEY_ACTIVE_INDEX = "active_index"
         private const val REQ_MEDIA_PERMISSIONS = 1001
         private const val REQ_FILE_CHOOSER = 1002
         private const val REQ_STARTUP_PERMISSIONS = 1003
@@ -88,6 +98,8 @@ class MainActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
         swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
@@ -97,11 +109,12 @@ class MainActivity : AppCompatActivity() {
                 startActivity(android.content.Intent(this, AiActivity::class.java))
             }
 
+        // New tab opens blank — user can type any URL or search
         findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
             if (tabs.size >= MAX_TABS) {
                 Toast.makeText(this, "Tab limit reached ($MAX_TABS) — close one first", Toast.LENGTH_SHORT).show()
             } else {
-                createNewTab(HOME_URL)
+                createNewTab(NEW_TAB_URL)
             }
         }
 
@@ -109,10 +122,24 @@ class MainActivity : AppCompatActivity() {
 
         swipeRefresh.setOnRefreshListener { activeWebView()?.reload() }
 
-        // If the app was opened via a link (default-browser use), load that
-        // link in the first tab instead of the home URL.
+        // If opened via a link (default-browser), load that link in a new tab
         val incomingUrl = intent?.dataString
-        createNewTab(incomingUrl ?: HOME_URL)
+        if (!incomingUrl.isNullOrBlank()) {
+            createNewTab(incomingUrl)
+        } else {
+            // Restore previously saved tabs, or open home on first launch
+            restoreTabs()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        saveTabs()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        saveTabs()
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {
@@ -155,6 +182,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.loadUrl(url)
         switchToTab(id)
+        saveTabs()
     }
 
     private fun switchToTab(id: Int) {
@@ -164,6 +192,7 @@ class MainActivity : AppCompatActivity() {
             tab.webView.visibility = if (isActive) View.VISIBLE else View.GONE
             tab.chipView.alpha = if (isActive) 1f else 0.55f
         }
+        saveTabs()
     }
 
     private fun closeTab(id: Int) {
@@ -177,10 +206,61 @@ class MainActivity : AppCompatActivity() {
         tabs.removeAt(index)
 
         if (tabs.isEmpty()) {
-            createNewTab(HOME_URL)
+            createNewTab(NEW_TAB_URL)
         } else if (activeTabId == id) {
             val fallback = tabs.getOrNull(index - 1) ?: tabs.first()
             switchToTab(fallback.id)
+        }
+        saveTabs()
+    }
+
+    /** Save open tab URLs so they survive app restart */
+    private fun saveTabs() {
+        val urls = JSONArray()
+        tabs.forEach { tab ->
+            val url = tab.webView.url
+            if (!url.isNullOrBlank() && url != "about:blank") {
+                urls.put(url)
+            } else if (url == "about:blank") {
+                urls.put("about:blank")
+            }
+        }
+        // If somehow empty, keep at least one blank entry so restore works cleanly
+        if (urls.length() == 0) {
+            urls.put(HOME_URL)
+        }
+        val activeIndex = tabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
+        prefs.edit()
+            .putString(KEY_TAB_URLS, urls.toString())
+            .putInt(KEY_ACTIVE_INDEX, activeIndex)
+            .apply()
+    }
+
+    /** Restore tabs from last session; if none saved, open home once */
+    private fun restoreTabs() {
+        val json = prefs.getString(KEY_TAB_URLS, null)
+        if (json.isNullOrBlank()) {
+            createNewTab(HOME_URL)
+            return
+        }
+        try {
+            val arr = JSONArray(json)
+            if (arr.length() == 0) {
+                createNewTab(HOME_URL)
+                return
+            }
+            val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, arr.length() - 1)
+            for (i in 0 until arr.length()) {
+                val url = arr.optString(i, HOME_URL)
+                createNewTab(url)
+            }
+            // Switch to the tab that was active last time
+            if (tabs.isNotEmpty()) {
+                val target = tabs.getOrNull(activeIndex) ?: tabs.first()
+                switchToTab(target.id)
+            }
+        } catch (e: Exception) {
+            createNewTab(HOME_URL)
         }
     }
 
@@ -212,6 +292,8 @@ class MainActivity : AppCompatActivity() {
                 if (view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                 }
+                // Keep saved list up to date after navigation
+                saveTabs()
             }
         }
 
@@ -342,7 +424,7 @@ class MainActivity : AppCompatActivity() {
                     twoFingerHoldActive = true
                     val runnable = Runnable {
                         activeWebView()?.reload()
-                        Toast.makeText(this, "Reloading\u2026", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Reloading…", Toast.LENGTH_SHORT).show()
                     }
                     reloadRunnable = runnable
                     reloadHandler.postDelayed(runnable, 1000)
