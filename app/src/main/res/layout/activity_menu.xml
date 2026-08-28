@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0B1220">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Menu"
+            android:textColor="#F8FAFC"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:paddingBottom="16dp" />
+
+        <TextView
+            android:id="@+id/menu_downloads"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Downloads"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:background="#1E293B" />
+
+        <TextView
+            android:id="@+id/menu_tabs"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Tab overview"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:background="#1E293B" />
+
+        <TextView
+            android:id="@+id/menu_vpn"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="VPN (VPN Gate free)"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:background="#1E293B" />
+
+        <TextView
+            android:id="@+id/menu_ai"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Ask AI"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:background="#1E293B" />
+
+        <TextView
+            android:id="@+id/menu_close"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:text="Close"
+            android:textColor="#38BDF8"
+            android:textSize="16sp" />
+    </LinearLayout>
+</ScrollView>
