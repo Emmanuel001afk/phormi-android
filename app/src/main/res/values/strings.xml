@@ -15,4 +15,6 @@
     <string name="plus_symbol">+</string>
     <string name="new_tab">New Tab</string>
     <string name="close_tab_symbol">×</string>
+    <string name="keep_screen_on">Screen on</string>
+    <string name="open_downloads">Downloads</string>
 </resources>
