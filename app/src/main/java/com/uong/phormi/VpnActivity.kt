@@ -14,8 +14,7 @@ import java.util.concurrent.Executors
 
 /**
  * Free public servers from VPN Gate (https://www.vpngate.net).
- * Lists country + score. Full OpenVPN tunnel core = next native step;
- * this wires the free server list + selection into the app now.
+ * Lists country + score. Saves OpenVPN profile data for tunnel core next.
  */
 class VpnActivity : AppCompatActivity() {
 
@@ -67,7 +66,6 @@ class VpnActivity : AppCompatActivity() {
                     Toast.makeText(this, "VPN Gate list empty or offline", Toast.LENGTH_LONG).show()
                     return@runOnUiThread
                 }
-                // Top free servers by score
                 val top = servers.sortedByDescending { it.score }.take(30)
                 status.text = "${top.size} free public servers (VPN Gate)"
                 listView.adapter = object : ArrayAdapter<VpnServer>(
@@ -99,7 +97,6 @@ class VpnActivity : AppCompatActivity() {
         }
     }
 
-    /** Public API: http://www.vpngate.net/api/iphone/ */
     private fun fetchVpnGate(): List<VpnServer> {
         return try {
             val conn = URL("http://www.vpngate.net/api/iphone/").openConnection() as HttpURLConnection
@@ -116,11 +113,9 @@ class VpnActivity : AppCompatActivity() {
 
     private fun parseVpnGateCsv(csv: String): List<VpnServer> {
         val list = mutableListOf<VpnServer>()
-        // CSV lines; skip * comments and header
         csv.lineSequence().forEach { line ->
             if (line.startsWith("*") || line.startsWith("#") || line.startsWith("HostName")) return@forEach
             val p = line.split(",")
-            // VPN Gate columns: HostName, IP, Score, Ping, Speed, CountryLong, CountryShort, ... OpenVPN_ConfigData_Base64
             if (p.size < 15) return@forEach
             val ip = p.getOrNull(1) ?: return@forEach
             val score = p.getOrNull(2)?.toLongOrNull() ?: 0L
