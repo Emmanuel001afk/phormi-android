@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "product": "Phormi",
+  "themeMode": "system",
+  "dailyAccent": true,
+  "wallpaper": null,
+  "wallpaperScope": "start-page",
+  "platforms": ["android", "windows", "linux", "macos", "ios", "ipados"]
+}
