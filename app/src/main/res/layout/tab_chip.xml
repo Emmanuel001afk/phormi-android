@@ -1,36 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/tab_chip_root"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="34dp"
-    android:layout_marginStart="6dp"
-    android:layout_marginEnd="2dp"
-    android:orientation="horizontal"
+    android:minWidth="92dp"
+    android:layout_marginStart="3dp"
+    android:layout_marginEnd="3dp"
+    android:paddingStart="10dp"
+    android:paddingEnd="6dp"
     android:gravity="center_vertical"
-    android:paddingStart="12dp"
-    android:paddingEnd="8dp"
-    android:background="#1E293B">
+    android:orientation="horizontal"
+    android:background="@drawable/bg_tab_circle">
 
     <TextView
         android:id="@+id/tab_chip_title"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:maxWidth="110dp"
-        android:maxLines="1"
+        android:layout_weight="1"
+        android:maxWidth="150dp"
         android:ellipsize="end"
-        android:text="@string/new_tab"
-        android:textColor="#E2E8F0"
-        android:textSize="13sp" />
+        android:maxLines="1"
+        android:text="New tab"
+        android:textColor="#F8FAFC"
+        android:textSize="12sp" />
 
     <TextView
         android:id="@+id/tab_chip_close"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:layout_marginStart="6dp"
-        android:text="@string/close_tab_symbol"
-        android:textColor="#94A3B8"
-        android:textSize="14sp"
-        android:gravity="center" />
-
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:gravity="center"
+        android:text="×"
+        android:textColor="#CBD5E1"
+        android:textSize="18sp"
+        android:contentDescription="Close tab" />
 </LinearLayout>
