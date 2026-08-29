@@ -6,183 +6,153 @@ import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
+import android.widget.BaseAdapter
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
-import java.io.File
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
-import java.util.Locale
 
-/**
- * In-app downloads list (like Chrome/Opera).
- * Shows files downloaded by Phormi. Tap to open/play.
- */
+/** In-app view of downloads created through Android DownloadManager. */
 class DownloadsActivity : AppCompatActivity() {
-
     data class DownloadItem(
         val id: Long,
         val title: String,
         val status: Int,
         val localUri: String?,
-        val mediaType: String?,
-        val lastModified: Long,
-        val totalSize: Long
+        val size: Long,
+        val downloaded: Long,
+        val mimeType: String?
     )
 
-    private lateinit var listView: ListView
-    private lateinit var emptyText: TextView
+    private val items = mutableListOf<DownloadItem>()
+    private lateinit var adapter: BaseAdapter
+    private lateinit var empty: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_downloads)
 
-        listView = findViewById(R.id.downloads_list)
-        emptyText = findViewById(R.id.empty_text)
+        findViewById<TextView>(R.id.btn_downloads_back).setOnClickListener { finish() }
+        empty = findViewById(R.id.downloads_empty)
 
-        findViewById<TextView>(R.id.btn_back).setOnClickListener { finish() }
-
+        adapter = object : BaseAdapter() {
+            override fun getCount() = items.size
+            override fun getItem(position: Int) = items[position]
+            override fun getItemId(position: Int) = items[position].id
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val view = convertView ?: layoutInflater.inflate(
+                    R.layout.item_download,
+                    parent,
+                    false
+                )
+                val item = items[position]
+                view.findViewById<TextView>(R.id.download_title).text = item.title
+                view.findViewById<TextView>(R.id.download_status).text = statusText(item)
+                view.setOnClickListener { openDownload(item) }
+                view.setOnLongClickListener {
+                    cancelDownload(item)
+                    true
+                }
+                return view
+            }
+        }
+        findViewById<ListView>(R.id.downloads_list).adapter = adapter
         loadDownloads()
     }
 
     override fun onResume() {
         super.onResume()
-        loadDownloads()
+        if (::adapter.isInitialized) loadDownloads()
     }
 
     private fun loadDownloads() {
-        val items = queryPhormiDownloads()
-        if (items.isEmpty()) {
-            listView.visibility = View.GONE
-            emptyText.visibility = View.VISIBLE
-            return
-        }
-        emptyText.visibility = View.GONE
-        listView.visibility = View.VISIBLE
-
-        val adapter = object : ArrayAdapter<DownloadItem>(this, android.R.layout.simple_list_item_2, android.R.id.text1, items) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = super.getView(position, convertView, parent)
-                val item = items[position]
-                val text1 = view.findViewById<TextView>(android.R.id.text1)
-                val text2 = view.findViewById<TextView>(android.R.id.text2)
-                text1.setTextColor(0xFFF1F5F9.toInt())
-                text2.setTextColor(0xFF94A3B8.toInt())
-                text1.text = item.title
-                text2.text = statusLabel(item) + "  ·  " + sizeLabel(item.totalSize) + "  ·  " + dateLabel(item.lastModified)
-                return view
-            }
-        }
-        listView.adapter = adapter
-
-        listView.setOnItemClickListener { _, _, position, _ ->
-            openItem(items[position])
-        }
-    }
-
-    private fun queryPhormiDownloads(): List<DownloadItem> {
-        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        items.clear()
+        val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val query = DownloadManager.Query()
-        // All downloads; we filter by description containing Phormi
-        val cursor: Cursor = try {
-            dm.query(query) ?: return emptyList()
+        try {
+            manager.query(query).use { cursor ->
+                val idCol = cursor.getColumnIndex(DownloadManager.COLUMN_ID)
+                val titleCol = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val uriCol = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                val sizeCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                val doneCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                val mimeCol = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
+                while (cursor.moveToNext()) {
+                    items += DownloadItem(
+                        id = cursor.getLong(idCol),
+                        title = cursor.getString(titleCol) ?: "Download",
+                        status = cursor.getInt(statusCol),
+                        localUri = if (uriCol >= 0) cursor.getString(uriCol) else null,
+                        size = if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
+                        downloaded = if (doneCol >= 0) cursor.getLong(doneCol) else 0L,
+                        mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null
+                    )
+                }
+            }
         } catch (e: Exception) {
-            return emptyList()
+            Toast.makeText(this, "Could not read downloads: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-
-        val list = mutableListOf<DownloadItem>()
-        val colId = cursor.getColumnIndex(DownloadManager.COLUMN_ID)
-        val colTitle = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
-        val colStatus = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-        val colLocal = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-        val colMedia = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
-        val colTime = cursor.getColumnIndex(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
-        val colSize = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-        val colDesc = cursor.getColumnIndex(DownloadManager.COLUMN_DESCRIPTION)
-
-        while (cursor.moveToNext()) {
-            val desc = if (colDesc >= 0) cursor.getString(colDesc) ?: "" else ""
-            // Prefer Phormi downloads; also show anything in public Downloads if needed
-            val title = if (colTitle >= 0) cursor.getString(colTitle) ?: "File" else "File"
-            val isOurs = desc.contains("Phormi", ignoreCase = true) ||
-                desc.contains("Downloading via", ignoreCase = true)
-            if (!isOurs && desc.isNotBlank()) continue
-
-            list.add(
-                DownloadItem(
-                    id = if (colId >= 0) cursor.getLong(colId) else 0L,
-                    title = title,
-                    status = if (colStatus >= 0) cursor.getInt(colStatus) else 0,
-                    localUri = if (colLocal >= 0) cursor.getString(colLocal) else null,
-                    mediaType = if (colMedia >= 0) cursor.getString(colMedia) else null,
-                    lastModified = if (colTime >= 0) cursor.getLong(colTime) else 0L,
-                    totalSize = if (colSize >= 0) cursor.getLong(colSize) else 0L
-                )
-            )
-        }
-        cursor.close()
-        return list.sortedByDescending { it.lastModified }
+        empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        adapter.notifyDataSetChanged()
     }
 
-    private fun statusLabel(item: DownloadItem): String {
+    private fun statusText(item: DownloadItem): String {
         return when (item.status) {
-            DownloadManager.STATUS_SUCCESSFUL -> getString(R.string.download_status_done)
-            DownloadManager.STATUS_RUNNING,
-            DownloadManager.STATUS_PENDING -> getString(R.string.download_status_running)
-            else -> getString(R.string.download_status_failed)
+            DownloadManager.STATUS_SUCCESSFUL -> {
+                val size = if (item.size > 0) formatBytes(item.size) else "Completed"
+                "Completed · $size"
+            }
+            DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)}"
+            DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)}"
+            DownloadManager.STATUS_PENDING -> "Waiting to download"
+            DownloadManager.STATUS_FAILED -> "Download failed"
+            else -> "Status unavailable"
         }
     }
 
-    private fun sizeLabel(bytes: Long): String {
-        if (bytes <= 0) return ""
-        val kb = bytes / 1024.0
-        val mb = kb / 1024.0
-        return if (mb >= 1) String.format(Locale.US, "%.1f MB", mb)
-        else String.format(Locale.US, "%.0f KB", kb)
+    private fun formatProgress(item: DownloadItem): String {
+        if (item.size <= 0) return formatBytes(item.downloaded)
+        return "${((item.downloaded * 100L) / item.size).coerceIn(0L, 100L)}%"
     }
 
-    private fun dateLabel(ms: Long): String {
-        if (ms <= 0) return ""
-        return SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(ms))
+    private fun formatBytes(value: Long): String {
+        if (value < 1024) return "$value B"
+        if (value < 1024 * 1024) return "${value / 1024} KB"
+        if (value < 1024 * 1024 * 1024) return "${value / (1024 * 1024)} MB"
+        return "${value / (1024 * 1024 * 1024)} GB"
     }
 
-    private fun openItem(item: DownloadItem) {
-        if (item.status != DownloadManager.STATUS_SUCCESSFUL) {
-            Toast.makeText(this, "Still downloading or failed", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val uriString = item.localUri
-        if (uriString.isNullOrBlank()) {
-            Toast.makeText(this, "File path not found", Toast.LENGTH_SHORT).show()
+    private fun openDownload(item: DownloadItem) {
+        if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) {
+            Toast.makeText(this, statusText(item), Toast.LENGTH_SHORT).show()
             return
         }
         try {
-            val uri = Uri.parse(uriString)
-            val mime = item.mediaType ?: contentResolver.getType(uri) ?: "*/*"
-
-            // Prefer FileProvider for file:// paths
-            val openUri: Uri = if (uri.scheme == "file") {
-                val path = uri.path
-                if (path != null) {
-                    val file = File(path)
-                    FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-                } else uri
-            } else uri
-
+            val uri = Uri.parse(item.localUri)
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(openUri, mime)
+                setDataAndType(uri, item.mimeType ?: contentResolver.getType(uri) ?: "application/octet-stream")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            startActivity(Intent.createChooser(intent, getString(R.string.open_file)))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Cannot open: ${e.message}", Toast.LENGTH_LONG).show()
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "No app can open this file", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun cancelDownload(item: DownloadItem) {
+        if (item.status == DownloadManager.STATUS_RUNNING ||
+            item.status == DownloadManager.STATUS_PENDING ||
+            item.status == DownloadManager.STATUS_PAUSED
+        ) {
+            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            manager.remove(item.id)
+            Toast.makeText(this, "Download removed", Toast.LENGTH_SHORT).show()
+            loadDownloads()
         }
     }
 }
