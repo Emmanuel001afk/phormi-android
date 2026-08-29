@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "product": "Phormi",
+  "targets": {
+    "android": {"artifact": "APK/AAB", "webContainer": "Android WebView"},
+    "windows": {"artifact": "desktop package", "webContainer": "desktop web container"},
+    "linux": {"artifact": "desktop package", "webContainer": "desktop web container"},
+    "macos": {"artifact": "desktop package", "webContainer": "desktop web container"},
+    "ios": {"artifact": "IPA/App Store build", "webContainer": "WKWebView"},
+    "ipados": {"artifact": "IPA/App Store build", "webContainer": "WKWebView"}
+  },
+  "sharedFeatures": [
+    "tabs",
+    "navigation",
+    "search provider selection",
+    "unified search aggregation",
+    "theme state",
+    "wallpaper state",
+    "browser session state"
+  ],
+  "rule": "An Android APK is not converted into a Windows or iOS artifact. Each platform gets its own shell around shared product behaviour."
+}
