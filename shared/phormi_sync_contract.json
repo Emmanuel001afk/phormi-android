@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "product": "Phormi",
+  "purpose": "Cross-device browser state contract",
+  "identity": {
+    "accountId": "opaque-server-issued-id",
+    "deviceId": "random-per-installation-id"
+  },
+  "syncable": {
+    "tabs": true,
+    "tabUrls": true,
+    "tabTitles": true,
+    "activeTab": true,
+    "bookmarks": true,
+    "quickAccess": true,
+    "searchProviders": true,
+    "theme": true,
+    "wallpaperReference": true,
+    "browserSettings": true
+  },
+  "neverUploadByDefault": [
+    "websiteCookies",
+    "websitePasswords",
+    "authenticationTokens",
+    "downloadedFiles",
+    "privateBrowsingData"
+  ],
+  "conflictPolicy": {
+    "tabs": "merge-by-tab-id-and-newest-update",
+    "settings": "last-write-wins-with-device-timestamp",
+    "bookmarks": "merge-by-stable-id",
+    "wallpaper": "last-write-wins"
+  },
+  "security": {
+    "transport": "HTTPS",
+    "serverAccess": "authenticated-account-session",
+    "sensitiveWebsiteCredentials": "device-local-unless-user-explicitly-enables-a-future-encrypted-sync-feature"
+  }
+}
