@@ -12,6 +12,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
 import android.os.Environment
 import android.view.ContextMenu
 import android.view.KeyEvent
@@ -353,7 +354,7 @@ class MainActivity : AppCompatActivity() {
                 applyBrowserChromeAppearance()
             }
             .setNeutralButton("Choose wallpaper") { _, _ -> chooseWallpaper() }
-            .setNegativeButton("Clear wallpaper") { _, _ -> clearWallpaper() }
+            .setNegativeButton("Clear wallpaper") { _, _ -> clearStartPageWallpaper() }
             .show()
     }
 
@@ -370,7 +371,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearWallpaper() {
+    private fun clearStartPageWallpaper() {
         prefs.edit().remove(KEY_WALLPAPER_URI).apply()
         findViewById<View>(R.id.start_page_wallpaper_image)?.let {
             it.visibility = View.GONE
@@ -517,8 +518,8 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 8, 32, 0)
         }
-        val nameInput = EditText(this).apply { hint = "Name"; singleLine = true }
-        val urlInput = EditText(this).apply { hint = "https://example.com"; singleLine = true; inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI }
+        val nameInput = EditText(this).apply { hint = "Name"; setSingleLine(true) }
+        val urlInput = EditText(this).apply { hint = "https://example.com"; setSingleLine(true); inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI }
         layout.addView(nameInput)
         layout.addView(urlInput)
         androidx.appcompat.app.AlertDialog.Builder(this)
@@ -1097,8 +1098,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        if (::prefs.isInitialized) {
+            saveTabs()
+            if (browserLockManager.isEnabled(prefs)) {
+                browserUnlockedThisSession = false
+            }
+        }
         super.onStop()
-        saveTabs()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -1514,12 +1520,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onStop() {
-        if (::prefs.isInitialized && browserLockManager.isEnabled(prefs)) {
-            browserUnlockedThisSession = false
-        }
-        super.onStop()
-    }
 
     override fun onPause() {
         // Persist both browser state and website sessions when the app leaves the foreground.
