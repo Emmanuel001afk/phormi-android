@@ -1489,7 +1489,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        prefs.edit().putBoolean(KEY_BROWSER_LOCK, true).apply()
+        if (!browserLockManager.trySetEnabled(prefs, true)) {
+            return
+        }
         updateBrowserLockLabel(view)
         authenticateBrowserLock()
     }
@@ -1499,6 +1501,11 @@ class MainActivity : AppCompatActivity() {
             onSuccess = {
                 browserUnlockedThisSession = true
                 runOnUiThread { removeBrowserLockOverlay() }
+            },
+            onCancelled = {
+                // User backed out deliberately — leave it locked, but
+                // don't treat a plain cancel as a failed attempt.
+                browserUnlockedThisSession = false
             },
             onFailure = {
                 browserUnlockedThisSession = false
@@ -1903,4 +1910,4 @@ class MainActivity : AppCompatActivity() {
         }
         return super.dispatchTouchEvent(ev)
     }
-} 
+}
