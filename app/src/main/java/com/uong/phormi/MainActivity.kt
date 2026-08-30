@@ -38,7 +38,6 @@ import android.widget.Toast
 import android.os.Looper
 import android.text.Html
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -65,7 +64,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webViewContainer: FrameLayout
     private lateinit var tabStripContainer: LinearLayout
     private lateinit var prefs: SharedPreferences
-    private lateinit var switchKeepScreenOn: SwitchCompat
     private lateinit var urlBar: EditText
     private lateinit var startPageContainer: View
     private lateinit var startPageSearch: EditText
@@ -173,7 +171,6 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
-        switchKeepScreenOn = findViewById(R.id.switch_keep_screen_on)
         urlBar = findViewById(R.id.url_bar)
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
@@ -194,18 +191,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
         val keepOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
-        switchKeepScreenOn.isChecked = keepOn
         applyKeepScreenOn(keepOn)
-        switchKeepScreenOn.setOnCheckedChangeListener { _, isChecked ->
-            applyKeepScreenOn(isChecked)
-            prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, isChecked).apply()
-        }
 
-        // Downloads = in-app list; long-press = Menu
-        findViewById<TextView>(R.id.btn_open_downloads).setOnClickListener {
-            startActivity(Intent(this, DownloadsActivity::class.java))
-        }
-        findViewById<TextView>(R.id.btn_open_downloads).setOnLongClickListener {
+        // Downloads = in-app list (click handled by android:onClick in the layout);
+        // long-press = Menu
+        findViewById<TextView>(R.id.btn_bottom_downloads).setOnLongClickListener {
             startActivity(Intent(this, MenuActivity::class.java))
             true
         }
@@ -455,11 +445,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.top_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
-        findViewById<View>(R.id.utility_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_tabs_overview, R.id.btn_menu,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads,
-            R.id.btn_open_downloads).forEach { id ->
+            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
