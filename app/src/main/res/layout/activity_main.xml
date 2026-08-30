@@ -1,144 +1,139 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/main_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="#0B1220">
 
-    <!-- Compact browser chrome: primary controls share one horizontal layer. -->
+    <!-- ONE compact horizontal chrome layer only. -->
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
+        android:layout_height="36dp"
         android:gravity="center_vertical"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
         android:background="#0F172A">
 
         <TextView
             android:id="@+id/btn_home"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:gravity="center"
             android:text="⌂"
             android:textColor="#E2E8F0"
-            android:textSize="24sp"
+            android:textSize="18sp"
+            android:clickable="true"
+            android:focusable="true"
             android:contentDescription="Home" />
 
-        <TextView
-            android:id="@+id/btn_new_tab"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:gravity="center"
-            android:text="+"
-            android:textColor="#38BDF8"
-            android:textSize="26sp"
-            android:contentDescription="New tab" />
+        <LinearLayout
+            android:id="@+id/url_toolbar"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="6dp"
+            android:paddingEnd="2dp"
+            android:background="#111827">
 
-        <TextView
-            android:id="@+id/btn_tabs_overview"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:gravity="center"
-            android:text="▦"
-            android:textColor="#F8FAFC"
-            android:textSize="20sp"
-            android:contentDescription="Tabs overview" />
+            <TextView
+                android:layout_width="20dp"
+                android:layout_height="28dp"
+                android:gravity="center"
+                android:text="⌕"
+                android:textColor="#94A3B8"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/url_bar"
+                android:layout_width="0dp"
+                android:layout_height="28dp"
+                android:layout_weight="1"
+                android:hint="Search or type a URL"
+                android:textColorHint="#94A3B8"
+                android:textColor="#F1F5F9"
+                android:textSize="12sp"
+                android:isSingleLine="true"
+                android:imeOptions="actionGo"
+                android:inputType="textUri"
+                android:background="@android:color/transparent"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp" />
+
+            <TextView
+                android:id="@+id/btn_go"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:gravity="center"
+                android:text="→"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:id="@+id/tab_strip"
+            android:layout_width="160dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="2dp"
+            android:visibility="gone"
+            android:fillViewport="false"
+            android:scrollbars="none"
+            android:overScrollMode="never"
+            android:background="#0B1220">
+
+            <LinearLayout
+                android:id="@+id/tab_strip_container"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="1dp"
+                android:paddingEnd="1dp" />
+        </HorizontalScrollView>
 
         <TextView
             android:id="@+id/tab_count"
-            android:layout_width="30dp"
-            android:layout_height="30dp"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="0"
             android:textColor="#38BDF8"
-            android:textSize="12sp"
+            android:textSize="10sp"
             android:textStyle="bold"
-            android:background="@drawable/bg_tab_count" />
+            android:background="@drawable/bg_tab_count"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Tabs overview and tab count" />
 
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+        <TextView
+            android:id="@+id/btn_new_tab"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:gravity="center"
+            android:text="+"
+            android:textColor="#38BDF8"
+            android:textSize="20sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="New tab" />
 
         <TextView
             android:id="@+id/btn_menu"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
             android:gravity="center"
             android:text="⋮"
             android:textColor="#E2E8F0"
-            android:textSize="27sp"
+            android:textSize="20sp"
+            android:clickable="true"
+            android:focusable="true"
             android:contentDescription="Menu" />
-    </LinearLayout>
-
-    <!-- Open tabs remain a single compact horizontal strip. -->
-    <HorizontalScrollView
-        android:id="@+id/tab_strip"
-        android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:fillViewport="false"
-        android:scrollbars="none"
-        android:overScrollMode="never"
-        android:background="#0B1220">
-
-        <LinearLayout
-            android:id="@+id/tab_strip_container"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
-    </HorizontalScrollView>
-
-    <!-- Address/search field appears only when a real web page is active. -->
-    <LinearLayout
-        android:id="@+id/url_toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:background="#111827"
-        android:visibility="gone">
-
-        <TextView
-            android:layout_width="28dp"
-            android:layout_height="34dp"
-            android:gravity="center"
-            android:text="⌕"
-            android:textColor="#94A3B8"
-            android:textSize="21sp" />
-
-        <EditText
-            android:id="@+id/url_bar"
-            android:layout_width="0dp"
-            android:layout_height="34dp"
-            android:layout_weight="1"
-            android:hint="Search or enter web address"
-            android:textColorHint="#94A3B8"
-            android:textColor="#F1F5F9"
-            android:textSize="14sp"
-            android:singleLine="true"
-            android:imeOptions="actionGo"
-            android:inputType="textUri"
-            android:background="@android:color/transparent"
-            android:paddingStart="4dp"
-            android:paddingEnd="8dp" />
-
-        <TextView
-            android:id="@+id/btn_go"
-            android:layout_width="40dp"
-            android:layout_height="34dp"
-            android:gravity="center"
-            android:text="→"
-            android:textColor="#38BDF8"
-            android:textSize="20sp" />
     </LinearLayout>
 
     <androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -159,7 +154,6 @@
 
         <include layout="@layout/activity_start_page" />
 
-        <!-- Full-screen security overlay is only inserted when Browser Lock is active. -->
         <FrameLayout
             android:id="@+id/browser_lock_overlay_host"
             android:layout_width="match_parent"
@@ -168,11 +162,10 @@
             android:focusable="true" />
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
-    <!-- Minimal navigation row. AI and Downloads remain directly reachable here. -->
     <LinearLayout
         android:id="@+id/bottom_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="54dp"
+        android:layout_height="36dp"
         android:gravity="center"
         android:orientation="horizontal"
         android:background="#0F172A">
@@ -180,53 +173,65 @@
         <TextView
             android:id="@+id/btn_back"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="30dp"
             android:layout_weight="1"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="10dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="‹"
             android:textColor="#CBD5E1"
-            android:textSize="31sp"
-            android:background="@drawable/bg_nav_circle" />
+            android:textSize="24sp"
+            android:background="@drawable/bg_nav_ring"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Back" />
 
         <TextView
             android:id="@+id/btn_forward"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="30dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="›"
             android:textColor="#CBD5E1"
-            android:textSize="31sp"
-            android:background="@drawable/bg_nav_circle" />
+            android:textSize="24sp"
+            android:background="@drawable/bg_nav_ring"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Forward" />
 
         <TextView
             android:id="@+id/btn_bottom_ai"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="30dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="✦"
             android:textColor="#38BDF8"
-            android:textSize="23sp"
-            android:onClick="openAiFromBottom" />
+            android:textSize="18sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:onClick="openAiFromBottom"
+            android:contentDescription="Ask AI" />
 
         <TextView
             android:id="@+id/btn_bottom_downloads"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="30dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
-            android:layout_marginEnd="6dp"
+            android:layout_marginEnd="10dp"
             android:gravity="center"
             android:text="↓"
             android:textColor="#CBD5E1"
-            android:textSize="25sp"
-            android:onClick="openDownloadsFromBottom" />
+            android:textSize="18sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:onClick="openDownloadsFromBottom"
+            android:contentDescription="Downloads" />
     </LinearLayout>
 </LinearLayout>
