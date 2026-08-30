@@ -38,6 +38,7 @@ import android.widget.Toast
 import android.os.Looper
 import android.text.Html
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -57,13 +58,15 @@ class MainActivity : AppCompatActivity() {
         val id: Int,
         val webView: WebView,
         var title: String,
-        val chipView: View
+        val chipView: View,
+        val isGhost: Boolean = false
     )
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var webViewContainer: FrameLayout
     private lateinit var tabStripContainer: LinearLayout
     private lateinit var prefs: SharedPreferences
+    private lateinit var switchKeepScreenOn: SwitchCompat
     private lateinit var urlBar: EditText
     private lateinit var startPageContainer: View
     private lateinit var startPageSearch: EditText
@@ -108,6 +111,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQ_GEOLOCATION = 1006
         private const val REQ_STARTUP_PERMISSIONS = 1003
         private const val REQ_TABS_OVERVIEW = 1004
+        private const val REQ_MENU = 1007
         private const val MENU_OPEN = 1
         private const val MENU_COPY = 2
         private const val MENU_DOWNLOAD = 3
@@ -156,18 +160,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (::prefs.isInitialized && browserLockManager.isEnabled(prefs) && !browserUnlockedThisSession) {
+        if (::prefs.isInitialized && browserLockManager.isEnabled(prefs) &&
+            !browserUnlockedThisSession && !browserLockManager.isPromptInProgress()) {
             authenticateBrowserLock()
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateResponsiveChrome()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        // Safety net: guarantee the lock host starts non-blocking even if
-        // the layout XML still has stale clickable/visible defaults.
-        removeBrowserLockOverlay()
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         CookieManager.getInstance().setAcceptCookie(true)
@@ -175,11 +181,13 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
+        switchKeepScreenOn = findViewById(R.id.switch_keep_screen_on)
         urlBar = findViewById(R.id.url_bar)
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
         tabCountView = findViewById(R.id.tab_count)
         browserLockManager = BrowserLockManager(this, mainExecutor)
+        updateResponsiveChrome()
 
         val browserLockToggle = findViewById<TextView>(R.id.start_page_browser_lock)
         browserLockToggle.setOnClickListener { toggleBrowserLock(browserLockToggle) }
@@ -195,17 +203,24 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
         val keepOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
+        switchKeepScreenOn.isChecked = keepOn
         applyKeepScreenOn(keepOn)
+        switchKeepScreenOn.setOnCheckedChangeListener { _, isChecked ->
+            applyKeepScreenOn(isChecked)
+            prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, isChecked).apply()
+        }
 
-        // Downloads = in-app list (click handled by android:onClick in the layout);
-        // long-press = Menu
-        findViewById<TextView>(R.id.btn_bottom_downloads).setOnLongClickListener {
-            startActivity(Intent(this, MenuActivity::class.java))
+        // Downloads = in-app list; long-press = Menu
+        findViewById<TextView>(R.id.btn_open_downloads).setOnClickListener {
+            startActivity(Intent(this, DownloadsActivity::class.java))
+        }
+        findViewById<TextView>(R.id.btn_open_downloads).setOnLongClickListener {
+            startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
             true
         }
 
         findViewById<TextView>(R.id.btn_menu).setOnClickListener {
-            startActivity(Intent(this, MenuActivity::class.java))
+            startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
         }
 
         findViewById<TextView>(R.id.btn_home).setOnClickListener {
@@ -281,7 +296,8 @@ class MainActivity : AppCompatActivity() {
             urlBar.requestFocus()
             showKeyboard()
         }
-        findViewById<TextView>(R.id.btn_tabs_overview).setOnClickListener {
+        // The circular count is the single combined Tab Overview + Counter control.
+        findViewById<TextView>(R.id.tab_count).setOnClickListener {
             saveTabs()
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
@@ -449,9 +465,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.top_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
+        findViewById<View>(R.id.utility_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
-        listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_tabs_overview, R.id.btn_menu,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
+        listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu,
+            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads,
+            R.id.btn_open_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
@@ -996,7 +1014,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         startPageContainer.visibility = View.GONE
-        findViewById<View>(R.id.url_toolbar)?.visibility = View.VISIBLE
         webView.visibility = View.VISIBLE
         urlBar.setText(url)
         webView.loadUrl(url)
@@ -1016,11 +1033,17 @@ class MainActivity : AppCompatActivity() {
         navigateFromUrlBar()
     }
 
+    /** Keep the browser chrome to one horizontal layer. Phones use the tab overview button;
+     * wide screens may expose the compact tab strip inside that same layer. */
+    private fun updateResponsiveChrome() {
+        val tabStrip = findViewById<View>(R.id.tab_strip) ?: return
+        val wide = resources.configuration.screenWidthDp >= 600
+        tabStrip.visibility = if (wide) View.VISIBLE else View.GONE
+    }
+
     private fun showStartPage() {
         startPageContainer.visibility = View.VISIBLE
         activeWebView()?.visibility = View.GONE
-        findViewById<View>(R.id.url_toolbar)?.visibility = View.GONE
-        findViewById<View>(R.id.tab_strip)?.visibility = if (tabs.isNotEmpty()) View.VISIBLE else View.GONE
         urlBar.setText("")
         startPageSearch.clearFocus()
         hideKeyboard()
@@ -1031,11 +1054,9 @@ class MainActivity : AppCompatActivity() {
         if (url.isNullOrBlank() || url == NEW_TAB_URL) {
             startPageContainer.visibility = View.VISIBLE
             activeWebView()?.visibility = View.GONE
-            findViewById<View>(R.id.url_toolbar)?.visibility = View.GONE
         } else {
             startPageContainer.visibility = View.GONE
             activeWebView()?.visibility = View.VISIBLE
-            findViewById<View>(R.id.url_toolbar)?.visibility = View.VISIBLE
         }
     }
 
@@ -1061,8 +1082,7 @@ class MainActivity : AppCompatActivity() {
         val webView = activeWebView()
         if (webView != null) {
             startPageContainer.visibility = View.GONE
-            findViewById<View>(R.id.url_toolbar)?.visibility = View.VISIBLE
-            webView.visibility = View.VISIBLE
+                webView.visibility = View.VISIBLE
             webView.loadUrl(url)
         } else createNewTab(url)
         hideKeyboard()
@@ -1087,7 +1107,12 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         if (::prefs.isInitialized) {
             saveTabs()
-            if (browserLockManager.isEnabled(prefs)) {
+            // A biometric/device-credential prompt can temporarily move the
+            // Activity through the stopped state. Do not relock during that
+            // authentication transaction; relock only after a real exit to
+            // another app/home screen.
+            if (browserLockManager.isEnabled(prefs) &&
+                !browserLockManager.isPromptInProgress()) {
                 browserUnlockedThisSession = false
             }
         }
@@ -1105,6 +1130,8 @@ class MainActivity : AppCompatActivity() {
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
 
     private fun createNewTab(url: String) {
+        val isGhost = prefs.getBoolean("ghost_next_tab", false)
+        if (isGhost) prefs.edit().putBoolean("ghost_next_tab", false).apply()
         val id = nextTabId++
         val webView = WebView(this)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -1123,7 +1150,7 @@ class MainActivity : AppCompatActivity() {
         val chipTitle = chip.findViewById<TextView>(R.id.tab_chip_title)
         val chipClose = chip.findViewById<TextView>(R.id.tab_chip_close)
 
-        val tab = Tab(id, webView, getString(R.string.new_tab), chip)
+        val tab = Tab(id, webView, getString(R.string.new_tab), chip, isGhost = isGhost)
         tabs.add(tab)
         tabStripContainer.addView(chip)
 
@@ -1168,7 +1195,16 @@ class MainActivity : AppCompatActivity() {
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
-        tab.webView.destroy()
+        tab.
+        if (tab.isGhost) {
+            try {
+                tab.webView.clearCache(true)
+                tab.webView.clearFormData()
+                tab.webView.clearHistory()
+                CookieManager.getInstance().removeSessionCookies(null)
+            } catch (_: Exception) { }
+        }
+        webView.destroy()
         tabs.removeAt(index)
 
         if (tabs.isEmpty()) {
@@ -1182,9 +1218,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveTabs() {
+        val persistTabs = tabs.filterNot { it.isGhost }
         val urls = JSONArray()
         val titles = JSONArray()
-        tabs.forEach { tab ->
+        persistTabs.forEach { tab ->
             val u = tab.webView.url
             if (!u.isNullOrBlank()) {
                 urls.put(u)
@@ -1195,7 +1232,7 @@ class MainActivity : AppCompatActivity() {
             urls.put(NEW_TAB_URL)
             titles.put(getString(R.string.new_tab))
         }
-        val activeIndex = tabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
+        val activeIndex = persistTabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
             .putString(KEY_TAB_TITLES, titles.toString())
@@ -1481,9 +1518,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (!browserLockManager.trySetEnabled(prefs, true)) {
-            return
-        }
+        prefs.edit().putBoolean(KEY_BROWSER_LOCK, true).apply()
         updateBrowserLockLabel(view)
         authenticateBrowserLock()
     }
@@ -1493,11 +1528,6 @@ class MainActivity : AppCompatActivity() {
             onSuccess = {
                 browserUnlockedThisSession = true
                 runOnUiThread { removeBrowserLockOverlay() }
-            },
-            onCancelled = {
-                // User backed out deliberately — leave it locked, but
-                // don't treat a plain cancel as a failed attempt.
-                browserUnlockedThisSession = false
             },
             onFailure = {
                 browserUnlockedThisSession = false
@@ -1509,9 +1539,6 @@ class MainActivity : AppCompatActivity() {
     private fun showBrowserLockOverlay() {
         if (browserLockOverlay != null || isFinishing) return
         val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
-        root.visibility = View.VISIBLE
-        root.isClickable = true
-        root.isFocusable = true
         val overlay = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
@@ -1554,9 +1581,6 @@ class MainActivity : AppCompatActivity() {
         val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
         browserLockOverlay?.let { root.removeView(it) }
         browserLockOverlay = null
-        root.visibility = View.GONE
-        root.isClickable = false
-        root.isFocusable = false
     }
 
     private fun requestStartupPermissions() {
@@ -1605,6 +1629,13 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
+                    val t = view?.title ?: ""
+                    val u = view?.url ?: url ?: ""
+                    val tab = tabs.find { it.webView === view }
+                    if (tab != null && !tab.isGhost) {
+                        HistoryActivity.record(this@MainActivity, t, u)
+                    }
+
                 super.onPageFinished(view, url)
                 if (view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
@@ -1828,6 +1859,44 @@ class MainActivity : AppCompatActivity() {
                 "close" -> {
                     val index = data.getIntExtra("index", -1)
                     tabs.getOrNull(index)?.let { closeTab(it.id) }
+                }
+            }
+            return
+        }
+        
+        if (requestCode == REQ_MENU && resultCode == RESULT_OK) {
+            when (data?.getStringExtra(MenuActivity.EXTRA_ACTION)) {
+                MenuActivity.ACTION_NEW_TAB -> {
+                    createNewTab(NEW_TAB_URL)
+                    urlBar.setText("")
+                    urlBar.requestFocus()
+                    showKeyboard()
+                }
+                MenuActivity.ACTION_GHOST -> {
+                    // Ghost mode: open a disposable tab; closing it does not keep history.
+                    prefs.edit().putBoolean("ghost_next_tab", true).apply()
+                    createNewTab(NEW_TAB_URL)
+                    Toast.makeText(this, "Ghost mode tab opened", Toast.LENGTH_SHORT).show()
+                }
+                MenuActivity.ACTION_BROWSER_LOCK -> {
+                    findViewById<TextView>(R.id.start_page_browser_lock)?.let { toggleBrowserLock(it) }
+                        ?: run {
+                            val enabled = prefs.getBoolean(KEY_BROWSER_LOCK, false)
+                            prefs.edit().putBoolean(KEY_BROWSER_LOCK, !enabled).apply()
+                            browserUnlockedThisSession = !enabled
+                            Toast.makeText(
+                                this,
+                                if (!enabled) "Browser Lock on" else "Browser Lock off",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            if (!enabled) authenticateBrowserLock()
+                        }
+                }
+                MenuActivity.ACTION_THEME -> showAppearanceChooser()
+                MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
+                else -> {
+                    val openUrl = data?.getStringExtra("open_url")
+                    if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
                 }
             }
             return
