@@ -13,18 +13,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * AiController
- *
- * Takes a plain-English instruction from the user (e.g. "log into GitHub
- * and check notifications"), reads the current screen via
- * PhormiAccessibilityService, asks an AI model what single action to take
- * next, performs that action, then repeats — one step at a time — until
- * the AI reports the task is done or a step limit is hit.
- *
- * Supports multiple AI providers with fallback: if one fails or times
- * out, the next configured provider is tried automatically.
- */
 class AiController(private val context: Context) {
 
     companion object {
@@ -32,6 +20,7 @@ class AiController(private val context: Context) {
         private const val PREFS_NAME = "phormi_ai_prefs"
         private const val MAX_STEPS = 25
         private const val REQUEST_TIMEOUT_SECONDS = 15L
+        private const val MAX_HISTORY_ENTRIES = 12
     }
 
     data class Provider(
@@ -41,8 +30,13 @@ class AiController(private val context: Context) {
         val model: String
     )
 
-    // Order = fallback order. If the first provider with a saved key
-    // fails, the next one is tried.
+    private data class HistoryEntry(
+        val stepNumber: Int,
+        val provider: String,
+        val actionTaken: String,
+        val screenSummary: String
+    )
+
     private val providers = listOf(
         Provider("groq", "key_groq", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile"),
         Provider("deepseek", "key_deepseek", "https://api.deepseek.com/chat/completions", "deepseek-chat"),
@@ -58,6 +52,8 @@ class AiController(private val context: Context) {
         .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
+    private val history = mutableListOf<HistoryEntry>()
+
     fun saveApiKey(providerName: String, key: String) {
         prefs.edit().putString("key_$providerName", key).apply()
     }
@@ -65,11 +61,6 @@ class AiController(private val context: Context) {
     fun hasAnyKey(): Boolean =
         providers.any { !prefs.getString(it.apiKeyPrefKey, null).isNullOrBlank() }
 
-    /**
-     * Runs one full task, step by step, until the AI says it's finished
-     * or MAX_STEPS is reached. onStatus is called after every step with
-     * a short human-readable update, useful for showing progress in the UI.
-     */
     suspend fun runTask(instruction: String, onStatus: (String) -> Unit) {
         val service = PhormiAccessibilityService.instance
         if (service == null) {
@@ -77,45 +68,66 @@ class AiController(private val context: Context) {
             return
         }
 
+        history.clear()
         var stepsTaken = 0
         var done = false
 
         while (!done && stepsTaken < MAX_STEPS) {
             stepsTaken++
             val screenJson = service.readScreen()
-            val decision = askAiForNextAction(instruction, screenJson)
+            val outcome = askAiForNextAction(instruction, screenJson)
 
-            if (decision == null) {
+            if (outcome == null) {
                 onStatus("Couldn't get a response from any AI provider — check that at least one API key is saved.")
                 return
             }
+            val (decision, usedProvider) = outcome
 
-            when (decision.optString("action")) {
+            val actionDescription = when (decision.optString("action")) {
                 "tap" -> {
                     val x = decision.optInt("x", -1)
                     val y = decision.optInt("y", -1)
                     if (x >= 0 && y >= 0) {
                         service.tapAt(x, y)
-                        onStatus("Step $stepsTaken: tapped ($x, $y)")
+                        onStatus("Step $stepsTaken ($usedProvider): tapped ($x, $y)")
                     }
+                    "tapped ($x, $y)"
                 }
                 "type" -> {
                     val text = decision.optString("text", "")
                     service.typeIntoFocusedField(text)
-                    onStatus("Step $stepsTaken: typed \"$text\"")
+                    onStatus("Step $stepsTaken ($usedProvider): typed \"$text\"")
+                    "typed \"$text\""
                 }
                 "done" -> {
                     done = true
-                    onStatus("Task finished: ${decision.optString("summary", "done")}")
+                    val summary = decision.optString("summary", "done")
+                    onStatus("Task finished ($usedProvider): $summary")
+                    "marked task done: $summary"
                 }
                 "stuck" -> {
                     done = true
-                    onStatus("AI couldn't continue: ${decision.optString("summary", "stuck")}")
+                    val summary = decision.optString("summary", "stuck")
+                    onStatus("AI couldn't continue ($usedProvider): $summary")
+                    "reported stuck: $summary"
                 }
                 else -> {
-                    onStatus("Step $stepsTaken: no clear action, stopping.")
                     done = true
+                    onStatus("Step $stepsTaken ($usedProvider): no clear action, stopping.")
+                    "returned no clear action"
                 }
+            }
+
+            history.add(
+                HistoryEntry(
+                    stepNumber = stepsTaken,
+                    provider = usedProvider,
+                    actionTaken = actionDescription,
+                    screenSummary = summarizeScreenForHistory(screenJson)
+                )
+            )
+            if (history.size > MAX_HISTORY_ENTRIES) {
+                history.removeAt(0)
             }
         }
 
@@ -124,24 +136,33 @@ class AiController(private val context: Context) {
         }
     }
 
-    /**
-     * Sends the instruction + current screen content to each configured
-     * AI provider in order, returning the first successful structured
-     * decision. Falls through to the next provider on any failure.
-     */
-    private suspend fun askAiForNextAction(instruction: String, screenJson: String): JSONObject? {
+    private suspend fun askAiForNextAction(
+        instruction: String,
+        screenJson: String
+    ): Pair<JSONObject, String>? {
         for (provider in providers) {
             val apiKey = prefs.getString(provider.apiKeyPrefKey, null)
             if (apiKey.isNullOrBlank()) continue
 
             try {
                 val result = callProvider(provider, apiKey, instruction, screenJson)
-                if (result != null) return result
+                if (result != null) return result to provider.name
             } catch (e: Exception) {
                 Log.w(TAG, "${provider.name} failed, trying next provider: ${e.message}")
             }
         }
         return null
+    }
+
+    private fun buildHistoryText(): String {
+        if (history.isEmpty()) return "(no steps taken yet)"
+        return history.joinToString("\n") { entry ->
+            "Step ${entry.stepNumber} [${entry.provider}] — screen: ${entry.screenSummary} → action: ${entry.actionTaken}"
+        }
+    }
+
+    private fun summarizeScreenForHistory(screenJson: String): String {
+        return if (screenJson.length > 200) screenJson.take(200) + "…" else screenJson
     }
 
     private suspend fun callProvider(
@@ -151,9 +172,15 @@ class AiController(private val context: Context) {
         screenJson: String
     ): JSONObject? = withContext(Dispatchers.IO) {
         val systemPrompt = """
-            You control a phone screen one step at a time. You will be given the
-            user's goal and a JSON list of visible screen elements (text, whether
+            You control a phone screen one step at a time, possibly taking
+            over partway through a task from a different AI provider that
+            was interrupted. You will be given the user's goal, a history
+            of steps already taken (which may be from a different provider),
+            and a JSON list of visible screen elements (text, whether
             clickable/editable, and their center x/y coordinates).
+
+            Use the history to avoid repeating the same action pointlessly
+            and to understand what progress has already been made.
 
             Reply with ONLY a JSON object, no other text, in one of these shapes:
             {"action":"tap","x":123,"y":456}
@@ -167,7 +194,7 @@ class AiController(private val context: Context) {
         messages.put(
             JSONObject().put("role", "user").put(
                 "content",
-                "Goal: $instruction\n\nVisible screen elements:\n$screenJson"
+                "Goal: $instruction\n\nSteps taken so far:\n${buildHistoryText()}\n\nCurrent visible screen elements:\n$screenJson"
             )
         )
 
@@ -197,7 +224,6 @@ class AiController(private val context: Context) {
                 .getString("content")
                 .trim()
 
-            // Some models wrap JSON in markdown fences — strip those if present.
             val cleaned = content.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             JSONObject(cleaned)
         }
