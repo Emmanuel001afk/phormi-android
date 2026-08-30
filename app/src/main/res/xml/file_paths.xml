@@ -2,4 +2,6 @@
 <paths>
     <external-path name="downloads" path="Download/" />
     <external-path name="external" path="." />
+    <cache-path name="vpn_cache" path="vpn/" />
+    <cache-path name="cache" path="." />
 </paths>
