@@ -165,6 +165,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Safety net: guarantee the lock host starts non-blocking even if
+        // the layout XML still has stale clickable/visible defaults.
+        removeBrowserLockOverlay()
+
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         CookieManager.getInstance().setAcceptCookie(true)
 
@@ -1505,6 +1509,9 @@ class MainActivity : AppCompatActivity() {
     private fun showBrowserLockOverlay() {
         if (browserLockOverlay != null || isFinishing) return
         val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
+        root.visibility = View.VISIBLE
+        root.isClickable = true
+        root.isFocusable = true
         val overlay = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
@@ -1547,6 +1554,9 @@ class MainActivity : AppCompatActivity() {
         val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
         browserLockOverlay?.let { root.removeView(it) }
         browserLockOverlay = null
+        root.visibility = View.GONE
+        root.isClickable = false
+        root.isFocusable = false
     }
 
     private fun requestStartupPermissions() {
@@ -1898,4 +1908,4 @@ class MainActivity : AppCompatActivity() {
         }
         return super.dispatchTouchEvent(ev)
     }
-}
+} 
