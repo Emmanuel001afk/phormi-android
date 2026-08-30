@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="178dp"
+    android:layout_width="174dp"
+    android:layout_height="174dp"
+    android:layout_marginStart="6dp"
+    android:layout_marginEnd="6dp"
     android:foregroundGravity="center">
 
     <LinearLayout
@@ -12,7 +14,7 @@
         android:orientation="vertical"
         android:gravity="center"
         android:background="@drawable/bg_tab_circle"
-        android:padding="20dp"
+        android:padding="18dp"
         android:clickable="true"
         android:focusable="true">
 
@@ -21,8 +23,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:textColor="#171717"
-            android:textSize="15sp"
+            android:textColor="#F8FAFC"
+            android:textSize="14sp"
             android:textStyle="bold"
             android:maxLines="2"
             android:ellipsize="end" />
@@ -31,24 +33,24 @@
             android:id="@+id/tab_circle_url"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="7dp"
             android:gravity="center"
-            android:textColor="#705F5A"
-            android:textSize="10sp"
+            android:textColor="#94A3B8"
+            android:textSize="9sp"
             android:maxLines="2"
             android:ellipsize="end" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/tab_circle_close"
-        android:layout_width="30dp"
-        android:layout_height="30dp"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
         android:layout_gravity="top|end"
-        android:layout_marginEnd="8dp"
+        android:layout_marginEnd="3dp"
         android:gravity="center"
         android:text="×"
-        android:textColor="#5C2414"
-        android:textSize="18sp"
+        android:textColor="#F8FAFC"
+        android:textSize="17sp"
         android:background="@drawable/bg_circle_close"
         android:clickable="true"
         android:focusable="true" />
