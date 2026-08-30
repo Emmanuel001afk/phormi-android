@@ -2,7 +2,8 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0B1220">
+    android:background="#0B1220"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -17,18 +18,36 @@
             android:textColor="#F8FAFC"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:paddingBottom="16dp" />
+            android:paddingBottom="12dp" />
 
         <TextView
-            android:id="@+id/menu_downloads"
+            android:id="@+id/menu_new_tab"
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:gravity="center_vertical"
-            android:text="Downloads"
+            android:text="New tab"
             android:textColor="#E2E8F0"
             android:textSize="16sp"
             android:paddingStart="12dp"
-            android:background="#1E293B" />
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_ghost"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Ghost mode"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/menu_tabs"
@@ -40,7 +59,55 @@
             android:textColor="#E2E8F0"
             android:textSize="16sp"
             android:paddingStart="12dp"
-            android:background="#1E293B" />
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_downloads"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Downloads"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_bookmarks"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Bookmarks"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_history"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="History"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/menu_vpn"
@@ -48,11 +115,14 @@
             android:layout_height="52dp"
             android:layout_marginTop="8dp"
             android:gravity="center_vertical"
-            android:text="VPN (VPN Gate free)"
+            android:text="VPN"
             android:textColor="#E2E8F0"
             android:textSize="16sp"
             android:paddingStart="12dp"
-            android:background="#1E293B" />
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/menu_ai"
@@ -64,16 +134,66 @@
             android:textColor="#E2E8F0"
             android:textSize="16sp"
             android:paddingStart="12dp"
-            android:background="#1E293B" />
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_browser_lock"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Browser Lock"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_theme"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Theme and wallpaper"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_settings"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Accounts &amp; settings"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/menu_close"
             android:layout_width="match_parent"
             android:layout_height="52dp"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="20dp"
             android:gravity="center"
             android:text="Close"
             android:textColor="#38BDF8"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 </ScrollView>
