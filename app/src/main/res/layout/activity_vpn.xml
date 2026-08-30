@@ -7,50 +7,109 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="44dp"
         android:gravity="center_vertical"
-        android:paddingStart="8dp"
+        android:paddingStart="4dp"
         android:paddingEnd="8dp"
         android:background="#111827">
 
         <TextView
             android:id="@+id/vpn_back"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:gravity="center"
-            android:text="←"
+            android:text="‹"
             android:textColor="#38BDF8"
-            android:textSize="22sp" />
+            android:textSize="24sp"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="VPN Gate (free)"
+            android:text="VPN"
             android:textColor="#F8FAFC"
-            android:textSize="18sp"
+            android:textSize="17sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/vpn_refresh"
             android:layout_width="wrap_content"
-            android:layout_height="48dp"
+            android:layout_height="40dp"
             android:gravity="center"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
             android:text="Refresh"
             android:textColor="#38BDF8"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:clickable="true"
+            android:focusable="true" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/vpn_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"
         android:text="Off — pick a free public server"
         android:textColor="#94A3B8"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+            android:id="@+id/vpn_connect"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Connect"
+            android:textColor="#0B1220"
+            android:textStyle="bold"
+            android:background="#38BDF8"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/vpn_disconnect"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:gravity="center"
+            android:text="Disconnect"
+            android:textColor="#F8FAFC"
+            android:background="#334155"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/vpn_search"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="6dp"
+        android:background="#1E293B"
+        android:hint="Search country, code, or IP"
+        android:textColorHint="#64748B"
+        android:textColor="#F1F5F9"
+        android:textSize="13sp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:isSingleLine="true"
+        android:inputType="text" />
 
     <TextView
         android:id="@+id/vpn_loading"
@@ -58,7 +117,7 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:padding="24dp"
-        android:text="Loading free servers…"
+        android:text="Loading free servers from multiple sources…"
         android:textColor="#64748B"
         android:visibility="gone" />
 
