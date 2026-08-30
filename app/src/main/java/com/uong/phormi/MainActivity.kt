@@ -72,6 +72,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabCountView: TextView
     private lateinit var browserLockManager: BrowserLockManager
     private var browserUnlockedThisSession = false
+    private var browserLockOverlay: View? = null
 
     private val tabs = mutableListOf<Tab>()
     private var activeTabId: Int = -1
@@ -109,7 +110,6 @@ class MainActivity : AppCompatActivity() {
         private const val REQ_GEOLOCATION = 1006
         private const val REQ_STARTUP_PERMISSIONS = 1003
         private const val REQ_TABS_OVERVIEW = 1004
-        private const val MAX_TABS = 5
         private const val MENU_OPEN = 1
         private const val MENU_COPY = 2
         private const val MENU_DOWNLOAD = 3
@@ -140,6 +140,8 @@ class MainActivity : AppCompatActivity() {
     private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var reloadRunnable: Runnable? = null
     private var twoFingerHoldActive = false
+    private var threeFingerStartX = 0f
+    private var threeFingerTracking = false
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
     private val mainExecutor = java.util.concurrent.Executor { command -> Handler(Looper.getMainLooper()).post(command) }
     private val unifiedSearchGeneration = AtomicInteger(0)
@@ -278,21 +280,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.shortcut_add).contentDescription = "Add a website shortcut"
         loadCustomShortcuts()
 
-        findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab_ai)
-            .setOnClickListener {
-                startActivity(Intent(this, AiActivity::class.java))
-            }
-
         // + = new tab; tabs button = circular tab overview
         findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
-            if (tabs.size >= MAX_TABS) {
-                Toast.makeText(this, "Tab limit reached ($MAX_TABS)", Toast.LENGTH_SHORT).show()
-            } else {
-                createNewTab(NEW_TAB_URL)
-                urlBar.setText("")
-                urlBar.requestFocus()
-                showKeyboard()
-            }
+            createNewTab(NEW_TAB_URL)
+            urlBar.setText("")
+            urlBar.requestFocus()
+            showKeyboard()
         }
         findViewById<TextView>(R.id.btn_tabs_overview).setOnClickListener {
             saveTabs()
@@ -616,10 +609,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun runUnifiedSearch(query: String) {
         val webView = activeWebView() ?: run {
-            if (tabs.size >= MAX_TABS) {
-                Toast.makeText(this, "Tab limit reached ($MAX_TABS)", Toast.LENGTH_SHORT).show()
-                return
-            }
             createNewTab(NEW_TAB_URL)
             activeWebView()
         } ?: return
@@ -1015,6 +1004,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         startPageContainer.visibility = View.GONE
+        findViewById<View>(R.id.url_toolbar)?.visibility = View.VISIBLE
         webView.visibility = View.VISIBLE
         urlBar.setText(url)
         webView.loadUrl(url)
@@ -1037,8 +1027,10 @@ class MainActivity : AppCompatActivity() {
     private fun showStartPage() {
         startPageContainer.visibility = View.VISIBLE
         activeWebView()?.visibility = View.GONE
+        findViewById<View>(R.id.url_toolbar)?.visibility = View.GONE
+        findViewById<View>(R.id.tab_strip)?.visibility = if (tabs.isNotEmpty()) View.VISIBLE else View.GONE
         urlBar.setText("")
-        startPageSearch.requestFocus()
+        startPageSearch.clearFocus()
         hideKeyboard()
     }
 
@@ -1047,9 +1039,11 @@ class MainActivity : AppCompatActivity() {
         if (url.isNullOrBlank() || url == NEW_TAB_URL) {
             startPageContainer.visibility = View.VISIBLE
             activeWebView()?.visibility = View.GONE
+            findViewById<View>(R.id.url_toolbar)?.visibility = View.GONE
         } else {
             startPageContainer.visibility = View.GONE
             activeWebView()?.visibility = View.VISIBLE
+            findViewById<View>(R.id.url_toolbar)?.visibility = View.VISIBLE
         }
     }
 
@@ -1075,6 +1069,7 @@ class MainActivity : AppCompatActivity() {
         val webView = activeWebView()
         if (webView != null) {
             startPageContainer.visibility = View.GONE
+            findViewById<View>(R.id.url_toolbar)?.visibility = View.VISIBLE
             webView.visibility = View.VISIBLE
             webView.loadUrl(url)
         } else createNewTab(url)
@@ -1111,8 +1106,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         val url = intent?.dataString
         if (!url.isNullOrBlank()) {
-            if (tabs.size >= MAX_TABS) activeWebView()?.loadUrl(url)
-            else createNewTab(url)
+            createNewTab(url)
         }
     }
 
@@ -1232,8 +1226,8 @@ class MainActivity : AppCompatActivity() {
             val titles = runCatching {
                 JSONArray(prefs.getString(KEY_TAB_TITLES, "[]") ?: "[]")
             }.getOrElse { JSONArray() }
-            val count = minOf(arr.length(), MAX_TABS)
-            val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, count - 1)
+            val count = arr.length()
+            val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
                 val restoredUrl = arr.optString(i, NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
                 createNewTab(restoredUrl)
@@ -1463,8 +1457,7 @@ class MainActivity : AppCompatActivity() {
         val url = contextMenuUrl ?: return super.onContextItemSelected(item)
         when (item.itemId) {
             MENU_OPEN -> {
-                if (tabs.size >= MAX_TABS) activeWebView()?.loadUrl(url)
-                else createNewTab(url)
+                createNewTab(url)
                 return true
             }
             MENU_COPY -> {
@@ -1503,12 +1496,62 @@ class MainActivity : AppCompatActivity() {
 
     private fun authenticateBrowserLock() {
         browserLockManager.authenticate(
-            onSuccess = { browserUnlockedThisSession = true },
+            onSuccess = {
+                browserUnlockedThisSession = true
+                runOnUiThread { removeBrowserLockOverlay() }
+            },
             onFailure = {
                 browserUnlockedThisSession = false
-                if (!isFinishing) finish()
+                runOnUiThread { showBrowserLockOverlay() }
             }
         )
+    }
+
+    private fun showBrowserLockOverlay() {
+        if (browserLockOverlay != null || isFinishing) return
+        val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
+        val overlay = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(36.dp(), 36.dp(), 36.dp(), 36.dp())
+            setBackgroundColor(Color.rgb(11, 18, 32))
+        }
+        val title = TextView(this).apply {
+            text = "Phormi is locked"
+            setTextColor(Color.WHITE)
+            textSize = 24f
+            gravity = android.view.Gravity.CENTER
+        }
+        val message = TextView(this).apply {
+            text = "Authenticate with your device security to continue."
+            setTextColor(Color.rgb(148, 163, 184))
+            textSize = 14f
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 12.dp(), 0, 24.dp())
+        }
+        val retry = TextView(this).apply {
+            text = "Unlock Phormi"
+            gravity = android.view.Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(56, 189, 248))
+                cornerRadius = 24.dp().toFloat()
+            }
+            setPadding(28.dp(), 14.dp(), 28.dp(), 14.dp())
+            setOnClickListener { authenticateBrowserLock() }
+        }
+        overlay.addView(title, LinearLayout.LayoutParams(-1, -2))
+        overlay.addView(message, LinearLayout.LayoutParams(-1, -2))
+        overlay.addView(retry, LinearLayout.LayoutParams(-2, -2))
+        root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        browserLockOverlay = overlay
+    }
+
+    private fun removeBrowserLockOverlay() {
+        val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
+        browserLockOverlay?.let { root.removeView(it) }
+        browserLockOverlay = null
     }
 
     private fun requestStartupPermissions() {
@@ -1590,10 +1633,6 @@ class MainActivity : AppCompatActivity() {
                 // A new-window request becomes a normal Phormi tab instead of an
                 // external browser window. This keeps the browser architecture
                 // consistent with the circular tab overview.
-                if (tabs.size >= MAX_TABS) {
-                    Toast.makeText(this@MainActivity, "Tab limit reached ($MAX_TABS)", Toast.LENGTH_SHORT).show()
-                    return false
-                }
                 createNewTab(NEW_TAB_URL)
                 val newWebView = activeWebView() ?: return false
                 val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
@@ -1632,7 +1671,6 @@ class MainActivity : AppCompatActivity() {
                 window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 swipeRefresh.visibility = View.GONE
-                findViewById<View>(R.id.fab_ai).visibility = View.GONE
             }
 
             override fun onHideCustomView() {
@@ -1645,7 +1683,6 @@ class MainActivity : AppCompatActivity() {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 requestedOrientation = originalOrientation
                 swipeRefresh.visibility = View.VISIBLE
-                findViewById<View>(R.id.fab_ai).visibility = View.VISIBLE
             }
 
             override fun getDefaultVideoPoster(): Bitmap? {
@@ -1774,12 +1811,10 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == REQ_TABS_OVERVIEW && resultCode == Activity.RESULT_OK && data != null) {
             when (data.getStringExtra("action")) {
                 "new_tab" -> {
-                    if (tabs.size < MAX_TABS) {
-                        createNewTab(NEW_TAB_URL)
-                        urlBar.setText("")
-                        urlBar.requestFocus()
-                        showKeyboard()
-                    }
+                    createNewTab(NEW_TAB_URL)
+                    urlBar.setText("")
+                    urlBar.requestFocus()
+                    showKeyboard()
                 }
                 "select" -> {
                     val index = data.getIntExtra("index", -1)
@@ -1815,7 +1850,6 @@ class MainActivity : AppCompatActivity() {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 requestedOrientation = originalOrientation
                 swipeRefresh.visibility = View.VISIBLE
-                findViewById<View>(R.id.fab_ai).visibility = View.VISIBLE
             }
             return
         }
@@ -1836,10 +1870,30 @@ class MainActivity : AppCompatActivity() {
                     reloadRunnable = r
                     reloadHandler.postDelayed(r, 1000)
                 }
+                if (ev.pointerCount == 3) {
+                    threeFingerTracking = true
+                    threeFingerStartX = ev.getX(0)
+                    reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
+                    reloadRunnable = null
+                }
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (threeFingerTracking && ev.pointerCount >= 3) {
+                    val dx = ev.getX(0) - threeFingerStartX
+                    if (kotlin.math.abs(dx) >= 120f) {
+                        val current = tabs.indexOfFirst { it.id == activeTabId }
+                        val target = if (dx < 0) current + 1 else current - 1
+                        tabs.getOrNull(target)?.let { switchToTab(it.id) }
+                        threeFingerTracking = false
+                    }
+                }
             }
             android.view.MotionEvent.ACTION_POINTER_UP,
             android.view.MotionEvent.ACTION_UP,
             android.view.MotionEvent.ACTION_CANCEL -> {
+                if (ev.pointerCount <= 2) {
+                    threeFingerTracking = false
+                }
                 if (ev.pointerCount != 2) {
                     twoFingerHoldActive = false
                     reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
