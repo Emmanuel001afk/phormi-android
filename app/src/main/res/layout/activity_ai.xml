@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#0F172A"
@@ -19,62 +18,87 @@
             android:textColor="#FFFFFF"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginBottom="8dp" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/api_keys_label"
+            android:text="Add any AI by name. Keys stay on this phone. If one fails, the next saved AI is tried (fallback)."
             android:textColor="#94A3B8"
-            android:textSize="14sp"
+            android:textSize="12sp"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/key_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:background="#1E293B"
+            android:padding="10dp"
+            android:layout_marginBottom="12dp" />
+
+        <EditText
+            android:id="@+id/input_provider_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="AI name (e.g. My Groq, Work OpenAI)"
+            android:inputType="text"
+            android:textColorHint="#64748B"
+            android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp" />
 
         <EditText
-            android:id="@+id/input_key_groq"
+            android:id="@+id/input_api_key"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Groq API key"
+            android:hint="API key"
             android:inputType="textPassword"
             android:textColorHint="#64748B"
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp" />
 
         <EditText
-            android:id="@+id/input_key_deepseek"
+            android:id="@+id/input_endpoint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="DeepSeek API key"
-            android:inputType="textPassword"
+            android:hint="Endpoint URL (optional — auto if common name)"
+            android:inputType="textUri"
             android:textColorHint="#64748B"
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp" />
 
         <EditText
-            android:id="@+id/input_key_openai"
+            android:id="@+id/input_model"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="OpenAI API key"
-            android:inputType="textPassword"
+            android:hint="Model (e.g. llama-3.3-70b-versatile)"
+            android:inputType="text"
             android:textColorHint="#64748B"
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp" />
 
-        <EditText
-            android:id="@+id/input_key_gemini"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Gemini API key"
-            android:inputType="textPassword"
-            android:textColorHint="#64748B"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="8dp" />
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
 
-        <Button
-            android:id="@+id/btn_save_keys"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/save_keys"
-            android:layout_marginBottom="24dp" />
+            <Button
+                android:id="@+id/btn_save_keys"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Save AI" />
+
+            <Button
+                android:id="@+id/btn_templates"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Templates" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -120,6 +144,5 @@
             android:padding="12dp"
             android:fontFamily="monospace"
             android:textSize="12sp" />
-
     </LinearLayout>
 </ScrollView>
