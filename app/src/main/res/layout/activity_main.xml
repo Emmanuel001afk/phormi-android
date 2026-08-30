@@ -1,35 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:id="@+id/main_root"
     android:orientation="vertical"
     android:background="#0B1220">
 
+    <!-- Compact browser chrome: primary controls share one horizontal layer. -->
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="50dp"
         android:gravity="center_vertical"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
         android:background="#0F172A">
 
         <TextView
             android:id="@+id/btn_home"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:gravity="center"
             android:text="⌂"
             android:textColor="#E2E8F0"
-            android:textSize="26sp"
+            android:textSize="24sp"
             android:contentDescription="Home" />
 
         <TextView
             android:id="@+id/btn_new_tab"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:gravity="center"
             android:text="+"
             android:textColor="#38BDF8"
@@ -38,18 +39,19 @@
 
         <TextView
             android:id="@+id/btn_tabs_overview"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:gravity="center"
             android:text="▦"
             android:textColor="#F8FAFC"
-            android:textSize="21sp"
+            android:textSize="20sp"
             android:contentDescription="Tabs overview" />
 
         <TextView
             android:id="@+id/tab_count"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="0"
             android:textColor="#38BDF8"
@@ -64,21 +66,23 @@
 
         <TextView
             android:id="@+id/btn_menu"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:gravity="center"
             android:text="⋮"
             android:textColor="#E2E8F0"
-            android:textSize="28sp"
+            android:textSize="27sp"
             android:contentDescription="Menu" />
     </LinearLayout>
 
+    <!-- Open tabs remain a single compact horizontal strip. -->
     <HorizontalScrollView
         android:id="@+id/tab_strip"
         android:layout_width="match_parent"
-        android:layout_height="42dp"
+        android:layout_height="36dp"
         android:fillViewport="false"
         android:scrollbars="none"
+        android:overScrollMode="never"
         android:background="#0B1220">
 
         <LinearLayout
@@ -87,34 +91,36 @@
             android:layout_height="match_parent"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp" />
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
     </HorizontalScrollView>
 
+    <!-- Address/search field appears only when a real web page is active. -->
     <LinearLayout
         android:id="@+id/url_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
+        android:layout_height="44dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:background="#111827">
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:background="#111827"
+        android:visibility="gone">
 
         <TextView
             android:layout_width="28dp"
-            android:layout_height="36dp"
+            android:layout_height="34dp"
             android:gravity="center"
             android:text="⌕"
             android:textColor="#94A3B8"
-            android:textSize="22sp" />
+            android:textSize="21sp" />
 
         <EditText
             android:id="@+id/url_bar"
             android:layout_width="0dp"
-            android:layout_height="36dp"
+            android:layout_height="34dp"
             android:layout_weight="1"
-            android:hint="@string/url_hint"
+            android:hint="Search or enter web address"
             android:textColorHint="#94A3B8"
             android:textColor="#F1F5F9"
             android:textSize="14sp"
@@ -127,48 +133,12 @@
 
         <TextView
             android:id="@+id/btn_go"
-            android:layout_width="48dp"
-            android:layout_height="36dp"
+            android:layout_width="40dp"
+            android:layout_height="34dp"
             android:gravity="center"
             android:text="→"
             android:textColor="#38BDF8"
             android:textSize="20sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/utility_toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:background="#0F172A">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/keep_screen_on"
-            android:textColor="#E2E8F0"
-            android:textSize="13sp" />
-
-        <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/switch_keep_screen_on"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp" />
-
-        <TextView
-            android:id="@+id/btn_open_downloads"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:gravity="center"
-            android:text="@string/open_downloads"
-            android:textColor="#38BDF8"
-            android:textSize="13sp" />
     </LinearLayout>
 
     <androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -189,21 +159,20 @@
 
         <include layout="@layout/activity_start_page" />
 
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_ai"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="24dp"
-            android:contentDescription="@string/ask_ai"
-            android:src="@android:drawable/ic_menu_send"
-            app:backgroundTint="#38BDF8" />
+        <!-- Full-screen security overlay is only inserted when Browser Lock is active. -->
+        <FrameLayout
+            android:id="@+id/browser_lock_overlay_host"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clickable="true"
+            android:focusable="true" />
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
+    <!-- Minimal navigation row. AI and Downloads remain directly reachable here. -->
     <LinearLayout
         android:id="@+id/bottom_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="54dp"
         android:gravity="center"
         android:orientation="horizontal"
         android:background="#0F172A">
@@ -211,43 +180,53 @@
         <TextView
             android:id="@+id/btn_back"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="42dp"
             android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="‹"
             android:textColor="#CBD5E1"
-            android:textSize="34sp" />
+            android:textSize="31sp"
+            android:background="@drawable/bg_nav_circle" />
 
         <TextView
             android:id="@+id/btn_forward"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="42dp"
             android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="›"
             android:textColor="#CBD5E1"
-            android:textSize="34sp" />
+            android:textSize="31sp"
+            android:background="@drawable/bg_nav_circle" />
 
         <TextView
             android:id="@+id/btn_bottom_ai"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="42dp"
             android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="✦"
             android:textColor="#38BDF8"
-            android:textSize="25sp"
+            android:textSize="23sp"
             android:onClick="openAiFromBottom" />
 
         <TextView
             android:id="@+id/btn_bottom_downloads"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="42dp"
             android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="6dp"
             android:gravity="center"
             android:text="↓"
             android:textColor="#CBD5E1"
-            android:textSize="26sp"
+            android:textSize="25sp"
             android:onClick="openDownloadsFromBottom" />
     </LinearLayout>
 </LinearLayout>
