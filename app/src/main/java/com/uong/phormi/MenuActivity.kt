@@ -14,6 +14,7 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_BROWSER_LOCK = "browser_lock"
         const val ACTION_THEME = "theme"
         const val ACTION_SETTINGS = "settings"
+        const val ACTION_KEEP_SCREEN_ON = "keep_screen_on"
         const val ACTION_BOOKMARKS = "bookmarks"
         const val ACTION_HISTORY = "history"
         const val ACTION_ACCOUNTS = "accounts"
@@ -57,6 +58,10 @@ class MenuActivity : AppCompatActivity() {
         }
         wire(R.id.menu_theme) {
             setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_THEME))
+            finish()
+        }
+        wire(R.id.menu_keep_screen_on) {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_KEEP_SCREEN_ON))
             finish()
         }
         // Settings row → general accounts & sign-in (Google, Microsoft, Apple, …)
