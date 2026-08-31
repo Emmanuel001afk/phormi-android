@@ -10,7 +10,7 @@
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="36dp"
+        android:layout_height="26dp"
         android:gravity="center_vertical"
         android:paddingStart="2dp"
         android:paddingEnd="2dp"
@@ -18,8 +18,8 @@
 
         <TextView
             android:id="@+id/btn_home"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:gravity="center"
             android:text="⌂"
             android:textColor="#E2E8F0"
@@ -31,7 +31,7 @@
         <LinearLayout
             android:id="@+id/url_toolbar"
             android:layout_width="0dp"
-            android:layout_height="32dp"
+            android:layout_height="24dp"
             android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center_vertical"
@@ -41,7 +41,7 @@
 
             <TextView
                 android:layout_width="20dp"
-                android:layout_height="28dp"
+                android:layout_height="24dp"
                 android:gravity="center"
                 android:text="⌕"
                 android:textColor="#94A3B8"
@@ -50,7 +50,7 @@
             <EditText
                 android:id="@+id/url_bar"
                 android:layout_width="0dp"
-                android:layout_height="28dp"
+                android:layout_height="24dp"
                 android:layout_weight="1"
                 android:hint="Search or type a URL"
                 android:textColorHint="#94A3B8"
@@ -65,8 +65,8 @@
 
             <TextView
                 android:id="@+id/btn_go"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:gravity="center"
                 android:text="→"
                 android:textColor="#38BDF8"
@@ -77,8 +77,8 @@
 
         <HorizontalScrollView
             android:id="@+id/tab_strip"
-            android:layout_width="160dp"
-            android:layout_height="32dp"
+            android:layout_width="150dp"
+            android:layout_height="26dp"
             android:layout_marginStart="2dp"
             android:visibility="gone"
             android:fillViewport="false"
@@ -98,8 +98,8 @@
 
         <TextView
             android:id="@+id/tab_count"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="0"
@@ -113,8 +113,8 @@
 
         <TextView
             android:id="@+id/btn_new_tab"
-            android:layout_width="30dp"
-            android:layout_height="30dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:gravity="center"
             android:text="+"
             android:textColor="#38BDF8"
@@ -125,8 +125,8 @@
 
         <TextView
             android:id="@+id/btn_menu"
-            android:layout_width="30dp"
-            android:layout_height="30dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:gravity="center"
             android:text="⋮"
             android:textColor="#E2E8F0"
@@ -158,14 +158,15 @@
             android:id="@+id/browser_lock_overlay_host"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clickable="true"
-            android:focusable="true" />
+            android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false" />
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
     <LinearLayout
         android:id="@+id/bottom_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="36dp"
+        android:layout_height="26dp"
         android:gravity="center"
         android:orientation="horizontal"
         android:background="#0F172A">
@@ -173,7 +174,7 @@
         <TextView
             android:id="@+id/btn_back"
             android:layout_width="0dp"
-            android:layout_height="30dp"
+            android:layout_height="26dp"
             android:layout_weight="1"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="4dp"
@@ -189,7 +190,7 @@
         <TextView
             android:id="@+id/btn_forward"
             android:layout_width="0dp"
-            android:layout_height="30dp"
+            android:layout_height="26dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
@@ -205,7 +206,7 @@
         <TextView
             android:id="@+id/btn_bottom_ai"
             android:layout_width="0dp"
-            android:layout_height="30dp"
+            android:layout_height="26dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
@@ -221,7 +222,7 @@
         <TextView
             android:id="@+id/btn_bottom_downloads"
             android:layout_width="0dp"
-            android:layout_height="30dp"
+            android:layout_height="26dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="10dp"
