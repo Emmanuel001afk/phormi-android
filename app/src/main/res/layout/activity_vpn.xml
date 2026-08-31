@@ -108,7 +108,8 @@
         android:textSize="13sp"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
-        android:isSingleLine="true"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:inputType="text" />
 
     <TextView
