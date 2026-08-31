@@ -59,7 +59,7 @@
         android:textSize="13sp"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
-        android:isSingleLine="true"
+        android:singleLine="true"
         android:inputType="text" />
 
     <TextView
