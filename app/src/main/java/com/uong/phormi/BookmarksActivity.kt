@@ -32,11 +32,14 @@ class BookmarksActivity : AppCompatActivity() {
         fun add(context: android.content.Context, title: String, url: String) {
             if (url.isBlank() || url == "about:blank") return
             val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
-            // Avoid exact duplicates
+            val arr = runCatching {
+                JSONArray(prefs.getString(KEY, "[]"))
+            }.getOrElse { JSONArray() }
+
             for (i in 0 until arr.length()) {
                 if (arr.optJSONObject(i)?.optString("url") == url) return
             }
+
             arr.put(
                 JSONObject()
                     .put("title", title.ifBlank { url })
@@ -44,6 +47,30 @@ class BookmarksActivity : AppCompatActivity() {
                     .put("addedAt", System.currentTimeMillis())
             )
             prefs.edit().putString(KEY, arr.toString()).apply()
+        }
+
+        /**
+         * Returns bookmarks newest-first for quick-access surfaces.
+         * This is intentionally read-only and does not alter the stored list.
+         */
+        fun getAll(context: android.content.Context): List<Bookmark> {
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val arr = runCatching {
+                JSONArray(prefs.getString(KEY, "[]"))
+            }.getOrElse { JSONArray() }
+
+            val out = mutableListOf<Bookmark>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val url = o.optString("url", "").trim()
+                if (url.isBlank()) continue
+                out += Bookmark(
+                    title = o.optString("title", url).ifBlank { url },
+                    url = url,
+                    addedAt = o.optLong("addedAt", 0L)
+                )
+            }
+            return out.sortedByDescending { it.addedAt }
         }
     }
 
@@ -60,8 +87,17 @@ class BookmarksActivity : AppCompatActivity() {
             override fun getCount() = filtered().size
             override fun getItem(position: Int) = filtered()[position]
             override fun getItemId(position: Int) = position.toLong()
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                val v = convertView ?: layoutInflater.inflate(R.layout.item_bookmark, parent, false)
+
+            override fun getView(
+                position: Int,
+                convertView: View?,
+                parent: ViewGroup?
+            ): View {
+                val v = convertView ?: layoutInflater.inflate(
+                    R.layout.item_bookmark,
+                    parent,
+                    false
+                )
                 val b = filtered()[position]
                 v.findViewById<TextView>(R.id.bookmark_title).text = b.title
                 v.findViewById<TextView>(R.id.bookmark_url).text = b.url
@@ -76,14 +112,27 @@ class BookmarksActivity : AppCompatActivity() {
                 return v
             }
         }
+
         findViewById<ListView>(R.id.bookmarks_list).adapter = adapter
 
         search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            override fun beforeTextChanged(
+                s: CharSequence?,
+                start: Int,
+                count: Int,
+                after: Int
+            ) = Unit
+
+            override fun onTextChanged(
+                s: CharSequence?,
+                start: Int,
+                before: Int,
+                count: Int
+            ) {
                 adapter.notifyDataSetChanged()
                 empty.visibility = if (filtered().isEmpty()) View.VISIBLE else View.GONE
             }
+
             override fun afterTextChanged(s: android.text.Editable?) = Unit
         })
 
@@ -105,19 +154,7 @@ class BookmarksActivity : AppCompatActivity() {
 
     private fun load() {
         items.clear()
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            items.add(
-                Bookmark(
-                    title = o.optString("title", "Bookmark"),
-                    url = o.optString("url", ""),
-                    addedAt = o.optLong("addedAt", 0L)
-                )
-            )
-        }
-        items.reverse() // newest first
+        items.addAll(getAll(this))
         empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         adapter.notifyDataSetChanged()
     }
@@ -132,7 +169,10 @@ class BookmarksActivity : AppCompatActivity() {
                     .put("addedAt", b.addedAt)
             )
         }
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY, arr.toString()).apply()
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putString(KEY, arr.toString())
+            .apply()
     }
 
     private fun promptAdd() {
@@ -142,14 +182,23 @@ class BookmarksActivity : AppCompatActivity() {
             setHintTextColor(0xFF64748B.toInt())
             setSingleLine()
         }
+
         AlertDialog.Builder(this)
             .setTitle("Add bookmark")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val url = input.text.toString().trim()
                 if (url.isBlank()) return@setPositiveButton
-                val normalized = if (url.startsWith("http")) url else "https://$url"
-                items.add(0, Bookmark(title = normalized, url = normalized, addedAt = System.currentTimeMillis()))
+                val normalized =
+                    if (url.startsWith("http")) url else "https://$url"
+                items.add(
+                    0,
+                    Bookmark(
+                        title = normalized,
+                        url = normalized,
+                        addedAt = System.currentTimeMillis()
+                    )
+                )
                 persist()
                 adapter.notifyDataSetChanged()
                 empty.visibility = View.GONE
@@ -164,7 +213,9 @@ class BookmarksActivity : AppCompatActivity() {
             .setTitle("Remove bookmark?")
             .setMessage(b.url)
             .setPositiveButton("Remove") { _, _ ->
-                items.removeAll { it.url == b.url && it.addedAt == b.addedAt }
+                items.removeAll {
+                    it.url == b.url && it.addedAt == b.addedAt
+                }
                 persist()
                 adapter.notifyDataSetChanged()
                 empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
