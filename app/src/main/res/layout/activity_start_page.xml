@@ -5,215 +5,55 @@
     android:layout_height="match_parent"
     android:background="#0B1220">
 
-    <ImageView
-        android:id="@+id/start_page_wallpaper_image"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_gravity="center"
-        android:scaleType="centerCrop"
-        android:visibility="gone"
-        android:contentDescription="Start page wallpaper" />
+    <ImageView android:id="@+id/start_page_wallpaper_image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:visibility="gone" android:contentDescription="Start page wallpaper" />
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp"
-        android:paddingTop="30dp"
-        android:paddingBottom="20dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingTop="10dp" android:paddingBottom="8dp">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+            <ImageView android:id="@+id/start_page_logo" android:layout_width="30dp" android:layout_height="30dp" android:src="@drawable/ic_phormi_logo" android:contentDescription="Phormi logo" />
+            <TextView android:id="@+id/start_page_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="Phormi" android:textColor="#F8FAFC" android:textSize="22sp" android:textStyle="bold" />
+        </LinearLayout>
+        <TextView android:id="@+id/start_page_subtitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="BAS · Browse • Ask • Search" android:textColor="#94A3B8" android:textSize="11sp" />
 
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        <LinearLayout android:id="@+id/start_page_search_box" android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginTop="9dp" android:gravity="center_vertical" android:paddingStart="10dp" android:paddingEnd="4dp" android:background="@drawable/bg_start_search">
+            <TextView android:id="@+id/start_page_engine" android:layout_width="wrap_content" android:layout_height="34dp" android:gravity="center" android:paddingStart="2dp" android:paddingEnd="6dp" android:text="Phormi Search  ▾" android:textColor="#CBD5E1" android:textSize="10sp" />
+            <EditText android:id="@+id/start_page_search" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:hint="Search or type a URL" android:textColor="#F8FAFC" android:textColorHint="#94A3B8" android:textSize="13sp" android:singleLine="true" android:imeOptions="actionGo" android:inputType="textUri" android:background="@android:color/transparent" />
+            <TextView android:id="@+id/start_page_go" android:layout_width="36dp" android:layout_height="36dp" android:gravity="center" android:clickable="true" android:focusable="true" android:contentDescription="Search or open" android:text="→" android:textColor="#38BDF8" android:textSize="18sp" />
+        </LinearLayout>
 
-        <ImageView
-            android:id="@+id/start_page_logo"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:src="@drawable/ic_phormi_logo"
-            android:contentDescription="Phormi logo" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:layout_marginTop="9dp" android:gravity="center_vertical">
+            <TextView android:id="@+id/start_page_quick_access" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Quick access" android:textColor="#CBD5E1" android:textSize="13sp" android:textStyle="bold" />
+            <TextView android:id="@+id/start_page_news" android:layout_width="wrap_content" android:layout_height="28dp" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="News · On" android:textColor="#38BDF8" android:textSize="10sp" android:background="@drawable/bg_start_action" android:clickable="true" android:focusable="true" />
+            <TextView android:id="@+id/start_page_ai" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginStart="6dp" android:gravity="center" android:drawableTop="@drawable/ic_phormi_logo" android:contentDescription="Phormi AI mode" android:clickable="true" android:focusable="true" android:background="@drawable/bg_start_action" android:padding="5dp" />
+        </LinearLayout>
 
-        <TextView
-            android:id="@+id/start_page_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:text="Phormi"
-            android:textColor="#F8FAFC"
-            android:textSize="32sp"
-            android:textStyle="bold" />
+        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:scrollbars="none" android:overScrollMode="never">
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+                <TextView android:id="@+id/shortcut_google" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginEnd="3dp" android:gravity="center" android:text="Google" android:textColor="#E2E8F0" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <TextView android:id="@+id/shortcut_bing" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" android:gravity="center" android:text="Bing" android:textColor="#E2E8F0" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <TextView android:id="@+id/shortcut_youtube" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" android:gravity="center" android:text="YouTube" android:textColor="#E2E8F0" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <TextView android:id="@+id/shortcut_facebook" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" android:gravity="center" android:text="Facebook" android:textColor="#E2E8F0" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <TextView android:id="@+id/shortcut_instagram" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" android:gravity="center" android:text="Instagram" android:textColor="#E2E8F0" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <TextView android:id="@+id/shortcut_github" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginStart="3dp" android:layout_marginEnd="3dp" android:gravity="center" android:text="GitHub" android:textColor="#E2E8F0" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <TextView android:id="@+id/shortcut_add" android:layout_width="44dp" android:layout_height="44dp" android:layout_marginStart="3dp" android:gravity="center" android:text="+\nAdd" android:textColor="#38BDF8" android:textSize="9sp" android:background="@drawable/bg_shortcut" />
+                <LinearLayout android:id="@+id/personal_shortcuts_container" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" />
+                <LinearLayout android:id="@+id/custom_shortcuts_container" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" />
+            </LinearLayout>
+        </HorizontalScrollView>
+        <HorizontalScrollView
+            android:id="@+id/start_page_news_row"
+            android:layout_width="match_parent"
+            android:layout_height="82dp"
+            android:layout_marginTop="5dp"
+            android:scrollbars="none"
+            android:overScrollMode="never">
+            <LinearLayout
+                android:id="@+id/start_page_news_container"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+        <Space android:layout_width="match_parent" android:layout_height="4dp" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Favorites and most-visited sites appear here automatically." android:textColor="#64748B" android:textSize="10sp" android:gravity="center" />
     </LinearLayout>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:id="@+id/start_page_subtitle"
-        android:text="Browse. Ask. Act."
-        android:textColor="#94A3B8"
-        android:textSize="15sp" />
-
-    <LinearLayout
-        android:id="@+id/start_page_search_box"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="28dp"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="8dp"
-        android:background="@drawable/bg_start_search">
-
-        <TextView
-            android:id="@+id/start_page_engine"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:paddingStart="4dp"
-            android:paddingEnd="8dp"
-            android:text="Phormi Search  ▾"
-            android:textColor="#CBD5E1"
-            android:textSize="12sp" />
-
-        <EditText
-            android:id="@+id/start_page_search"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:hint="Search or type a URL"
-            android:textColor="#F8FAFC"
-            android:textColorHint="#94A3B8"
-            android:textSize="15sp"
-            android:singleLine="true"
-            android:imeOptions="actionGo"
-            android:inputType="textUri"
-            android:background="@android:color/transparent" />
-
-        <TextView
-            android:id="@+id/start_page_go"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:gravity="center"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Search or open"
-            android:text="→"
-            android:textColor="#38BDF8"
-            android:textSize="22sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_marginTop="18dp"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/start_page_ai"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:gravity="center"
-            android:text="✦  AI Mode"
-            android:textColor="#F8FAFC"
-            android:textSize="14sp"
-            android:background="@drawable/bg_start_action" />
-
-        <TextView
-            android:id="@+id/start_page_tabs"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:gravity="center"
-            android:text="▦  Tabs"
-            android:textColor="#F8FAFC"
-            android:textSize="14sp"
-            android:background="@drawable/bg_start_action" />
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="30dp"
-        android:id="@+id/start_page_quick_access"
-        android:text="Quick access"
-        android:textColor="#CBD5E1"
-        android:textSize="16sp"
-        android:textStyle="bold" />
-
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:scrollbars="none"
-        android:overScrollMode="never">
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <TextView android:id="@+id/shortcut_google" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginEnd="6dp" android:gravity="center" android:text="G\nGoogle" android:textColor="#E2E8F0" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-        <TextView android:id="@+id/shortcut_bing" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:gravity="center" android:text="B\nBing" android:textColor="#E2E8F0" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-        <TextView android:id="@+id/shortcut_youtube" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:gravity="center" android:text="YT\nYouTube" android:textColor="#E2E8F0" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-        <TextView android:id="@+id/shortcut_facebook" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:gravity="center" android:text="f\nFacebook" android:textColor="#E2E8F0" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-        <TextView android:id="@+id/shortcut_instagram" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:gravity="center" android:text="◎\nInstagram" android:textColor="#E2E8F0" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-        <TextView android:id="@+id/shortcut_github" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:gravity="center" android:text="GH\nGitHub" android:textColor="#E2E8F0" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-        <TextView android:id="@+id/shortcut_add" android:layout_width="82dp" android:layout_height="84dp" android:layout_marginStart="6dp" android:gravity="center" android:text="+\nAdd" android:textColor="#38BDF8" android:textSize="13sp" android:background="@drawable/bg_shortcut" />
-    <LinearLayout
-        android:id="@+id/custom_shortcuts_container"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal" />
-    </LinearLayout>
-    </HorizontalScrollView>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginTop="18dp"
-        android:gravity="center"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/start_page_browser_lock"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="🔓 Browser Lock: Off"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/start_page_theme"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="Theme"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/start_page_wallpaper"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="Wallpaper"
-            android:textSize="13sp" />
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="30dp"
-        android:text="Your new tab is private to Phormi until you choose a site."
-        android:textColor="#64748B"
-        android:textSize="12sp"
-        android:gravity="center" />
-</LinearLayout>
 </FrameLayout>
