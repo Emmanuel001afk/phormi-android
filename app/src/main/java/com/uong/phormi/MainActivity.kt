@@ -202,22 +202,7 @@ class MainActivity : AppCompatActivity() {
         val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
-        val keepOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
-        switchKeepScreenOn.isChecked = keepOn
-        applyKeepScreenOn(keepOn)
-        switchKeepScreenOn.setOnCheckedChangeListener { _, isChecked ->
-            applyKeepScreenOn(isChecked)
-            prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, isChecked).apply()
-        }
 
-        // Downloads = in-app list; long-press = Menu
-        findViewById<TextView>(R.id.btn_open_downloads).setOnClickListener {
-            startActivity(Intent(this, DownloadsActivity::class.java))
-        }
-        findViewById<TextView>(R.id.btn_open_downloads).setOnLongClickListener {
-            startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
-            true
-        }
 
         findViewById<TextView>(R.id.btn_menu).setOnClickListener {
             startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
@@ -465,11 +450,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.top_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
-        findViewById<View>(R.id.utility_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads,
-            R.id.btn_open_downloads).forEach { id ->
+            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
@@ -1195,7 +1178,6 @@ class MainActivity : AppCompatActivity() {
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
-        tab.
         if (tab.isGhost) {
             try {
                 tab.webView.clearCache(true)
@@ -1204,7 +1186,7 @@ class MainActivity : AppCompatActivity() {
                 CookieManager.getInstance().removeSessionCookies(null)
             } catch (_: Exception) { }
         }
-        webView.destroy()
+        tab.webView.destroy()
         tabs.removeAt(index)
 
         if (tabs.isEmpty()) {
