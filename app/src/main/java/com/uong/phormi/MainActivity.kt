@@ -10,6 +10,8 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -30,19 +32,24 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.Button
 import android.os.Looper
 import android.text.Html
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import org.json.JSONArray
 import org.json.JSONObject
+import org.xmlpull.v1.XmlPullParser
 import java.net.URLEncoder
 import java.net.HttpURLConnection
 import java.net.URL
@@ -58,7 +65,8 @@ class MainActivity : AppCompatActivity() {
         val webView: WebView,
         var title: String,
         val chipView: View,
-        val isGhost: Boolean = false
+        val isGhost: Boolean = false,
+        var lastUsed: Long = System.currentTimeMillis()
     )
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -97,6 +105,14 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_TAB_URLS = "tab_urls"
         private const val KEY_TAB_TITLES = "tab_titles"
         private const val KEY_ACTIVE_INDEX = "active_index"
+        private const val KEY_TAB_LAST_USED = "tab_last_used"
+        private const val KEY_TAB_RETENTION = "tab_retention"
+        private const val RETENTION_NEVER = "never"
+        private const val RETENTION_1_MONTH = "1_month"
+        private const val RETENTION_3_MONTHS = "3_months"
+        private const val RETENTION_1_YEAR = "1_year"
+        private const val KEY_NEWS_ENABLED = "news_enabled"
+        private const val KEY_NEWS_PREFS = "phormi_news_preferences"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_DAILY_ACCENT = "daily_accent"
@@ -113,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_OPEN = 1
         private const val MENU_COPY = 2
         private const val MENU_DOWNLOAD = 3
+        private const val REQ_NEWS = 1008
 
         private val STARTUP_PERMISSIONS = buildList {
             add(Manifest.permission.CAMERA)
@@ -143,6 +160,7 @@ class MainActivity : AppCompatActivity() {
     private var threeFingerStartX = 0f
     private var threeFingerTracking = false
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
+    private val aiController by lazy { AiController(applicationContext) }
     private val mainExecutor = java.util.concurrent.Executor { command -> Handler(Looper.getMainLooper()).post(command) }
     private val unifiedSearchGeneration = AtomicInteger(0)
     private val unifiedSearchLock = Any()
@@ -153,6 +171,9 @@ class MainActivity : AppCompatActivity() {
         if (::prefs.isInitialized) {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
+            pruneExpiredTabs()
+            updateHomeNewsVisibility()
+            refreshHomeNews()
         }
     }
 
@@ -160,7 +181,9 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         if (::prefs.isInitialized && browserLockManager.isEnabled(prefs) &&
             !browserUnlockedThisSession && !browserLockManager.isPromptInProgress()) {
-            authenticateBrowserLock()
+            if (browserLockManager.method(prefs) == BrowserLockManager.METHOD_PIN && browserLockManager.isPinConfigured(prefs)) {
+                showBrowserLockOverlay()
+            } else authenticateBrowserLock()
         }
     }
 
@@ -184,22 +207,21 @@ class MainActivity : AppCompatActivity() {
         startPageSearch = findViewById(R.id.start_page_search)
         tabCountView = findViewById(R.id.tab_count)
         browserLockManager = BrowserLockManager(this, mainExecutor)
+        findViewById<FrameLayout>(R.id.browser_lock_overlay_host)?.apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+        }
         updateResponsiveChrome()
 
-        val browserLockToggle = findViewById<TextView>(R.id.start_page_browser_lock)
-        browserLockToggle.setOnClickListener { toggleBrowserLock(browserLockToggle) }
-        updateBrowserLockLabel(browserLockToggle)
-
-        // Build 16: customizable start-page appearance (theme, daily accent, wallpaper).
-        findViewById<TextView>(R.id.start_page_theme).setOnClickListener { showAppearanceChooser() }
-        findViewById<TextView>(R.id.start_page_wallpaper).setOnClickListener { chooseWallpaper() }
+        // Appearance, wallpaper, and Browser Lock are menu features.
         applyStartPageAppearance()
         applyBrowserChromeAppearance()
 
         val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
-        applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
+
 
         findViewById<TextView>(R.id.btn_menu).setOnClickListener {
             startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
@@ -216,6 +238,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btn_forward).setOnClickListener {
             activeWebView()?.let { if (it.canGoForward()) it.goForward() }
         }
+        updateNavButtons()
 
         startPageSearch.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE ||
@@ -232,13 +255,14 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, AiActivity::class.java))
         }
 
-        findViewById<TextView>(R.id.start_page_tabs).setOnClickListener {
-            saveTabs()
-            startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
-        }
-
         findViewById<TextView>(R.id.start_page_engine).setOnClickListener {
             showSearchProviderChooser()
+        }
+        findViewById<TextView>(R.id.start_page_news)?.setOnClickListener {
+            val enabled = !prefs.getBoolean(KEY_NEWS_ENABLED, true)
+            prefs.edit().putBoolean(KEY_NEWS_ENABLED, enabled).apply()
+            updateHomeNewsVisibility()
+            if (enabled) refreshHomeNews()
         }
 
         findViewById<TextView>(R.id.shortcut_google).setOnClickListener {
@@ -269,7 +293,17 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.shortcut_instagram).contentDescription = "Open Instagram"
         findViewById<TextView>(R.id.shortcut_github).contentDescription = "Open GitHub"
         findViewById<TextView>(R.id.shortcut_add).contentDescription = "Add a website shortcut"
+        updateHomeNewsVisibility()
         loadCustomShortcuts()
+        listOf(
+            R.id.shortcut_google to "https://www.google.com",
+            R.id.shortcut_bing to "https://www.bing.com",
+            R.id.shortcut_youtube to "https://www.youtube.com",
+            R.id.shortcut_facebook to "https://www.facebook.com",
+            R.id.shortcut_instagram to "https://www.instagram.com",
+            R.id.shortcut_github to "https://github.com"
+        ).forEach { (id, url) -> loadFaviconInto(findViewById(id), url) }
+        loadPersonalQuickAccess()
 
         // + = new tab; tabs button = circular tab overview
         findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
@@ -308,12 +342,28 @@ class MainActivity : AppCompatActivity() {
         // behavior the app needs; each website still controls its own authentication.
         CookieManager.getInstance().flush()
 
-        val incomingUrl = intent?.dataString
-        if (!incomingUrl.isNullOrBlank()) {
+        val incomingUrl = intent?.dataString?.trim()
+        restoreTabs()
+        if (!incomingUrl.isNullOrBlank() && (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
             createNewTab(incomingUrl)
-        } else {
-            restoreTabs()
         }
+    }
+
+    private fun showTabRetentionChooser() {
+        val values = arrayOf(RETENTION_NEVER, RETENTION_1_MONTH, RETENTION_3_MONTHS, RETENTION_1_YEAR)
+        val labels = arrayOf("Never", "1 month", "3 months", "1 year")
+        val current = prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER
+        val checked = values.indexOf(current).coerceAtLeast(0)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Automatically close old tabs")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                prefs.edit().putString(KEY_TAB_RETENTION, values[which]).apply()
+                pruneExpiredTabs()
+                dialog.dismiss()
+                Toast.makeText(this, "Tab retention: ${labels[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .setMessage("This applies to inactive tabs only. Choose Never to keep tabs until you close them yourself.")
+            .show()
     }
 
     private fun showAppearanceChooser() {
@@ -398,9 +448,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.start_page_subtitle)?.setTextColor(secondary)
         findViewById<TextView>(R.id.start_page_quick_access)?.setTextColor(secondary)
         findViewById<TextView>(R.id.start_page_ai)?.setTextColor(primary)
-        findViewById<TextView>(R.id.start_page_tabs)?.setTextColor(primary)
-        findViewById<TextView>(R.id.start_page_theme)?.setTextColor(accent)
-        findViewById<TextView>(R.id.start_page_wallpaper)?.setTextColor(accent)
         findViewById<TextView>(R.id.start_page_engine)?.setTextColor(secondary)
         findViewById<EditText>(R.id.start_page_search)?.setTextColor(primary)
         findViewById<EditText>(R.id.start_page_search)?.setHintTextColor(secondary)
@@ -409,8 +456,7 @@ class MainActivity : AppCompatActivity() {
         val surfaceSoft = if (dark) Color.rgb(23, 32, 51) else Color.rgb(248, 244, 241)
         val outline = if (dark) Color.rgb(51, 65, 85) else Color.rgb(224, 214, 208)
         styleSurface(findViewById(R.id.start_page_search_box), surface, outline, 28)
-        styleSurface(findViewById(R.id.start_page_ai), surfaceSoft, outline, 26)
-        styleSurface(findViewById(R.id.start_page_tabs), surfaceSoft, outline, 26)
+        styleSurface(findViewById(R.id.start_page_ai), surfaceSoft, outline, 22)
         listOf(
             R.id.shortcut_google, R.id.shortcut_bing, R.id.shortcut_youtube,
             R.id.shortcut_facebook, R.id.shortcut_instagram, R.id.shortcut_github
@@ -449,8 +495,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads,
-            R.id.btn_bottom_downloads).forEach { id ->
+            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
@@ -497,6 +542,69 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private data class QuickSite(val name: String, val url: String, val tag: String)
+
+    private fun loadPersonalQuickAccess() {
+        val container = findViewById<LinearLayout>(R.id.personal_shortcuts_container) ?: return
+        container.removeAllViews()
+        val sites = mutableListOf<QuickSite>()
+        val bookmarks = BookmarksActivity.getAll(this).take(4)
+        sites += bookmarks.map { QuickSite(it.title, it.url, "★") }
+        val visited = HistoryActivity.getTopSites(this, 4)
+            .filter { b -> sites.none { it.url == b.url } }
+        sites += visited.map { QuickSite(it.title, it.url, "•") }
+        sites.take(8).forEach { site ->
+            val view = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(48.dp(), 48.dp()).apply {
+                    leftMargin = 4.dp(); rightMargin = 4.dp()
+                }
+                gravity = android.view.Gravity.CENTER
+                text = site.name.take(14)
+                setTextColor(Color.WHITE)
+                textSize = 9f
+                setBackgroundResource(R.drawable.bg_shortcut)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Open ${site.name}"
+                setOnClickListener { openShortcut(site.url) }
+            }
+            container.addView(view)
+            loadFaviconInto(view, site.url)
+        }
+    }
+
+    private fun loadFaviconInto(view: TextView, url: String) {
+        Thread {
+            try {
+                val host = URL(url).host
+                val candidates = listOf(
+                    "https://$host/favicon.ico",
+                    "https://www.google.com/s2/favicons?sz=64&domain_url=${URLEncoder.encode(url, "UTF-8")}"
+                )
+                var bitmap: Bitmap? = null
+                for (iconUrl in candidates) {
+                    try {
+                        val connection = (URL(iconUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 3500
+                            readTimeout = 3500
+                            useCaches = true
+                        }
+                        bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                        connection.disconnect()
+                        if (bitmap != null) break
+                    } catch (_: Exception) { }
+                }
+                if (bitmap != null) runOnUiThread {
+                    val drawable = BitmapDrawable(resources, bitmap)
+                    val size = 22.dp()
+                    drawable.setBounds(0, 0, size, size)
+                    view.setCompoundDrawables(null, drawable, null, null)
+                    view.compoundDrawablePadding = 2.dp()
+                }
+            } catch (_: Exception) { }
+        }.start()
+    }
+
     private fun showAddShortcutDialog() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -537,9 +645,9 @@ class MainActivity : AppCompatActivity() {
             val url = item.optString("url").trim()
             if (name.isBlank() || url.isBlank()) continue
             val view = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(82.dp(), 84.dp()).apply { leftMargin = 6.dp(); rightMargin = 6.dp() }
+                layoutParams = LinearLayout.LayoutParams(48.dp(), 48.dp()).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
                 gravity = android.view.Gravity.CENTER
-                text = "★\n$name"
+                text = name.take(14)
                 setTextColor(Color.WHITE)
                 textSize = 13f
                 setBackgroundResource(R.drawable.bg_shortcut)
@@ -552,6 +660,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             container.addView(view)
+            loadFaviconInto(view, url)
         }
     }
 
@@ -612,7 +721,9 @@ class MainActivity : AppCompatActivity() {
             unifiedSearchFutures.clear()
         }
         startPageContainer.visibility = View.GONE
+        startPageContainer.isClickable = false
         webView.visibility = View.VISIBLE
+        webView.isClickable = true
         urlBar.setText(query)
         hideKeyboard()
         urlBar.clearFocus()
@@ -651,15 +762,15 @@ class MainActivity : AppCompatActivity() {
                 val snapshot = synchronized(unifiedSearchLock) { all.toList() }
                 val successfulSnapshot = synchronized(unifiedSearchLock) { successfulEngines.toList() }
                 val finishedSnapshot = synchronized(unifiedSearchLock) { finishedEngines.toList() }
+                val mergedSnapshot = mergeUnifiedResults(snapshot)
                 runOnUiThread {
-                    // Ignore late responses belonging to a previous search.
                     if (generation != unifiedSearchGeneration.get()) return@runOnUiThread
                     if (activeWebView() === webView) {
                         webView.loadDataWithBaseURL(
                             "https://phormi.local/",
                             unifiedSearchHtml(
                                 query,
-                                mergeUnifiedResults(snapshot),
+                                mergedSnapshot,
                                 done < providers.size,
                                 done,
                                 providers.size,
@@ -670,6 +781,22 @@ class MainActivity : AppCompatActivity() {
                             "UTF-8",
                             null
                         )
+                    }
+                    if (done == providers.size && mergedSnapshot.isNotEmpty() && aiController.hasAnyKey()) {
+                        lifecycleScope.launch {
+                            val evidence = mergedSnapshot.take(12).joinToString("\n") {
+                                "${it.title}\n${it.url}\n${it.snippet}\nSources: ${it.source}"
+                            }
+                            val answer = aiController.synthesizeSearchAnswer(query, evidence)
+                            if (generation != unifiedSearchGeneration.get()) return@launch
+                            if (answer != null && activeWebView() === webView) {
+                                webView.loadDataWithBaseURL(
+                                    "https://phormi.local/",
+                                    unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer),
+                                    "text/html", "UTF-8", null
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -937,7 +1064,8 @@ class MainActivity : AppCompatActivity() {
         completed: Int,
         total: Int,
         successfulEngines: List<String> = emptyList(),
-        finishedEngines: List<String> = emptyList()
+        finishedEngines: List<String> = emptyList(),
+        aiAnswer: String? = null
     ): String {
         val q = Html.escapeHtml(query)
         val body = if (results.isEmpty() && loading) {
@@ -954,22 +1082,27 @@ class MainActivity : AppCompatActivity() {
                   <a class='title' href='$url'>$title</a>
                   <div class='url'>$url</div>
                   <div class='snippet'>$snippet</div>
-                  <div class='source'>${Html.escapeHtml(result.source)}</div>
+                  <button class='source-badge' aria-label='Search sources' onclick='toggleSources(this)'>${result.source.split(" · ").take(5).joinToString("") { it.firstOrNull()?.uppercase() ?: "?" }}</button>
+                  <span class='source-details'>${Html.escapeHtml(result.source)}</span>
                 </article>
                 """.trimIndent()
             }
         }
+        val aiSection = aiAnswer?.takeIf { it.isNotBlank() }?.let { answer ->
+            val escaped = Html.escapeHtml(answer)
+            "<section class='ai'><div class='ai-title'>AI synthesis</div><div>$escaped</div></section>"
+        }.orEmpty()
         return """
             <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
             <style>
             body{margin:0;background:#0b1220;color:#e5e7eb;font-family:sans-serif}
             .top{padding:18px 18px 12px;position:sticky;top:0;background:#0b1220;border-bottom:1px solid #263244}
             .brand{font-size:22px;font-weight:700}.query{margin-top:5px;color:#94a3b8;font-size:13px}.status{padding:28px 18px;color:#94a3b8}
-            .result{padding:17px 18px;border-bottom:1px solid #202b3c}.title{font-size:17px;color:#38bdf8;text-decoration:none;font-weight:600}.url{font-size:11px;color:#64748b;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.snippet{font-size:13px;line-height:1.45;margin-top:7px;color:#cbd5e1}.source{font-size:10px;color:#64748b;margin-top:8px}
-            .coverage{padding:10px 14px;color:#94a3b8;font-size:12px;border-bottom:1px solid #1e293b}.contributors{display:block;margin-top:5px;color:#64748b}.footer{padding:18px;color:#94a3b8;font-size:12px}.engine{display:inline-block;margin:4px 4px 0 0;padding:8px 10px;border:1px solid #334155;border-radius:14px;color:#cbd5e1;text-decoration:none}
+            .result{padding:17px 18px;border-bottom:1px solid #202b3c;position:relative}.title{font-size:17px;color:#38bdf8;text-decoration:none;font-weight:600}.url{font-size:11px;color:#64748b;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.snippet{font-size:13px;line-height:1.45;margin-top:7px;color:#cbd5e1}.source-badge{margin-top:8px;min-width:28px;height:24px;padding:0 7px;border:1px solid #334155;border-radius:12px;background:#111827;color:#94a3b8;font-size:9px;font-weight:700}.source-details{display:none;margin-left:7px;color:#64748b;font-size:10px;vertical-align:middle}.source-details.show{display:inline-block}
+            .coverage{padding:8px 14px;color:#94a3b8;font-size:11px;border-bottom:1px solid #1e293b}.ai{margin:10px 14px;padding:12px;border:1px solid #334155;border-radius:14px;background:#111827;color:#e2e8f0}.ai-title{color:#38bdf8;font-weight:700}.ai div{margin-top:8px;line-height:1.5;font-size:13px}.contributors{display:none;margin-top:5px;color:#64748b}.footer{padding:18px;color:#94a3b8;font-size:12px}.engine{display:inline-block;margin:4px 4px 0 0;padding:8px 10px;border:1px solid #334155;border-radius:14px;color:#cbd5e1;text-decoration:none}
             </style></head><body>
             <div class='top'><div class='brand'>Phormi Search</div><div class='query'>$q</div><div class='query'>${if (loading) "Collecting $completed/$total engines…" else "Unified results · $total engines"}</div></div>
-            <div class='coverage'>${if (loading) "Responded: ${finishedEngines.size}/$total · Contributing: ${successfulEngines.size}" else "${successfulEngines.size}/$total engines contributed results"}${if (successfulEngines.isNotEmpty()) "<br><span class='contributors'>${Html.escapeHtml(successfulEngines.sorted().joinToString(" · "))}</span>" else ""}</div>
+            <div class='coverage'>${if (loading) "${finishedEngines.size}/$total answered" else "${successfulEngines.size}/$total answered"}</div>
             $body
             <div class='footer'>
               Phormi queries all available independent search indexes together, merges matching pages, removes duplicates, and ranks results using the combined evidence from every engine that responds. No single engine is treated as a fallback or as the only authority.<br><br>
@@ -984,7 +1117,9 @@ class MainActivity : AppCompatActivity() {
               <a class='engine' href='https://www.qwant.com/?q=${URLEncoder.encode(query, "UTF-8")}&t=web'>Qwant</a>
               <a class='engine' href='https://yandex.com/search/?text=${URLEncoder.encode(query, "UTF-8")}'>Yandex</a>
               <a class='engine' href='https://swisscows.com/en/web?query=${URLEncoder.encode(query, "UTF-8")}'>Swisscows</a>
-            </div></body></html>
+            </div>
+            <script>function toggleSources(btn){var d=btn.nextElementSibling; if(d){d.classList.toggle('show');}}</script>
+            </body></html>
         """.trimIndent()
     }
 
@@ -1034,16 +1169,31 @@ class MainActivity : AppCompatActivity() {
         val url = activeWebView()?.url
         if (url.isNullOrBlank() || url == NEW_TAB_URL) {
             startPageContainer.visibility = View.VISIBLE
+            startPageContainer.isClickable = true
             activeWebView()?.visibility = View.GONE
         } else {
             startPageContainer.visibility = View.GONE
+            startPageContainer.isClickable = false
+            swipeRefresh.isEnabled = true
             activeWebView()?.visibility = View.VISIBLE
+            activeWebView()?.isClickable = true
         }
     }
 
     private fun updateTabCount() {
         tabCountView.text = tabs.size.toString()
     }
+
+    private fun updateNavButtons() {
+        val webView = activeWebView()
+        val back = findViewById<TextView>(R.id.btn_back) ?: return
+        val forward = findViewById<TextView>(R.id.btn_forward) ?: return
+        back.isEnabled = webView?.canGoBack() == true
+        forward.isEnabled = webView?.canGoForward() == true
+        back.alpha = if (back.isEnabled) 1f else 0.35f
+        forward.alpha = if (forward.isEnabled) 1f else 0.35f
+    }
+
 
     private fun navigateFromUrlBar() {
         val raw = urlBar.text?.toString()?.trim().orEmpty()
@@ -1063,7 +1213,10 @@ class MainActivity : AppCompatActivity() {
         val webView = activeWebView()
         if (webView != null) {
             startPageContainer.visibility = View.GONE
-                webView.visibility = View.VISIBLE
+            startPageContainer.isClickable = false
+            swipeRefresh.isEnabled = true
+            webView.visibility = View.VISIBLE
+            webView.isClickable = true
             webView.loadUrl(url)
         } else createNewTab(url)
         hideKeyboard()
@@ -1102,8 +1255,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        val url = intent?.dataString
-        if (!url.isNullOrBlank()) {
+        setIntent(intent)
+        val url = intent?.dataString?.trim()
+        if (!url.isNullOrBlank() && (url.startsWith("http://") || url.startsWith("https://"))) {
             createNewTab(url)
         }
     }
@@ -1125,13 +1279,17 @@ class MainActivity : AppCompatActivity() {
             )
         )
         configureWebView(webView)
+        webView.isClickable = true
+        webView.isFocusable = true
+        webView.isFocusableInTouchMode = true
+        webView.setBackgroundColor(Color.TRANSPARENT)
         registerForContextMenu(webView)
 
         val chip = LayoutInflater.from(this).inflate(R.layout.tab_chip, tabStripContainer, false)
         val chipTitle = chip.findViewById<TextView>(R.id.tab_chip_title)
         val chipClose = chip.findViewById<TextView>(R.id.tab_chip_close)
 
-        val tab = Tab(id, webView, getString(R.string.new_tab), chip, isGhost = isGhost)
+        val tab = Tab(id, webView, getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = System.currentTimeMillis())
         tabs.add(tab)
         tabStripContainer.addView(chip)
 
@@ -1153,6 +1311,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchToTab(id: Int) {
         activeTabId = id
+        tabs.find { it.id == id }?.lastUsed = System.currentTimeMillis()
         tabs.forEach { tab ->
             val isActive = tab.id == id
             tab.webView.visibility = if (isActive) View.VISIBLE else View.GONE
@@ -1160,6 +1319,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateStartPageVisibility()
         updateTabCount()
+        updateNavButtons()
         val current = tabs.find { it.id == id }?.webView?.url
         if (!current.isNullOrBlank() && current != "about:blank") {
             urlBar.setText(current)
@@ -1172,21 +1332,10 @@ class MainActivity : AppCompatActivity() {
     private fun closeTab(id: Int) {
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
-
         val tab = tabs[index]
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
-
-        if (tab.isGhost) {
-            try {
-                tab.webView.clearCache(true)
-                tab.webView.clearFormData()
-                tab.webView.clearHistory()
-                CookieManager.getInstance().removeSessionCookies(null)
-            } catch (_: Exception) { }
-        }
-
         tab.webView.destroy()
         tabs.removeAt(index)
 
@@ -1196,28 +1345,34 @@ class MainActivity : AppCompatActivity() {
         } else if (activeTabId == id) {
             switchToTab((tabs.getOrNull(index - 1) ?: tabs.first()).id)
         }
+        updateTabCount()
+        saveTabs()
     }
-
 
     private fun saveTabs() {
         val persistTabs = tabs.filterNot { it.isGhost }
         val urls = JSONArray()
         val titles = JSONArray()
+        val lastUsed = JSONArray()
         persistTabs.forEach { tab ->
             val u = tab.webView.url
             if (!u.isNullOrBlank()) {
                 urls.put(u)
                 titles.put(tab.title.ifBlank { "Tab" })
+                lastUsed.put(tab.lastUsed)
             }
         }
         if (urls.length() == 0) {
             urls.put(NEW_TAB_URL)
             titles.put(getString(R.string.new_tab))
+            lastUsed.put(System.currentTimeMillis())
         }
         val activeIndex = persistTabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
             .putString(KEY_TAB_TITLES, titles.toString())
+            .putString(KEY_TAB_LAST_USED, lastUsed.toString())
+            .putString(KEY_TAB_RETENTION, prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER)
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
             .apply()
     }
@@ -1237,11 +1392,15 @@ class MainActivity : AppCompatActivity() {
             val titles = runCatching {
                 JSONArray(prefs.getString(KEY_TAB_TITLES, "[]") ?: "[]")
             }.getOrElse { JSONArray() }
+            val lastUsed = runCatching {
+                JSONArray(prefs.getString(KEY_TAB_LAST_USED, "[]") ?: "[]")
+            }.getOrElse { JSONArray() }
             val count = arr.length()
             val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
                 val restoredUrl = arr.optString(i, NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
                 createNewTab(restoredUrl)
+                if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
                 if (restoredTitle.isNotBlank() && i < tabs.size) {
                     tabs[i].title = restoredTitle
@@ -1253,6 +1412,129 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {
             createNewTab(NEW_TAB_URL)
+        }
+    }
+
+
+    private fun retentionAgeMillis(): Long? = when (prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER)) {
+        RETENTION_1_MONTH -> 30L * 24 * 60 * 60 * 1000
+        RETENTION_3_MONTHS -> 90L * 24 * 60 * 60 * 1000
+        RETENTION_1_YEAR -> 365L * 24 * 60 * 60 * 1000
+        else -> null
+    }
+
+    private fun pruneExpiredTabs() {
+        val age = retentionAgeMillis() ?: return
+        val cutoff = System.currentTimeMillis() - age
+        val expired = tabs.filter { !it.isGhost && it.lastUsed < cutoff }.map { it.id }
+        expired.forEach { closeTab(it) }
+    }
+
+    private data class HomeStory(val title: String, val url: String, val source: String, val category: String)
+
+    private fun updateHomeNewsVisibility() {
+        val row = findViewById<View>(R.id.start_page_news_row) ?: return
+        val enabled = prefs.getBoolean(KEY_NEWS_ENABLED, true)
+        row.visibility = if (enabled) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.start_page_news)?.text = if (enabled) "News · On" else "News · Off"
+        findViewById<TextView>(R.id.start_page_news)?.contentDescription = if (enabled) "Turn news off" else "Turn news on"
+    }
+
+    private fun refreshHomeNews() {
+        if (!prefs.getBoolean(KEY_NEWS_ENABLED, true)) return
+        val container = findViewById<LinearLayout>(R.id.start_page_news_container) ?: return
+        Thread {
+            val country = Locale.getDefault().country.uppercase(Locale.US).ifBlank { "US" }
+            val localFeed = "https://news.google.com/rss?hl=en-$country&gl=$country&ceid=$country:en"
+            val feeds = listOf(
+                Triple(localFeed, "Local", "local"),
+                Triple("https://feeds.bbci.co.uk/news/world/rss.xml", "BBC World", "world"),
+                Triple("https://feeds.bbci.co.uk/news/africa/rss.xml", "BBC Africa", "africa"),
+                Triple("https://feeds.bbci.co.uk/news/technology/rss.xml", "BBC Technology", "technology"),
+                Triple("https://feeds.bbci.co.uk/news/business/rss.xml", "BBC Business", "business"),
+                Triple("https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", "BBC Arts", "culture"),
+                Triple("https://feeds.bbci.co.uk/sport/rss.xml", "BBC Sport", "sport")
+            )
+            val stories = mutableListOf<HomeStory>()
+            feeds.forEach { (feed, source, category) -> stories += fetchHomeFeed(feed, source, category) }
+            val weights = runCatching { JSONObject(prefs.getString(KEY_NEWS_PREFS, "{}") ?: "{}") }.getOrElse { JSONObject() }
+            val ranked = stories.distinctBy { canonicalUrl(it.url) }
+                .sortedByDescending {
+                    val preference = weights.optInt(it.category, 0)
+                    val scopeBonus = when (it.category) { "local" -> 80; "world", "africa" -> 50; else -> 0 }
+                    preference * 1000 + scopeBonus + (it.title.length.coerceAtMost(120))
+                }
+                .take(12)
+            runOnUiThread { renderHomeNews(container, ranked) }
+        }.start()
+    }
+
+    private fun fetchHomeFeed(feedUrl: String, source: String, category: String): List<HomeStory> {
+        return try {
+            val connection = URL(feedUrl).openConnection() as HttpURLConnection
+            connection.connectTimeout = 5000
+            connection.readTimeout = 7000
+            connection.setRequestProperty("User-Agent", "Phormi/1.0")
+            val parser = android.util.Xml.newPullParser()
+            val out = mutableListOf<HomeStory>()
+            connection.inputStream.use { stream ->
+                parser.setInput(stream, "UTF-8")
+                var event = parser.eventType
+                var title = ""
+                var link = ""
+                var inItem = false
+                while (event != XmlPullParser.END_DOCUMENT && out.size < 12) {
+                    when (event) {
+                        XmlPullParser.START_TAG -> when {
+                            parser.name.equals("item", true) || parser.name.equals("entry", true) -> inItem = true
+                            inItem && parser.name.equals("title", true) -> title = parser.nextText().trim()
+                            inItem && parser.name.equals("link", true) -> {
+                                val href = parser.getAttributeValue(null, "href")
+                                link = href?.takeIf { it.isNotBlank() } ?: parser.nextText().trim()
+                            }
+                        }
+                        XmlPullParser.END_TAG -> if (parser.name.equals("item", true) || parser.name.equals("entry", true)) {
+                            if (title.isNotBlank() && link.startsWith("http")) out += HomeStory(title, link, source, category)
+                            title = ""; link = ""; inItem = false
+                        }
+                    }
+                    event = parser.next()
+                }
+            }
+            connection.disconnect()
+            out
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun renderHomeNews(container: LinearLayout, stories: List<HomeStory>) {
+        container.removeAllViews()
+        stories.forEach { story ->
+            val card = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(210.dp(), 72.dp()).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
+                text = "${story.title}\n${story.source} · ${story.category}"
+                setTextColor(Color.rgb(226, 232, 240))
+                textSize = 11f
+                maxLines = 3
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setBackgroundResource(R.drawable.bg_shortcut)
+                setOnClickListener {
+                    val prefsJson = runCatching { JSONObject(prefs.getString(KEY_NEWS_PREFS, "{}") ?: "{}") }.getOrElse { JSONObject() }
+                    prefsJson.put(story.category, prefsJson.optInt(story.category, 0) + 1)
+                    prefs.edit().putString(KEY_NEWS_PREFS, prefsJson.toString()).apply()
+                    createNewTab(story.url)
+                }
+            }
+            container.addView(card)
+        }
+        if (stories.isEmpty()) {
+            container.addView(TextView(this).apply {
+                text = "News unavailable right now"
+                setTextColor(Color.rgb(100, 116, 139))
+                textSize = 9f
+                setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
+            })
         }
     }
 
@@ -1502,7 +1784,21 @@ class MainActivity : AppCompatActivity() {
 
         prefs.edit().putBoolean(KEY_BROWSER_LOCK, true).apply()
         updateBrowserLockLabel(view)
-        authenticateBrowserLock()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Browser Lock method")
+            .setItems(arrayOf("Device security / biometrics", "Create a Phormi PIN")) { _, which ->
+                if (which == 0) {
+                    prefs.edit().putString(BrowserLockManager.PREF_METHOD, BrowserLockManager.METHOD_DEVICE).apply()
+                    authenticateBrowserLock()
+                } else {
+                    promptCreatePin()
+                }
+            }
+            .setOnCancelListener {
+                prefs.edit().putBoolean(KEY_BROWSER_LOCK, false).apply()
+                updateBrowserLockLabel(view)
+            }
+            .show()
     }
 
     private fun authenticateBrowserLock() {
@@ -1521,6 +1817,10 @@ class MainActivity : AppCompatActivity() {
     private fun showBrowserLockOverlay() {
         if (browserLockOverlay != null || isFinishing) return
         val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
+        root.visibility = View.VISIBLE
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        root.isClickable = true
+        root.isFocusable = true
         val overlay = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
@@ -1541,7 +1841,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 12.dp(), 0, 24.dp())
         }
         val retry = TextView(this).apply {
-            text = "Unlock Phormi"
+            text = "Unlock with device security"
             gravity = android.view.Gravity.CENTER
             setTextColor(Color.WHITE)
             textSize = 16f
@@ -1549,20 +1849,75 @@ class MainActivity : AppCompatActivity() {
                 setColor(Color.rgb(56, 189, 248))
                 cornerRadius = 24.dp().toFloat()
             }
-            setPadding(28.dp(), 14.dp(), 28.dp(), 14.dp())
+            setPadding(24.dp(), 14.dp(), 24.dp(), 14.dp())
             setOnClickListener { authenticateBrowserLock() }
+        }
+        val pin = TextView(this).apply {
+            text = "Unlock with Phormi PIN"
+            gravity = android.view.Gravity.CENTER
+            setTextColor(Color.rgb(56, 189, 248))
+            textSize = 14f
+            setPadding(24.dp(), 18.dp(), 24.dp(), 10.dp())
+            setOnClickListener { promptPinUnlock() }
         }
         overlay.addView(title, LinearLayout.LayoutParams(-1, -2))
         overlay.addView(message, LinearLayout.LayoutParams(-1, -2))
         overlay.addView(retry, LinearLayout.LayoutParams(-2, -2))
+        overlay.addView(pin, LinearLayout.LayoutParams(-2, -2))
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         browserLockOverlay = overlay
+    }
+
+    private fun promptPinUnlock() {
+        if (!browserLockManager.isPinConfigured(prefs)) {
+            promptCreatePin()
+            return
+        }
+        val input = EditText(this).apply {
+            hint = "Phormi PIN"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Unlock Phormi")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Unlock") { _, _ ->
+                if (browserLockManager.verifyPin(prefs, input.text.toString())) {
+                    browserUnlockedThisSession = true
+                    removeBrowserLockOverlay()
+                } else Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+            }.show()
+    }
+
+    private fun promptCreatePin() {
+        val input = EditText(this).apply {
+            hint = "4+ digit PIN"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Create Phormi PIN")
+            .setMessage("This PIN is stored locally as a one-way hash. Device security remains available as the recovery method.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                if (browserLockManager.setPin(prefs, input.text.toString())) {
+                    browserUnlockedThisSession = true
+                    removeBrowserLockOverlay()
+                    Toast.makeText(this, "Phormi PIN enabled", Toast.LENGTH_SHORT).show()
+                } else Toast.makeText(this, "Use at least 4 digits", Toast.LENGTH_SHORT).show()
+            }.show()
     }
 
     private fun removeBrowserLockOverlay() {
         val root = findViewById<FrameLayout>(R.id.browser_lock_overlay_host) ?: return
         browserLockOverlay?.let { root.removeView(it) }
         browserLockOverlay = null
+        root.visibility = View.GONE
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        root.isClickable = false
+        root.isFocusable = false
     }
 
     private fun requestStartupPermissions() {
@@ -1605,6 +1960,8 @@ class MainActivity : AppCompatActivity() {
             setSupportMultipleWindows(true)
             loadWithOverviewMode = true
             useWideViewPort = true
+            setAllowFileAccess(false)
+            setAllowContentAccess(true)
             builtInZoomControls = true
             displayZoomControls = false
         }
@@ -1625,6 +1982,7 @@ class MainActivity : AppCompatActivity() {
                     if (!url.isNullOrBlank() && url != "about:blank") {
                         urlBar.setText(url)
                     }
+                    updateNavButtons()
                 }
                 saveTabs()
             }
@@ -1855,34 +2213,22 @@ class MainActivity : AppCompatActivity() {
                     showKeyboard()
                 }
                 MenuActivity.ACTION_GHOST -> {
-                    // Ghost mode: open a disposable tab; closing it does not keep history.
-                    prefs.edit().putBoolean("ghost_next_tab", true).apply()
-                    createNewTab(NEW_TAB_URL)
-                    Toast.makeText(this, "Ghost mode tab opened", Toast.LENGTH_SHORT).show()
+                    startActivity(Intent(this, GhostActivity::class.java))
                 }
                 MenuActivity.ACTION_BROWSER_LOCK -> {
-                    findViewById<TextView>(R.id.start_page_browser_lock)?.let { toggleBrowserLock(it) }
-                        ?: run {
-                            val enabled = prefs.getBoolean(KEY_BROWSER_LOCK, false)
-                            prefs.edit().putBoolean(KEY_BROWSER_LOCK, !enabled).apply()
-                            browserUnlockedThisSession = !enabled
-                            Toast.makeText(
-                                this,
-                                if (!enabled) "Browser Lock on" else "Browser Lock off",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            if (!enabled) authenticateBrowserLock()
-                        }
+                    val enabled = prefs.getBoolean(KEY_BROWSER_LOCK, false)
+                    prefs.edit().putBoolean(KEY_BROWSER_LOCK, !enabled).apply()
+                    browserUnlockedThisSession = !enabled
+                    Toast.makeText(
+                        this,
+                        if (!enabled) "Browser Lock on" else "Browser Lock off",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    if (!enabled) authenticateBrowserLock()
                 }
                 MenuActivity.ACTION_THEME -> showAppearanceChooser()
+                MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
-                MenuActivity.ACTION_KEEP_SCREEN_ON -> {
-                    val enabled = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
-                    val next = !enabled
-                    prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, next).apply()
-                    applyKeepScreenOn(next)
-                    Toast.makeText(this, if (next) "Keep screen on: On" else "Keep screen on: Off", Toast.LENGTH_SHORT).show()
-                }
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
                     if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
