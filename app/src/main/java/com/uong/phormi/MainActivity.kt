@@ -1172,11 +1172,12 @@ class MainActivity : AppCompatActivity() {
     private fun closeTab(id: Int) {
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
+
         val tab = tabs[index]
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
-        tab.
+
         if (tab.isGhost) {
             try {
                 tab.webView.clearCache(true)
@@ -1185,7 +1186,8 @@ class MainActivity : AppCompatActivity() {
                 CookieManager.getInstance().removeSessionCookies(null)
             } catch (_: Exception) { }
         }
-        webView.destroy()
+
+        tab.webView.destroy()
         tabs.removeAt(index)
 
         if (tabs.isEmpty()) {
@@ -1194,9 +1196,8 @@ class MainActivity : AppCompatActivity() {
         } else if (activeTabId == id) {
             switchToTab((tabs.getOrNull(index - 1) ?: tabs.first()).id)
         }
-        updateTabCount()
-        saveTabs()
     }
+
 
     private fun saveTabs() {
         val persistTabs = tabs.filterNot { it.isGhost }
