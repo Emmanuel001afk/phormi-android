@@ -38,7 +38,6 @@ import android.widget.Toast
 import android.os.Looper
 import android.text.Html
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -66,7 +65,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webViewContainer: FrameLayout
     private lateinit var tabStripContainer: LinearLayout
     private lateinit var prefs: SharedPreferences
-    private lateinit var switchKeepScreenOn: SwitchCompat
     private lateinit var urlBar: EditText
     private lateinit var startPageContainer: View
     private lateinit var startPageSearch: EditText
@@ -181,7 +179,6 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
-        switchKeepScreenOn = findViewById(R.id.switch_keep_screen_on)
         urlBar = findViewById(R.id.url_bar)
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
@@ -202,7 +199,7 @@ class MainActivity : AppCompatActivity() {
         val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
-
+        applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
 
         findViewById<TextView>(R.id.btn_menu).setOnClickListener {
             startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
@@ -452,7 +449,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
+            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads,
+            R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
@@ -1178,6 +1176,7 @@ class MainActivity : AppCompatActivity() {
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
+        tab.
         if (tab.isGhost) {
             try {
                 tab.webView.clearCache(true)
@@ -1186,7 +1185,7 @@ class MainActivity : AppCompatActivity() {
                 CookieManager.getInstance().removeSessionCookies(null)
             } catch (_: Exception) { }
         }
-        tab.webView.destroy()
+        webView.destroy()
         tabs.removeAt(index)
 
         if (tabs.isEmpty()) {
@@ -1876,6 +1875,13 @@ class MainActivity : AppCompatActivity() {
                 }
                 MenuActivity.ACTION_THEME -> showAppearanceChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
+                MenuActivity.ACTION_KEEP_SCREEN_ON -> {
+                    val enabled = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
+                    val next = !enabled
+                    prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, next).apply()
+                    applyKeepScreenOn(next)
+                    Toast.makeText(this, if (next) "Keep screen on: On" else "Keep screen on: Off", Toast.LENGTH_SHORT).show()
+                }
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
                     if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
