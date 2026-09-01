@@ -15,6 +15,8 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_THEME = "theme"
         const val ACTION_SETTINGS = "settings"
         const val ACTION_TAB_RETENTION = "tab_retention"
+        const val ACTION_PULL_TO_REFRESH = "pull_to_refresh"
+        const val ACTION_SPLIT_SCREEN = "split_screen"
         const val ACTION_BOOKMARKS = "bookmarks"
         const val ACTION_HISTORY = "history"
         const val ACTION_ACCOUNTS = "accounts"
@@ -58,6 +60,14 @@ class MenuActivity : AppCompatActivity() {
         }
         wire(R.id.menu_tab_retention) {
             setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_TAB_RETENTION))
+            finish()
+        }
+        wire(R.id.menu_pull_to_refresh) {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_PULL_TO_REFRESH))
+            finish()
+        }
+        wire(R.id.menu_split_screen) {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_SPLIT_SCREEN))
             finish()
         }
         wire(R.id.menu_theme) {
