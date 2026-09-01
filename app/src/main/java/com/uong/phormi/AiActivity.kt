@@ -1,132 +1,124 @@
 package com.uong.phormi
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.speech.RecognizerIntent
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import java.util.Locale
 import java.util.UUID
 
-/**
- * Add any AI by name + key + endpoint + model.
- * Saved providers form a fallback chain (assist each other when one fails).
- */
+/** Provider setup + voice/text control for Phormi's general browser assistant. */
 class AiActivity : AppCompatActivity() {
-
     private lateinit var aiController: AiController
     private lateinit var statusLog: TextView
     private lateinit var keyStatus: TextView
+    private lateinit var inputInstruction: EditText
+    private lateinit var activeSwitch: Switch
+    private val voiceRequest = 6201
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ai)
-
         aiController = AiController(applicationContext)
         statusLog = findViewById(R.id.status_log)
         keyStatus = findViewById(R.id.key_status)
+        inputInstruction = findViewById(R.id.input_instruction)
+        activeSwitch = findViewById(R.id.switch_ai_active)
+        activeSwitch.isChecked = aiController.isActive()
 
         val inputName = findViewById<EditText>(R.id.input_provider_name)
         val inputKey = findViewById<EditText>(R.id.input_api_key)
         val inputEndpoint = findViewById<EditText>(R.id.input_endpoint)
         val inputModel = findViewById<EditText>(R.id.input_model)
-        val instructionInput = findViewById<EditText>(R.id.input_instruction)
-
+        inputEndpoint.visibility = View.GONE
+        inputModel.visibility = View.GONE
         refreshKeyStatus()
 
         findViewById<Button>(R.id.btn_save_keys).setOnClickListener {
             val name = inputName.text.toString().trim()
             val key = inputKey.text.toString().trim()
-            val endpoint = inputEndpoint.text.toString().trim()
-            val model = inputModel.text.toString().trim().ifBlank { "gpt-4o-mini" }
             if (name.isBlank() || key.isBlank()) {
-                Toast.makeText(this, "Name and API key are required", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+                Toast.makeText(this, "Enter the AI name and API key", Toast.LENGTH_SHORT).show(); return@setOnClickListener
             }
-            val ep = endpoint.ifBlank {
-                // Guess from common names
-                when {
-                    name.contains("groq", true) -> "https://api.groq.com/openai/v1/chat/completions"
-                    name.contains("deepseek", true) -> "https://api.deepseek.com/chat/completions"
-                    name.contains("gemini", true) || name.contains("google", true) ->
-                        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                    else -> "https://api.openai.com/v1/chat/completions"
-                }
-            }
-            aiController.upsertProvider(
-                AiController.Provider(
-                    id = UUID.randomUUID().toString().take(8),
-                    name = name,
-                    endpoint = ep,
-                    model = model,
-                    apiKey = key
-                )
-            )
-            inputKey.text.clear()
-            refreshKeyStatus()
-            Toast.makeText(this, "Saved $name", Toast.LENGTH_SHORT).show()
-        }
-
-        findViewById<Button>(R.id.btn_templates).setOnClickListener {
-            val names = AiController.TEMPLATES.map { it.name }.toTypedArray()
-            AlertDialog.Builder(this)
-                .setTitle("Fill template")
-                .setItems(names) { _, which ->
-                    val t = AiController.TEMPLATES[which]
-                    inputName.setText(t.name)
-                    inputEndpoint.setText(t.endpoint)
-                    inputModel.setText(t.model)
-                }
-                .show()
-        }
-
-        findViewById<Button>(R.id.btn_run).setOnClickListener {
-            val instruction = instructionInput.text.toString().trim()
-            if (instruction.isBlank()) {
-                Toast.makeText(this, getString(R.string.enter_instruction_first), Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            if (!aiController.hasAnyKey()) {
-                Toast.makeText(this, getString(R.string.no_api_key_saved), Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            if (PhormiAccessibilityService.instance == null) {
-                appendStatus(getString(R.string.accessibility_reminder))
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                return@setOnClickListener
-            }
-            statusLog.text = "Starting (fallback chain across your saved AIs)…"
-            findViewById<Button>(R.id.btn_run).isEnabled = false
+            val saveButton = findViewById<Button>(R.id.btn_save_keys)
+            saveButton.isEnabled = false
+            statusLog.text = "Detecting endpoint and available models…"
             lifecycleScope.launch {
                 try {
-                    aiController.runTask(instruction) { appendStatus(it) }
-                } finally {
-                    runOnUiThread { findViewById<Button>(R.id.btn_run).isEnabled = true }
-                }
+                    val cfg = aiController.resolveProviderConfig(name, key)
+                    aiController.upsertProvider(AiController.Provider(UUID.randomUUID().toString().take(8), name, cfg.endpoint, cfg.model, key))
+                    aiController.setActive(true)
+                    activeSwitch.isChecked = true
+                    inputKey.text.clear()
+                    keyStatus.text = "${name}: ready · model detected automatically"
+                    appendStatus("Saved ${name} · detected model ${cfg.model}")
+                    Toast.makeText(this@AiActivity, "AI saved and running", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    appendStatus("AI setup failed: ${e.message ?: "unable to detect provider/model"}")
+                } finally { saveButton.isEnabled = true }
             }
         }
-    }
 
-    override fun onResume() {
-        super.onResume()
-        if (::aiController.isInitialized) refreshKeyStatus()
-    }
+        activeSwitch.setOnCheckedChangeListener { _, checked ->
+            aiController.setActive(checked)
+            appendStatus(if (checked) "AI assistant active" else "AI assistant deactivated")
+            refreshKeyStatus()
+        }
 
-    private fun refreshKeyStatus() {
-        keyStatus.text = aiController.keyStatusSummary()
-    }
+        findViewById<Button>(R.id.btn_voice).setOnClickListener { startVoiceInput() }
+        findViewById<Button>(R.id.btn_run).setOnClickListener { runAssistant() }
 
-    private fun appendStatus(line: String) {
-        runOnUiThread {
-            statusLog.append(
-                if (statusLog.text.isBlank() || statusLog.text.startsWith("Starting")) line
-                else "\n$line"
-            )
+        if (intent.getBooleanExtra("auto_voice", false)) {
+            window.decorView.postDelayed({ startVoiceInput() }, 350)
         }
     }
+
+    private fun runAssistant() {
+        val instruction = inputInstruction.text.toString().trim()
+        if (instruction.isBlank()) { startVoiceInput(); return }
+        if (!aiController.hasAnyKey()) { Toast.makeText(this, "Save an AI provider first", Toast.LENGTH_LONG).show(); return }
+        if (!aiController.isActive()) { activeSwitch.isChecked = true; aiController.setActive(true) }
+        if (PhormiAccessibilityService.instance == null) {
+            appendStatus(getString(R.string.accessibility_reminder))
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
+        }
+        findViewById<Button>(R.id.btn_run).isEnabled = false
+        statusLog.text = "Assistant working…"
+        lifecycleScope.launch {
+            try { aiController.runTask(instruction) { appendStatus(it) } }
+            finally { runOnUiThread { findViewById<Button>(R.id.btn_run).isEnabled = true } }
+        }
+    }
+
+    private fun startVoiceInput() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to your Phormi assistant")
+        }
+        try { startActivityForResult(intent, voiceRequest) }
+        catch (_: Exception) { Toast.makeText(this, "Voice input is not available on this device", Toast.LENGTH_LONG).show() }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == voiceRequest && resultCode == Activity.RESULT_OK) {
+            val text = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
+            if (text.isNotBlank()) { inputInstruction.setText(text); inputInstruction.setSelection(text.length) }
+        }
+    }
+
+    override fun onResume() { super.onResume(); if (::aiController.isInitialized) { activeSwitch.isChecked = aiController.isActive(); refreshKeyStatus() } }
+    private fun refreshKeyStatus() { keyStatus.text = aiController.keyStatusSummary() }
+    private fun appendStatus(line: String) { runOnUiThread { statusLog.append(if (statusLog.text.isBlank()) line else "\n$line") } }
 }
