@@ -3,8 +3,12 @@ package de.blinkt.openvpn.api;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-/** Parcelable profile type required by the OpenVPN for Android remote AIDL API. */
+/**
+ * Parcelable required by OpenVPN for Android remote AIDL.
+ * Must live in the same package as the AIDL parcelable declaration.
+ */
 public class APIVpnProfile implements Parcelable {
+
     public final String mUUID;
     public final String mName;
     public final boolean mUserEditable;
@@ -15,23 +19,33 @@ public class APIVpnProfile implements Parcelable {
         mUserEditable = in.readInt() != 0;
     }
 
-    public APIVpnProfile(String uuidString, String name, boolean userEditable) {
+    public APIVpnProfile(String uuidString, String name, boolean userEditable, String profileCreator) {
         mUUID = uuidString;
         mName = name;
         mUserEditable = userEditable;
     }
 
-    @Override public int describeContents() { return 0; }
+    @Override
+    public int describeContents() {
+        return 0;
+    }
 
-    @Override public void writeToParcel(Parcel dest, int flags) {
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
         dest.writeString(mUUID);
         dest.writeString(mName);
         dest.writeInt(mUserEditable ? 1 : 0);
     }
 
-    public static final Parcelable.Creator<APIVpnProfile> CREATOR =
-        new Parcelable.Creator<APIVpnProfile>() {
-            @Override public APIVpnProfile createFromParcel(Parcel in) { return new APIVpnProfile(in); }
-            @Override public APIVpnProfile[] newArray(int size) { return new APIVpnProfile[size]; }
-        };
+    public static final Creator<APIVpnProfile> CREATOR = new Creator<APIVpnProfile>() {
+        @Override
+        public APIVpnProfile createFromParcel(Parcel in) {
+            return new APIVpnProfile(in);
+        }
+
+        @Override
+        public APIVpnProfile[] newArray(int size) {
+            return new APIVpnProfile[size];
+        }
+    };
 }
