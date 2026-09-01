@@ -63,6 +63,17 @@ class HistoryActivity : AppCompatActivity() {
                 .apply()
         }
 
+        fun removeUrl(context: android.content.Context, url: String) {
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
+            val kept = JSONArray()
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                if (item.optString("url", "") != url) kept.put(item)
+            }
+            prefs.edit().putString(KEY, kept.toString()).apply()
+        }
+
         /**
          * Returns the most-used recent sites for the browser home page.
          * Frequency is the primary signal; most-recent visit breaks ties.
