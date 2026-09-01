@@ -28,6 +28,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // REQUIRED for app/src/main/aidl/** (OpenVPN remote API stubs).
+    // AGP 8+ leaves AIDL off by default; without this, IOpenVPNAPIService is never generated
+    // and OpenVpnController fails with "Unresolved reference: IOpenVPNAPIService".
+    buildFeatures {
+        aidl = true
+    }
 }
 
 dependencies {
