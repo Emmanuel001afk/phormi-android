@@ -20,6 +20,7 @@ import android.view.ContextMenu
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -555,7 +556,7 @@ class MainActivity : AppCompatActivity() {
             QuickSite("Add", "", "+", false)
         )
         val personal = BookmarksActivity.getAll(this).take(8).map { QuickSite(it.title, it.url, "★", true) }.toMutableList()
-        val visited = HistoryActivity.getTopSites(this, 8, 3)
+        val visited = HistoryActivity.getTopSites(this, 8)
             .filter { b -> personal.none { it.url == b.url } }
             .map { QuickSite(it.title, it.url, "•", true) }
         personal += visited
@@ -574,6 +575,42 @@ class MainActivity : AppCompatActivity() {
             batch.forEach { site -> row.addView(makeQuickSiteView(site)) }
             rows.addView(row)
         }
+    }
+
+    private fun showAddShortcutDialog() {
+        val nameInput = EditText(this).apply {
+            hint = "Website name"
+            setSingleLine(true)
+        }
+        val urlInput = EditText(this).apply {
+            hint = "https://example.com"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24.dp(), 4.dp(), 24.dp(), 0)
+            addView(nameInput)
+            addView(urlInput)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Add website shortcut")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Add") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                var url = urlInput.text.toString().trim()
+                if (name.isBlank() || url.isBlank()) {
+                    Toast.makeText(this, "Enter a name and URL", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://$url"
+                val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
+                list.put(JSONObject().put("name", name).put("url", url))
+                prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, list.toString()).apply()
+                loadQuickAccessRows()
+            }
+            .show()
     }
 
     private fun makeQuickSiteView(site: QuickSite): TextView {
@@ -1119,6 +1156,43 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.VISIBLE
         urlBar.setText(url)
         webView.loadUrl(url)
+    }
+
+    /** Handles versioned commands arriving from the local Central Hub bridge. */
+    fun handleCentralHubCommand(command: JSONObject): JSONObject {
+        val name = command.optString("command", command.optString("action", "state")).lowercase()
+        return try {
+            when (name) {
+                "state" -> {
+                    val active = tabs.find { it.id == activeTabId }
+                    JSONObject().put("ok", true)
+                        .put("protocol", CentralHubBridgeService.PROTOCOL)
+                        .put("active_tab_id", activeTabId)
+                        .put("active_url", active?.webView?.url ?: "")
+                        .put("active_title", active?.title ?: "")
+                        .put("tab_count", tabs.size)
+                        .put("split_mode", splitMode)
+                        .put("split_locked", splitChromeLocked)
+                }
+                "open_url", "open", "navigate" -> {
+                    val url = command.optString("url").trim()
+                    if (url.isBlank()) JSONObject().put("ok", false).put("error", "missing_url")
+                    else { openShortcut(url); JSONObject().put("ok", true).put("url", url) }
+                }
+                "new_tab" -> { createNewTab(command.optString("url", NEW_TAB_URL)); JSONObject().put("ok", true) }
+                "close_tab" -> { closeTab(command.optInt("tab_id", activeTabId)); JSONObject().put("ok", true) }
+                "back" -> { activeWebView()?.goBack(); JSONObject().put("ok", true) }
+                "forward" -> { activeWebView()?.goForward(); JSONObject().put("ok", true) }
+                "reload", "refresh" -> { activeWebView()?.reload(); JSONObject().put("ok", true) }
+                "home" -> { showStartPage(); JSONObject().put("ok", true) }
+                "toggle_split" -> { setSplitMode(!splitMode); JSONObject().put("ok", true).put("split_mode", splitMode) }
+                "set_split" -> { setSplitMode(command.optBoolean("enabled", true)); JSONObject().put("ok", true).put("split_mode", splitMode) }
+                "lock_split" -> { setSplitChromeLocked(command.optBoolean("locked", true)); JSONObject().put("ok", true).put("split_locked", splitChromeLocked) }
+                else -> JSONObject().put("ok", false).put("error", "unsupported_command").put("command", name)
+            }
+        } catch (e: Exception) {
+            JSONObject().put("ok", false).put("error", e.message ?: "command_failed")
+        }
     }
 
     private fun navigateFromStartPage() {
