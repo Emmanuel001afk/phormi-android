@@ -155,6 +155,36 @@
             android:focusable="true" />
 
         <TextView
+            android:id="@+id/menu_pull_to_refresh"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Pull-to-refresh"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/menu_split_screen"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:text="Split screen"
+            android:textColor="#E2E8F0"
+            android:textSize="16sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
             android:id="@+id/menu_tab_retention"
             android:layout_width="match_parent"
             android:layout_height="52dp"
