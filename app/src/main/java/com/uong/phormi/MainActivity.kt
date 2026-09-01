@@ -578,8 +578,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddShortcutDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20.dp(), 4.dp(), 20.dp(), 0)
+        }
         val nameInput = EditText(this).apply {
-            hint = "Website name"
+            hint = "Name"
             setSingleLine(true)
         }
         val urlInput = EditText(this).apply {
@@ -587,28 +591,30 @@ class MainActivity : AppCompatActivity() {
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24.dp(), 4.dp(), 24.dp(), 0)
-            addView(nameInput)
-            addView(urlInput)
-        }
+        container.addView(nameInput)
+        container.addView(urlInput)
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Add website shortcut")
-            .setView(box)
+            .setView(container)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Add") { _, _ ->
-                val name = nameInput.text.toString().trim()
-                var url = urlInput.text.toString().trim()
-                if (name.isBlank() || url.isBlank()) {
-                    Toast.makeText(this, "Enter a name and URL", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+                val rawUrl = urlInput.text.toString().trim()
+                if (rawUrl.isBlank()) return@setPositiveButton
+                val normalized = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) rawUrl else "https://$rawUrl"
+                val name = nameInput.text.toString().trim().ifBlank {
+                    Uri.parse(normalized).host?.removePrefix("www.")?.ifBlank { normalized } ?: normalized
                 }
-                if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://$url"
                 val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
-                list.put(JSONObject().put("name", name).put("url", url))
-                prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, list.toString()).apply()
-                loadQuickAccessRows()
+                var exists = false
+                for (i in 0 until list.length()) {
+                    if (list.optJSONObject(i)?.optString("url") == normalized) { exists = true; break }
+                }
+                if (!exists) {
+                    list.put(JSONObject().put("name", name).put("url", normalized))
+                    prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, list.toString()).apply()
+                    loadQuickAccessRows()
+                    Toast.makeText(this, "Shortcut added", Toast.LENGTH_SHORT).show()
+                }
             }
             .show()
     }
@@ -1156,43 +1162,6 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.VISIBLE
         urlBar.setText(url)
         webView.loadUrl(url)
-    }
-
-    /** Handles versioned commands arriving from the local Central Hub bridge. */
-    fun handleCentralHubCommand(command: JSONObject): JSONObject {
-        val name = command.optString("command", command.optString("action", "state")).lowercase()
-        return try {
-            when (name) {
-                "state" -> {
-                    val active = tabs.find { it.id == activeTabId }
-                    JSONObject().put("ok", true)
-                        .put("protocol", CentralHubBridgeService.PROTOCOL)
-                        .put("active_tab_id", activeTabId)
-                        .put("active_url", active?.webView?.url ?: "")
-                        .put("active_title", active?.title ?: "")
-                        .put("tab_count", tabs.size)
-                        .put("split_mode", splitMode)
-                        .put("split_locked", splitChromeLocked)
-                }
-                "open_url", "open", "navigate" -> {
-                    val url = command.optString("url").trim()
-                    if (url.isBlank()) JSONObject().put("ok", false).put("error", "missing_url")
-                    else { openShortcut(url); JSONObject().put("ok", true).put("url", url) }
-                }
-                "new_tab" -> { createNewTab(command.optString("url", NEW_TAB_URL)); JSONObject().put("ok", true) }
-                "close_tab" -> { closeTab(command.optInt("tab_id", activeTabId)); JSONObject().put("ok", true) }
-                "back" -> { activeWebView()?.goBack(); JSONObject().put("ok", true) }
-                "forward" -> { activeWebView()?.goForward(); JSONObject().put("ok", true) }
-                "reload", "refresh" -> { activeWebView()?.reload(); JSONObject().put("ok", true) }
-                "home" -> { showStartPage(); JSONObject().put("ok", true) }
-                "toggle_split" -> { setSplitMode(!splitMode); JSONObject().put("ok", true).put("split_mode", splitMode) }
-                "set_split" -> { setSplitMode(command.optBoolean("enabled", true)); JSONObject().put("ok", true).put("split_mode", splitMode) }
-                "lock_split" -> { setSplitChromeLocked(command.optBoolean("locked", true)); JSONObject().put("ok", true).put("split_locked", splitChromeLocked) }
-                else -> JSONObject().put("ok", false).put("error", "unsupported_command").put("command", name)
-            }
-        } catch (e: Exception) {
-            JSONObject().put("ok", false).put("error", e.message ?: "command_failed")
-        }
     }
 
     private fun navigateFromStartPage() {
@@ -2407,6 +2376,37 @@ class MainActivity : AppCompatActivity() {
             return
         }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    /** Handles versioned commands arriving through the local Central Hub bridge. */
+    fun handleCentralHubCommand(command: JSONObject): JSONObject {
+        val name = command.optString("command").ifBlank { command.optString("action") }.lowercase()
+        return try {
+            when (name) {
+                "state" -> JSONObject().put("ok", true).put("active_tab_id", activeTabId).put("tab_count", tabs.size).put("split_mode", splitMode).put("split_locked", splitChromeLocked).put("split_ratio", splitRatio).put("url", activeWebView()?.url ?: "")
+                "new_tab" -> { createNewTab(command.optString("url", NEW_TAB_URL)); JSONObject().put("ok", true) }
+                "open_url", "navigate" -> {
+                    val url = command.optString("url").trim()
+                    if (url.isBlank()) JSONObject().put("ok", false).put("error", "missing_url")
+                    else { openShortcut(url); JSONObject().put("ok", true).put("url", url) }
+                }
+                "reload", "refresh" -> { activeWebView()?.reload(); JSONObject().put("ok", true) }
+                "back" -> { val handled = activeWebView()?.let { if (it.canGoBack()) { it.goBack(); true } else false } ?: false; JSONObject().put("ok", true).put("handled", handled) }
+                "forward" -> { val handled = activeWebView()?.let { if (it.canGoForward()) { it.goForward(); true } else false } ?: false; JSONObject().put("ok", true).put("handled", handled) }
+                "close_tab" -> { closeTab(command.optInt("tab_id", activeTabId)); JSONObject().put("ok", true) }
+                "switch_tab" -> { val id = command.optInt("tab_id", -1); val exists = tabs.any { it.id == id }; if (exists) switchToTab(id); JSONObject().put("ok", exists) }
+                "toggle_split" -> { setSplitMode(!splitMode); JSONObject().put("ok", true).put("split_mode", splitMode) }
+                "set_split" -> { setSplitMode(command.optBoolean("enabled", true)); JSONObject().put("ok", true).put("split_mode", splitMode) }
+                "set_split_ratio", "resize_split" -> {
+                    if (!splitMode) JSONObject().put("ok", false).put("error", "split_mode_inactive")
+                    else { splitRatio = command.optDouble("ratio", splitRatio.toDouble()).toFloat().coerceIn(0.25f, 0.75f); applySplitRatio(); JSONObject().put("ok", true).put("split_ratio", splitRatio) }
+                }
+                "set_split_lock", "lock_split" -> { setSplitChromeLocked(command.optBoolean("locked", true)); JSONObject().put("ok", true).put("split_locked", splitChromeLocked) }
+                else -> JSONObject().put("ok", false).put("error", "unsupported_command").put("command", name)
+            }
+        } catch (e: Exception) {
+            JSONObject().put("ok", false).put("error", "command_failed").put("message", e.message ?: "unknown error")
+        }
     }
 
     fun openAiFromBottom(view: View) {
