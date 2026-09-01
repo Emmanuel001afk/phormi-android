@@ -56,22 +56,29 @@ class HistoryActivity : AppCompatActivity() {
             prefs.edit().putString(KEY, arr.toString()).apply()
         }
 
+        fun removeUrl(context: android.content.Context, url: String): Boolean {
+            if (url.isBlank()) return false
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
+            val kept = JSONArray()
+            var removed = false
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                if (item.optString("url") == url) {
+                    removed = true
+                } else {
+                    kept.put(item)
+                }
+            }
+            if (removed) prefs.edit().putString(KEY, kept.toString()).apply()
+            return removed
+        }
+
         fun clearAll(context: android.content.Context) {
             context.getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
                 .remove(KEY)
                 .apply()
-        }
-
-        fun removeUrl(context: android.content.Context, url: String) {
-            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
-            val kept = JSONArray()
-            for (i in 0 until arr.length()) {
-                val item = arr.optJSONObject(i) ?: continue
-                if (item.optString("url", "") != url) kept.put(item)
-            }
-            prefs.edit().putString(KEY, kept.toString()).apply()
         }
 
         /**
