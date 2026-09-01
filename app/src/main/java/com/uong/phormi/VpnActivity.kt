@@ -2,8 +2,6 @@ package com.uong.phormi
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
-import android.net.VpnService
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -16,8 +14,6 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -26,10 +22,12 @@ import java.util.concurrent.Executors
  * Multi-source free VPN list + connect flow.
  *
  * Connect:
- *  1) Saves selected OpenVPN profile
- *  2) Requests Android VPN permission
- *  3) Writes .ovpn and hands it to OpenVPN for Android / OpenVPN Connect if installed
- *  4) Starts PhormiVpnService so the system shows an active VPN session
+ *  1) Saves the selected OpenVPN profile
+ *  2) Sends the inline profile to the open-source OpenVPN for Android engine
+ *  3) Lets that engine own the Android VPN tunnel
+ *
+ * Phormi deliberately does NOT establish a second local TUN or drain/drop
+ * packets. That was the bug that blocked the whole phone when VPN was enabled.
  */
 class VpnActivity : AppCompatActivity() {
 
@@ -131,13 +129,13 @@ class VpnActivity : AppCompatActivity() {
         refreshConnectionUi()
     }
 
+    private val openVpnController by lazy { OpenVpnController(this) }
+
     private fun refreshConnectionUi() {
-        val running = PhormiVpnService.isRunning
+        val running = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
+            .getBoolean("vpn_requested", false)
         btnDisconnect.isEnabled = running
         btnConnect.isEnabled = !running
-        if (running) {
-            status.text = "Connected · ${PhormiVpnService.currentLabel}"
-        }
     }
 
     private fun connectSelected() {
@@ -148,114 +146,77 @@ class VpnActivity : AppCompatActivity() {
             Toast.makeText(this, "Select a server first", Toast.LENGTH_SHORT).show()
             return
         }
-        val prepare = VpnService.prepare(this)
-        if (prepare != null) {
-            startActivityForResult(prepare, REQ_VPN_PREPARE)
+
+        val config = decodeOvpn(ovpnB64)
+        if (config.isNullOrBlank()) {
+            Toast.makeText(this, "The selected VPN profile is invalid", Toast.LENGTH_LONG).show()
             return
         }
-        startTunnel(label, ovpnB64)
+
+        status.text = "Connecting · $label"
+        openVpnController.connect(this, config) { ok, message ->
+            runOnUiThread {
+                if (ok) {
+                    prefs.edit().putBoolean("vpn_requested", true).apply()
+                    status.text = "VPN requested · $label"
+                } else {
+                    prefs.edit().putBoolean("vpn_requested", false).apply()
+                    status.text = "VPN unavailable · $message"
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                }
+                refreshConnectionUi()
+            }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_VPN_PREPARE && resultCode == Activity.RESULT_OK) {
-            val prefs = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
-            val ovpnB64 = prefs.getString("selected_ovpn", null) ?: return
-            val label = prefs.getString("selected_label", "Phormi VPN") ?: "Phormi VPN"
-            startTunnel(label, ovpnB64)
+        if (requestCode == 9321 || requestCode == 9322) {
+            if (resultCode == Activity.RESULT_OK) {
+                openVpnController.resumeAfterPermission { ok, message ->
+                    runOnUiThread {
+                        val prefs = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
+                        prefs.edit().putBoolean("vpn_requested", ok).apply()
+                        status.text = message
+                        if (!ok) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                        refreshConnectionUi()
+                    }
+                }
+            } else {
+                getSharedPreferences("phormi_vpn", MODE_PRIVATE).edit()
+                    .putBoolean("vpn_requested", false).apply()
+                status.text = "VPN permission cancelled"
+                refreshConnectionUi()
+            }
         }
-    }
-
-    private fun startTunnel(label: String, ovpnB64: String) {
-        val profileFile = writeOvpnFile(ovpnB64) ?: run {
-            Toast.makeText(this, "Could not write OpenVPN profile", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // Prefer a real OpenVPN client for encrypted tunnel to the selected server.
-        val handedOff = tryOpenWithOpenVpnApp(profileFile)
-        if (!handedOff) {
-            Toast.makeText(
-                this,
-                "Install “OpenVPN for Android” for full encryption. Starting Phormi VPN session…",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-
-        val svc = Intent(this, PhormiVpnService::class.java).apply {
-            action = PhormiVpnService.ACTION_CONNECT
-            putExtra(PhormiVpnService.EXTRA_SERVER_LABEL, label)
-        }
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            startForegroundService(svc)
-        } else {
-            startService(svc)
-        }
-        status.text = "Connecting · $label"
-        refreshConnectionUi()
-        Toast.makeText(this, "VPN connect started", Toast.LENGTH_SHORT).show()
     }
 
     private fun disconnectVpn() {
-        startService(
-            Intent(this, PhormiVpnService::class.java).setAction(PhormiVpnService.ACTION_DISCONNECT)
-        )
+        openVpnController.disconnect()
+        getSharedPreferences("phormi_vpn", MODE_PRIVATE).edit()
+            .putBoolean("vpn_requested", false).apply()
         status.text = "Disconnected"
         refreshConnectionUi()
     }
 
-    private fun writeOvpnFile(ovpnB64: String): File? {
+    private fun decodeOvpn(ovpnB64: String): String? {
         return try {
-            var raw = ovpnB64.trim()
-            // VPN Gate sometimes pads / wraps
+            val raw = ovpnB64.trim()
             val decoded = try {
                 Base64.decode(raw, Base64.DEFAULT)
             } catch (_: Exception) {
                 Base64.decode(raw, Base64.URL_SAFE or Base64.NO_WRAP)
             }
-            val text = String(decoded, Charsets.UTF_8)
-            val dir = File(cacheDir, "vpn").also { it.mkdirs() }
-            val file = File(dir, "phormi-selected.ovpn")
-            file.writeText(text)
-            file
+            String(decoded, Charsets.UTF_8)
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun tryOpenWithOpenVpnApp(profile: File): Boolean {
-        val uri = FileProvider.getUriForFile(
-            this,
-            "${packageName}.fileprovider",
-            profile
-        )
-        for (pkg in OPENVPN_PACKAGES) {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/x-openvpn-profile")
-                    setPackage(pkg)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                if (intent.resolveActivity(packageManager) != null) {
-                    startActivity(intent)
-                    return true
-                }
-            } catch (_: Exception) {
-            }
-        }
-        // Generic share as fallback
-        try {
-            val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", profile)
-            val share = Intent(Intent.ACTION_SEND).apply {
-                type = "application/x-openvpn-profile"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(share, "Open VPN profile with"))
-            return true
-        } catch (_: Exception) {
-            return false
-        }
+    override fun onDestroy() {
+        openVpnController.unbind()
+        executor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun applyFilter() {
