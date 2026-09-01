@@ -97,6 +97,19 @@
         </HorizontalScrollView>
 
         <TextView
+            android:id="@+id/btn_refresh"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="2dp"
+            android:gravity="center"
+            android:text="↻"
+            android:textColor="#38BDF8"
+            android:textSize="16sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Refresh page" />
+
+        <TextView
             android:id="@+id/tab_count"
             android:layout_width="24dp"
             android:layout_height="24dp"
@@ -151,6 +164,35 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <FrameLayout
+            android:id="@+id/split_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            android:background="#0B1220">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+                <FrameLayout android:id="@+id/split_top_host" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+                <View android:id="@+id/split_divider" android:layout_width="match_parent" android:layout_height="10dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
+                <FrameLayout android:id="@+id/split_bottom_host" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+            </LinearLayout>
+            <TextView
+                android:id="@+id/split_lock_button"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="8dp"
+                android:gravity="center"
+                android:text="🔒"
+                android:textSize="18sp"
+                android:background="#CC111827"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Hide browser controls" />
+        </FrameLayout>
 
         <include layout="@layout/activity_start_page" />
 
