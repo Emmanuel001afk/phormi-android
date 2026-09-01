@@ -49,24 +49,6 @@ class BookmarksActivity : AppCompatActivity() {
             prefs.edit().putString(KEY, arr.toString()).apply()
         }
 
-        fun remove(context: android.content.Context, url: String): Boolean {
-            if (url.isBlank()) return false
-            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
-            val kept = JSONArray()
-            var removed = false
-            for (i in 0 until arr.length()) {
-                val item = arr.optJSONObject(i) ?: continue
-                if (item.optString("url") == url) {
-                    removed = true
-                } else {
-                    kept.put(item)
-                }
-            }
-            if (removed) prefs.edit().putString(KEY, kept.toString()).apply()
-            return removed
-        }
-
         /**
          * Returns bookmarks newest-first for quick-access surfaces.
          * This is intentionally read-only and does not alter the stored list.
@@ -90,6 +72,19 @@ class BookmarksActivity : AppCompatActivity() {
             }
             return out.sortedByDescending { it.addedAt }
         }
+
+        fun remove(context: android.content.Context, url: String) {
+            if (url.isBlank()) return
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
+            val kept = JSONArray()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                if (o.optString("url") != url) kept.put(o)
+            }
+            prefs.edit().putString(KEY, kept.toString()).apply()
+        }
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
