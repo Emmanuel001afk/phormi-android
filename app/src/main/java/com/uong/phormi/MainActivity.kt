@@ -77,6 +77,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startPageContainer: View
     private lateinit var startPageSearch: EditText
     private lateinit var tabCountView: TextView
+    private lateinit var splitContainer: FrameLayout
+    private lateinit var splitTopHost: FrameLayout
+    private lateinit var splitBottomHost: FrameLayout
+    private lateinit var splitLockButton: TextView
+    private lateinit var splitDivider: View
     private lateinit var browserLockManager: BrowserLockManager
     private var browserUnlockedThisSession = false
     private var browserLockOverlay: View? = null
@@ -84,6 +89,11 @@ class MainActivity : AppCompatActivity() {
     private val tabs = mutableListOf<Tab>()
     private var activeTabId: Int = -1
     private var nextTabId = 1
+    private var splitMode = false
+    private var splitTopTabId = -1
+    private var splitBottomTabId = -1
+    private var splitChromeLocked = false
+    private var splitRatio = 0.5f
 
     private var pendingPermissionRequest: PermissionRequest? = null
     private var pendingPermissionPermissions: Array<out String> = emptyArray()
@@ -118,6 +128,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_DAILY_ACCENT = "daily_accent"
         private const val KEY_WALLPAPER_URI = "wallpaper_uri"
         private const val KEY_CUSTOM_SHORTCUTS = "custom_shortcuts"
+        private const val KEY_PULL_TO_REFRESH = "pull_to_refresh"
+        private const val KEY_TAB_VIEW_MODE = "tab_view_mode"
         private const val KEY_BROWSER_LOCK = BrowserLockManager.PREF_KEY
         private const val REQ_WALLPAPER = 1005
         private const val REQ_MEDIA_PERMISSIONS = 1001
@@ -165,6 +177,7 @@ class MainActivity : AppCompatActivity() {
     private val unifiedSearchGeneration = AtomicInteger(0)
     private val unifiedSearchLock = Any()
     private var unifiedSearchFutures = mutableListOf<java.util.concurrent.Future<*>>()
+    private var localSearchPageActive = false
 
     override fun onResume() {
         super.onResume()
@@ -206,6 +219,11 @@ class MainActivity : AppCompatActivity() {
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
         tabCountView = findViewById(R.id.tab_count)
+        splitContainer = findViewById(R.id.split_container)
+        splitTopHost = findViewById(R.id.split_top_host)
+        splitBottomHost = findViewById(R.id.split_bottom_host)
+        splitLockButton = findViewById(R.id.split_lock_button)
+        splitDivider = findViewById(R.id.split_divider)
         browserLockManager = BrowserLockManager(this, mainExecutor)
         findViewById<FrameLayout>(R.id.browser_lock_overlay_host)?.apply {
             visibility = View.GONE
@@ -252,7 +270,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.start_page_ai).setOnClickListener {
-            startActivity(Intent(this, AiActivity::class.java))
+            startActivity(Intent(this, AiActivity::class.java).putExtra("auto_voice", true))
         }
 
         findViewById<TextView>(R.id.start_page_engine).setOnClickListener {
@@ -265,45 +283,10 @@ class MainActivity : AppCompatActivity() {
             if (enabled) refreshHomeNews()
         }
 
-        findViewById<TextView>(R.id.shortcut_google).setOnClickListener {
-            openShortcut("https://www.google.com")
-        }
-        findViewById<TextView>(R.id.shortcut_bing).setOnClickListener {
-            openShortcut("https://www.bing.com")
-        }
-        findViewById<TextView>(R.id.shortcut_youtube).setOnClickListener {
-            openShortcut("https://www.youtube.com")
-        }
-        findViewById<TextView>(R.id.shortcut_facebook).setOnClickListener {
-            openShortcut("https://www.facebook.com")
-        }
-        findViewById<TextView>(R.id.shortcut_instagram).setOnClickListener {
-            openShortcut("https://www.instagram.com")
-        }
-        findViewById<TextView>(R.id.shortcut_github).setOnClickListener {
-            openShortcut("https://github.com")
-        }
-        findViewById<TextView>(R.id.shortcut_add).setOnClickListener {
-            showAddShortcutDialog()
-        }
-        findViewById<TextView>(R.id.shortcut_google).contentDescription = "Open Google"
-        findViewById<TextView>(R.id.shortcut_bing).contentDescription = "Open Bing"
-        findViewById<TextView>(R.id.shortcut_youtube).contentDescription = "Open YouTube"
-        findViewById<TextView>(R.id.shortcut_facebook).contentDescription = "Open Facebook"
-        findViewById<TextView>(R.id.shortcut_instagram).contentDescription = "Open Instagram"
-        findViewById<TextView>(R.id.shortcut_github).contentDescription = "Open GitHub"
-        findViewById<TextView>(R.id.shortcut_add).contentDescription = "Add a website shortcut"
-        updateHomeNewsVisibility()
-        loadCustomShortcuts()
-        listOf(
-            R.id.shortcut_google to "https://www.google.com",
-            R.id.shortcut_bing to "https://www.bing.com",
-            R.id.shortcut_youtube to "https://www.youtube.com",
-            R.id.shortcut_facebook to "https://www.facebook.com",
-            R.id.shortcut_instagram to "https://www.instagram.com",
-            R.id.shortcut_github to "https://github.com"
-        ).forEach { (id, url) -> loadFaviconInto(findViewById(id), url) }
-        loadPersonalQuickAccess()
+        // Quick access is rendered as responsive rows. Fixed services are not removable;
+        // personal favorites and most-visited entries can be long-pressed and removed.
+        loadQuickAccessRows()
+        updateHomeChromeVisibility()
 
         // + = new tab; tabs button = circular tab overview
         findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
@@ -318,6 +301,9 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
 
+        findViewById<TextView>(R.id.btn_refresh).setOnClickListener { activeWebView()?.reload() }
+        splitLockButton.setOnClickListener { setSplitChromeLocked(!splitChromeLocked) }
+        installSplitDividerResize()
         findViewById<TextView>(R.id.btn_go).setOnClickListener { navigateFromUrlBar() }
         urlBar.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO ||
@@ -330,6 +316,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         swipeRefresh.setOnRefreshListener { activeWebView()?.reload() }
+        swipeRefresh.isEnabled = prefs.getBoolean(KEY_PULL_TO_REFRESH, true)
         swipeRefresh.setOnChildScrollUpCallback { _, _ ->
             val wv = activeWebView() ?: return@setOnChildScrollUpCallback false
             wv.canScrollVertically(-1)
@@ -355,14 +342,29 @@ class MainActivity : AppCompatActivity() {
         val current = prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER
         val checked = values.indexOf(current).coerceAtLeast(0)
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Automatically close old tabs")
+            .setTitle("Tab retention")
+            .setMessage("Automatically close only tabs you have not used for the selected period. Your active/recent tabs are never removed.")
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 prefs.edit().putString(KEY_TAB_RETENTION, values[which]).apply()
                 pruneExpiredTabs()
                 dialog.dismiss()
                 Toast.makeText(this, "Tab retention: ${labels[which]}", Toast.LENGTH_SHORT).show()
             }
-            .setMessage("This applies to inactive tabs only. Choose Never to keep tabs until you close them yourself.")
+            .show()
+    }
+
+    private fun showPullToRefreshChooser() {
+        val labels = arrayOf("Arrow refresh only", "Arrow + pull down to refresh")
+        val current = if (prefs.getBoolean(KEY_PULL_TO_REFRESH, true)) 1 else 0
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Refresh gesture")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                val enabled = which == 1
+                prefs.edit().putBoolean(KEY_PULL_TO_REFRESH, enabled).apply()
+                swipeRefresh.isEnabled = enabled
+                dialog.dismiss()
+                Toast.makeText(this, if (enabled) "Pull-to-refresh enabled" else "Arrow refresh only", Toast.LENGTH_SHORT).show()
+            }
             .show()
     }
 
@@ -457,10 +459,6 @@ class MainActivity : AppCompatActivity() {
         val outline = if (dark) Color.rgb(51, 65, 85) else Color.rgb(224, 214, 208)
         styleSurface(findViewById(R.id.start_page_search_box), surface, outline, 28)
         styleSurface(findViewById(R.id.start_page_ai), surfaceSoft, outline, 22)
-        listOf(
-            R.id.shortcut_google, R.id.shortcut_bing, R.id.shortcut_youtube,
-            R.id.shortcut_facebook, R.id.shortcut_instagram, R.id.shortcut_github
-        ).forEach { id -> styleSurface(findViewById(id), surfaceSoft, outline, 20) }
 
         val uri = prefs.getString(KEY_WALLPAPER_URI, null)
         if (!uri.isNullOrBlank()) {
@@ -494,7 +492,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
-        listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu,
+        listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu, R.id.btn_refresh,
             R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
@@ -542,36 +540,86 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private data class QuickSite(val name: String, val url: String, val tag: String)
+    private data class QuickSite(val name: String, val url: String, val tag: String, val removable: Boolean)
 
-    private fun loadPersonalQuickAccess() {
-        val container = findViewById<LinearLayout>(R.id.personal_shortcuts_container) ?: return
-        container.removeAllViews()
-        val sites = mutableListOf<QuickSite>()
-        val bookmarks = BookmarksActivity.getAll(this).take(4)
-        sites += bookmarks.map { QuickSite(it.title, it.url, "★") }
-        val visited = HistoryActivity.getTopSites(this, 4)
-            .filter { b -> sites.none { it.url == b.url } }
-        sites += visited.map { QuickSite(it.title, it.url, "•") }
-        sites.take(8).forEach { site ->
-            val view = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(48.dp(), 48.dp()).apply {
-                    leftMargin = 4.dp(); rightMargin = 4.dp()
-                }
-                gravity = android.view.Gravity.CENTER
-                text = site.name.take(14)
-                setTextColor(Color.WHITE)
-                textSize = 9f
-                setBackgroundResource(R.drawable.bg_shortcut)
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Open ${site.name}"
-                setOnClickListener { openShortcut(site.url) }
+    private fun loadQuickAccessRows() {
+        val rows = findViewById<LinearLayout>(R.id.quick_access_rows) ?: return
+        rows.removeAllViews()
+        val fixed = listOf(
+            QuickSite("Google", "https://www.google.com", "", false),
+            QuickSite("Bing", "https://www.bing.com", "", false),
+            QuickSite("YouTube", "https://www.youtube.com", "", false),
+            QuickSite("Facebook", "https://www.facebook.com", "", false),
+            QuickSite("Instagram", "https://www.instagram.com", "", false),
+            QuickSite("GitHub", "https://github.com", "", false),
+            QuickSite("Add", "", "+", false)
+        )
+        val personal = BookmarksActivity.getAll(this).take(8).map { QuickSite(it.title, it.url, "★", true) }.toMutableList()
+        val visited = HistoryActivity.getTopSites(this, 8, 3)
+            .filter { b -> personal.none { it.url == b.url } }
+            .map { QuickSite(it.title, it.url, "•", true) }
+        personal += visited
+        val custom = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
+        for (i in 0 until custom.length()) {
+            val item = custom.optJSONObject(i) ?: continue
+            val name = item.optString("name").trim(); val url = item.optString("url").trim()
+            if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) personal += QuickSite(name, url, "⌂", true)
+        }
+        (fixed + personal.take(12)).chunked(7).forEach { batch ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 50.dp())
             }
-            container.addView(view)
-            loadFaviconInto(view, site.url)
+            batch.forEach { site -> row.addView(makeQuickSiteView(site)) }
+            rows.addView(row)
         }
     }
+
+    private fun makeQuickSiteView(site: QuickSite): TextView {
+        val surfaceSoft = Color.rgb(23, 32, 51)
+        val outline = Color.rgb(51, 65, 85)
+        return TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp()).apply { leftMargin = 3.dp(); rightMargin = 3.dp() }
+            gravity = android.view.Gravity.CENTER
+            text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(10) else site.name.take(10)
+            setTextColor(if (site.tag == "+") Color.rgb(56,189,248) else Color.WHITE)
+            textSize = 9f
+            setBackgroundResource(R.drawable.bg_shortcut)
+            isClickable = true
+            isFocusable = true
+            contentDescription = if (site.tag == "+") "Add a website shortcut" else "Open ${site.name}"
+            setOnClickListener { if (site.url.isBlank()) showAddShortcutDialog() else openShortcut(site.url) }
+            if (site.removable) setOnLongClickListener { confirmQuickSiteRemoval(site); true }
+            if (site.url.isNotBlank()) loadFaviconInto(this, site.url)
+            styleSurface(this, surfaceSoft, outline, 20)
+        }
+    }
+
+    private fun confirmQuickSiteRemoval(site: QuickSite) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Remove from Quick access?")
+            .setMessage(site.name)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Remove") { _, _ ->
+                when (site.tag) {
+                    "★" -> BookmarksActivity.remove(this, site.url)
+                    "•" -> HistoryActivity.removeUrl(this, site.url)
+                    else -> {
+                        val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
+                        val kept = JSONArray()
+                        for (i in 0 until list.length()) {
+                            val item = list.optJSONObject(i) ?: continue
+                            if (item.optString("url") != site.url) kept.put(item)
+                        }
+                        prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, kept.toString()).apply()
+                    }
+                }
+                loadQuickAccessRows()
+            }.show()
+    }
+
+    private fun loadPersonalQuickAccess() = loadQuickAccessRows()
 
     private fun loadFaviconInto(view: TextView, url: String) {
         Thread {
@@ -584,11 +632,7 @@ class MainActivity : AppCompatActivity() {
                 var bitmap: Bitmap? = null
                 for (iconUrl in candidates) {
                     try {
-                        val connection = (URL(iconUrl).openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 3500
-                            readTimeout = 3500
-                            useCaches = true
-                        }
+                        val connection = (URL(iconUrl).openConnection() as HttpURLConnection).apply { connectTimeout = 3500; readTimeout = 3500; useCaches = true }
                         bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) }
                         connection.disconnect()
                         if (bitmap != null) break
@@ -596,72 +640,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (bitmap != null) runOnUiThread {
                     val drawable = BitmapDrawable(resources, bitmap)
-                    val size = 22.dp()
-                    drawable.setBounds(0, 0, size, size)
+                    val size = 20.dp(); drawable.setBounds(0, 0, size, size)
                     view.setCompoundDrawables(null, drawable, null, null)
-                    view.compoundDrawablePadding = 2.dp()
+                    view.compoundDrawablePadding = 1.dp()
                 }
             } catch (_: Exception) { }
         }.start()
-    }
-
-    private fun showAddShortcutDialog() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 8, 32, 0)
-        }
-        val nameInput = EditText(this).apply { hint = "Name"; setSingleLine(true) }
-        val urlInput = EditText(this).apply { hint = "https://example.com"; setSingleLine(true); inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI }
-        layout.addView(nameInput)
-        layout.addView(urlInput)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Add shortcut")
-            .setView(layout)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Add") { _, _ ->
-                val name = nameInput.text.toString().trim()
-                var url = urlInput.text.toString().trim()
-                if (name.isBlank() || url.isBlank()) {
-                    Toast.makeText(this, "Enter a name and URL", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://$url"
-                val list = JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]")
-                val item = JSONObject().apply { put("name", name); put("url", url) }
-                list.put(item)
-                prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, list.toString()).apply()
-                loadCustomShortcuts()
-            }
-            .show()
-    }
-
-    private fun loadCustomShortcuts() {
-        val container = findViewById<LinearLayout>(R.id.custom_shortcuts_container) ?: return
-        container.removeAllViews()
-        val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
-        for (i in 0 until list.length()) {
-            val item = list.optJSONObject(i) ?: continue
-            val name = item.optString("name").trim()
-            val url = item.optString("url").trim()
-            if (name.isBlank() || url.isBlank()) continue
-            val view = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(48.dp(), 48.dp()).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
-                gravity = android.view.Gravity.CENTER
-                text = name.take(14)
-                setTextColor(Color.WHITE)
-                textSize = 13f
-                setBackgroundResource(R.drawable.bg_shortcut)
-                setOnClickListener { openShortcut(url) }
-                setOnLongClickListener {
-                    list.remove(i)
-                    prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, list.toString()).apply()
-                    loadCustomShortcuts()
-                    true
-                }
-            }
-            container.addView(view)
-            loadFaviconInto(view, url)
-        }
     }
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
@@ -708,6 +692,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun runUnifiedSearch(query: String) {
+        localSearchPageActive = true
         val webView = activeWebView() ?: run {
             createNewTab(NEW_TAB_URL)
             activeWebView()
@@ -1124,6 +1109,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openShortcut(url: String) {
+        localSearchPageActive = false
         val webView = activeWebView()
         if (webView == null) {
             createNewTab(url)
@@ -1158,16 +1144,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showStartPage() {
+        localSearchPageActive = false
+        if (splitMode) setSplitMode(false)
         startPageContainer.visibility = View.VISIBLE
         activeWebView()?.visibility = View.GONE
         urlBar.setText("")
         startPageSearch.clearFocus()
         hideKeyboard()
+        updateHomeChromeVisibility()
+        loadQuickAccessRows()
+    }
+
+    private fun updateHomeChromeVisibility() {
+        val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
+        findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.bottom_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        swipeRefresh.isEnabled = !onHome && prefs.getBoolean(KEY_PULL_TO_REFRESH, true)
     }
 
     private fun updateStartPageVisibility() {
         val url = activeWebView()?.url
-        if (url.isNullOrBlank() || url == NEW_TAB_URL) {
+        if (localSearchPageActive) {
+            startPageContainer.visibility = View.GONE
+            startPageContainer.isClickable = false
+            activeWebView()?.visibility = View.VISIBLE
+            activeWebView()?.isClickable = true
+        } else if (url.isNullOrBlank() || url == NEW_TAB_URL) {
             startPageContainer.visibility = View.VISIBLE
             startPageContainer.isClickable = true
             activeWebView()?.visibility = View.GONE
@@ -1178,6 +1182,7 @@ class MainActivity : AppCompatActivity() {
             activeWebView()?.visibility = View.VISIBLE
             activeWebView()?.isClickable = true
         }
+        updateHomeChromeVisibility()
     }
 
     private fun updateTabCount() {
@@ -1211,6 +1216,7 @@ class MainActivity : AppCompatActivity() {
             else -> searchUrlForProvider(raw)
         }
         val webView = activeWebView()
+        localSearchPageActive = false
         if (webView != null) {
             startPageContainer.visibility = View.GONE
             startPageContainer.isClickable = false
@@ -1259,6 +1265,90 @@ class MainActivity : AppCompatActivity() {
         val url = intent?.dataString?.trim()
         if (!url.isNullOrBlank() && (url.startsWith("http://") || url.startsWith("https://"))) {
             createNewTab(url)
+        }
+    }
+
+    private fun installSplitDividerResize() {
+        splitDivider.setOnTouchListener { _, event ->
+            if (!splitMode || splitChromeLocked) return@setOnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val loc = IntArray(2)
+                    splitContainer.getLocationOnScreen(loc)
+                    val h = splitContainer.height.coerceAtLeast(1)
+                    val rawRatio = (event.rawY - loc[1]).toFloat() / h
+                    splitRatio = rawRatio.coerceIn(0.25f, 0.75f)
+                    applySplitRatio()
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
+    }
+
+    private fun applySplitRatio() {
+        if (!splitMode) return
+        val total = splitContainer.height
+        if (total <= 0) return
+        val dividerHeight = splitDivider.height.coerceAtLeast(1)
+        val available = (total - dividerHeight).coerceAtLeast(2)
+        val top = (available * splitRatio).toInt().coerceAtLeast(1)
+        val bottom = (available - top).coerceAtLeast(1)
+        splitTopHost.layoutParams = splitTopHost.layoutParams.apply { height = top; width = ViewGroup.LayoutParams.MATCH_PARENT }
+        splitBottomHost.layoutParams = splitBottomHost.layoutParams.apply { height = bottom; width = ViewGroup.LayoutParams.MATCH_PARENT }
+        splitTopHost.requestLayout()
+        splitBottomHost.requestLayout()
+    }
+
+    private fun setSplitMode(enabled: Boolean) {
+        if (enabled == splitMode) return
+        if (enabled && tabs.size < 2) createNewTab(NEW_TAB_URL)
+        if (enabled) {
+            splitMode = true
+            splitTopTabId = activeTabId
+            splitBottomTabId = tabs.firstOrNull { it.id != splitTopTabId }?.id ?: -1
+            if (splitBottomTabId == -1) { splitMode = false; return }
+            moveTabWebViewToHost(splitTopTabId, splitTopHost)
+            moveTabWebViewToHost(splitBottomTabId, splitBottomHost)
+            splitContainer.visibility = View.VISIBLE
+            startPageContainer.visibility = View.GONE
+            setSplitChromeLocked(false)
+            splitRatio = 0.5f
+            splitContainer.post { applySplitRatio() }
+        } else {
+            splitMode = false
+            listOf(splitTopTabId, splitBottomTabId).filter { it >= 0 }.forEach { moveTabWebViewToHost(it, webViewContainer) }
+            splitTopTabId = -1; splitBottomTabId = -1
+            splitRatio = 0.5f
+            splitContainer.visibility = View.GONE
+            updateStartPageVisibility()
+            setSplitChromeLocked(false)
+        }
+        updateHomeChromeVisibility()
+    }
+
+    private fun moveTabWebViewToHost(tabId: Int, host: FrameLayout) {
+        val webView = tabs.find { it.id == tabId }?.webView ?: return
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        host.removeAllViews()
+        host.addView(webView, FrameLayout.LayoutParams(-1, -1))
+        webView.visibility = View.VISIBLE
+    }
+
+    private fun setSplitChromeLocked(locked: Boolean) {
+        splitChromeLocked = locked
+        if (splitMode) {
+            findViewById<View>(R.id.top_toolbar)?.visibility = if (locked) View.GONE else View.VISIBLE
+            findViewById<View>(R.id.bottom_toolbar)?.visibility = if (locked) View.GONE else View.VISIBLE
+            splitLockButton.visibility = View.VISIBLE
+            splitLockButton.text = if (locked) "🔓" else "🔒"
+            splitLockButton.contentDescription = if (locked) "Show browser controls" else "Hide browser controls"
+        } else {
+            splitLockButton.visibility = View.GONE
         }
     }
 
@@ -1330,6 +1420,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeTab(id: Int) {
+        if (splitMode && (id == splitTopTabId || id == splitBottomTabId)) setSplitMode(false)
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
         val tab = tabs[index]
@@ -1508,34 +1599,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderHomeNews(container: LinearLayout, stories: List<HomeStory>) {
         container.removeAllViews()
-        stories.forEach { story ->
-            val card = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(210.dp(), 72.dp()).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
-                text = "${story.title}\n${story.source} · ${story.category}"
-                setTextColor(Color.rgb(226, 232, 240))
-                textSize = 11f
-                maxLines = 3
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setBackgroundResource(R.drawable.bg_shortcut)
-                setOnClickListener {
-                    val prefsJson = runCatching { JSONObject(prefs.getString(KEY_NEWS_PREFS, "{}") ?: "{}") }.getOrElse { JSONObject() }
-                    prefsJson.put(story.category, prefsJson.optInt(story.category, 0) + 1)
-                    prefs.edit().putString(KEY_NEWS_PREFS, prefsJson.toString()).apply()
-                    createNewTab(story.url)
-                }
+        stories.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(-1, 76.dp())
             }
-            container.addView(card)
+            pair.forEach { story ->
+                val card = TextView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 72.dp(), 1f).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
+                    text = "${story.title}\n${story.source} · ${story.category}"
+                    setTextColor(Color.rgb(226, 232, 240))
+                    textSize = 11f
+                    maxLines = 3
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setBackgroundResource(R.drawable.bg_shortcut)
+                    setOnClickListener {
+                        val prefsJson = runCatching { JSONObject(prefs.getString(KEY_NEWS_PREFS, "{}") ?: "{}") }.getOrElse { JSONObject() }
+                        prefsJson.put(story.category, prefsJson.optInt(story.category, 0) + 1)
+                        prefs.edit().putString(KEY_NEWS_PREFS, prefsJson.toString()).apply()
+                        createNewTab(story.url)
+                    }
+                }
+                row.addView(card)
+            }
+            if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 72.dp(), 1f))
+            container.addView(row)
         }
-        if (stories.isEmpty()) {
-            container.addView(TextView(this).apply {
-                text = "News unavailable right now"
-                setTextColor(Color.rgb(100, 116, 139))
-                textSize = 9f
-                setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
-            })
-        }
+        if (stories.isEmpty()) container.addView(TextView(this).apply {
+            text = "News unavailable right now"; setTextColor(Color.rgb(100,116,139)); textSize = 9f; setPadding(8.dp(),8.dp(),8.dp(),8.dp())
+        })
     }
 
     private fun startDownload(url: String, contentDisposition: String?, mimeType: String?) {
@@ -2200,6 +2294,7 @@ class MainActivity : AppCompatActivity() {
                     val index = data.getIntExtra("index", -1)
                     tabs.getOrNull(index)?.let { closeTab(it.id) }
                 }
+                "toggle_split" -> setSplitMode(!splitMode)
             }
             return
         }
@@ -2228,6 +2323,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 MenuActivity.ACTION_THEME -> showAppearanceChooser()
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
+                MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
@@ -2240,7 +2336,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openAiFromBottom(view: View) {
-        startActivity(Intent(this, AiActivity::class.java))
+        startActivity(Intent(this, AiActivity::class.java).putExtra("auto_voice", true))
     }
 
     fun openDownloadsFromBottom(view: View) {
@@ -2268,6 +2364,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (splitMode && ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            val topLoc = IntArray(2)
+            val bottomLoc = IntArray(2)
+            splitTopHost.getLocationOnScreen(topLoc)
+            splitBottomHost.getLocationOnScreen(bottomLoc)
+            when {
+                ev.rawY >= topLoc[1] && ev.rawY < topLoc[1] + splitTopHost.height -> {
+                    activeTabId = splitTopTabId
+                    updateNavButtons()
+                }
+                ev.rawY >= bottomLoc[1] && ev.rawY < bottomLoc[1] + splitBottomHost.height -> {
+                    activeTabId = splitBottomTabId
+                    updateNavButtons()
+                }
+            }
+        }
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
                 if (ev.pointerCount == 2 && !twoFingerHoldActive) {
