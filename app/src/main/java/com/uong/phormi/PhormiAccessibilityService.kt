@@ -122,6 +122,24 @@ class PhormiAccessibilityService : AccessibilityService() {
         }, null)
     }
 
+    /** Scrolls the active accessibility window in the requested direction. */
+    fun scroll(direction: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val forward = direction.lowercase() !in setOf("up", "left")
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            root.performAction(
+                if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            )
+        } else false
+    }
+
+    /** Performs the Android Back global action. */
+    fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+
+    /** Performs the Android Home global action. */
+    fun goHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
+
     /** Types text into whichever field is currently focused for input. */
     fun typeIntoFocusedField(text: String): Boolean {
         val root = rootInActiveWindow ?: return false
