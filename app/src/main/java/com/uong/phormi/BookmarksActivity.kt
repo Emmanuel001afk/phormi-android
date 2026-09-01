@@ -49,6 +49,17 @@ class BookmarksActivity : AppCompatActivity() {
             prefs.edit().putString(KEY, arr.toString()).apply()
         }
 
+        fun remove(context: android.content.Context, url: String) {
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
+            val kept = JSONArray()
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                if (item.optString("url", "") != url) kept.put(item)
+            }
+            prefs.edit().putString(KEY, kept.toString()).apply()
+        }
+
         /**
          * Returns bookmarks newest-first for quick-access surfaces.
          * This is intentionally read-only and does not alter the stored list.
