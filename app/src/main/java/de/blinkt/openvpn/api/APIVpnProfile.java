@@ -3,7 +3,7 @@ package de.blinkt.openvpn.api;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-/** Parcelable companion required by the OpenVPN for Android remote AIDL API. */
+/** Parcelable profile type required by the OpenVPN for Android remote AIDL API. */
 public class APIVpnProfile implements Parcelable {
     public final String mUUID;
     public final String mName;
