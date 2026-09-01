@@ -42,8 +42,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:screenOrientation="unspecified"
-            android:launchMode="singleTask">
+            android:screenOrientation="unspecified">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -58,18 +57,7 @@
         </activity>
 
         <activity
-            android:name=".GhostActivity"
-            android:exported="false"
-            android:process=":ghost"
-            android:theme="@style/Theme.Phormi" />
-
-        <activity
             android:name=".AiActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Phormi" />
-
-        <activity
-            android:name=".FileViewerActivity"
             android:exported="false"
             android:theme="@style/Theme.Phormi" />
 
@@ -105,14 +93,18 @@
             android:theme="@style/Theme.Phormi" />
 
         <activity
-            android:name=".NewsActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Phormi" />
-
-        <activity
             android:name=".AccountsActivity"
             android:exported="false"
             android:theme="@style/Theme.Phormi" />
+
+        <service
+            android:name=".CentralHubBridgeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="local Central Hub browser communication bridge" />
+        </service>
 
         <service
             android:name=".PhormiAccessibilityService"
@@ -131,6 +123,9 @@
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false"
             android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn_tunneling" />
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
