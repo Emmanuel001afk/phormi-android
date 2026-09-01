@@ -122,36 +122,6 @@ class PhormiAccessibilityService : AccessibilityService() {
         }, null)
     }
 
-
-    /** Scrolls the active window in the requested direction. */
-    fun scroll(direction: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val action = when (direction.lowercase()) {
-            "up" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-            "down" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-            else -> return false
-        }
-
-        val target = findScrollableNode(root) ?: return false
-        return target.performAction(action)
-    }
-
-    /** Performs the Android system Back action. */
-    fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
-
-    /** Performs the Android system Home action. */
-    fun goHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
-
-    private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isScrollable) return node
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = findScrollableNode(child)
-            if (found != null) return found
-        }
-        return null
-    }
-
     /** Types text into whichever field is currently focused for input. */
     fun typeIntoFocusedField(text: String): Boolean {
         val root = rootInActiveWindow ?: return false
@@ -174,4 +144,41 @@ class PhormiAccessibilityService : AccessibilityService() {
         }
         return null
     }
+    /** Scroll the active window. direction: "up" | "down" | "left" | "right" */
+    fun scroll(direction: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val action = when (direction.lowercase()) {
+            "up", "left" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        }
+        if (performScrollOn(root, action)) return true
+        val metrics = resources.displayMetrics
+        val cx = metrics.widthPixels / 2f
+        val cy = metrics.heightPixels / 2f
+        val path = Path()
+        when (direction.lowercase()) {
+            "up" -> { path.moveTo(cx, cy * 0.35f); path.lineTo(cx, cy * 1.15f) }
+            "left" -> { path.moveTo(cx * 0.3f, cy); path.lineTo(cx * 1.2f, cy) }
+            "right" -> { path.moveTo(cx * 1.2f, cy); path.lineTo(cx * 0.3f, cy) }
+            else -> { path.moveTo(cx, cy * 1.15f); path.lineTo(cx, cy * 0.35f) }
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
+            .build()
+        return dispatchGesture(gesture, null, null)
+    }
+
+    private fun performScrollOn(node: AccessibilityNodeInfo, action: Int): Boolean {
+        if (node.isScrollable && node.performAction(action)) return true
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            if (performScrollOn(child, action)) return true
+        }
+        return false
+    }
+
+    fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+
+    fun goHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
+
 }
