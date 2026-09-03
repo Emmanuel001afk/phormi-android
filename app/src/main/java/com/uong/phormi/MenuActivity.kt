@@ -17,6 +17,19 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_TAB_RETENTION = "tab_retention"
         const val ACTION_PULL_TO_REFRESH = "pull_to_refresh"
         const val ACTION_SPLIT_SCREEN = "split_screen"
+        const val ACTION_KEEP_SCREEN_ON = "keep_screen_on"
+        const val ACTION_TAB_ENVIRONMENT = "tab_environment"
+        const val ACTION_NAVIGATION_LENS = "navigation_lens"
+        const val ACTION_OBJECT_ANCHORS = "object_anchors"
+        const val ACTION_SAME_PAGE_SPLIT = "same_page_split"
+        const val ACTION_NOTIFICATIONS = "notifications"
+        const val ACTION_SECURITY = "security"
+        const val ACTION_SITE_LOCK = "site_lock"
+        const val ACTION_FIND = "find"
+        const val ACTION_SHARE = "share"
+        const val ACTION_DESKTOP_MODE = "desktop_mode"
+        const val ACTION_FAVORITE = "favorite"
+        const val ACTION_HELP = "help"
         const val ACTION_BOOKMARKS = "bookmarks"
         const val ACTION_HISTORY = "history"
         const val ACTION_ACCOUNTS = "accounts"
@@ -48,6 +61,11 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_history) {
             startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED)
         }
+        findViewById<TextView>(R.id.menu_notifications)?.let { wire(R.id.menu_notifications) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_NOTIFICATIONS)); finish() } }
+        findViewById<TextView>(R.id.menu_security)?.let { wire(R.id.menu_security) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_SECURITY)); finish() } }
+        findViewById<TextView>(R.id.menu_site_lock)?.let { wire(R.id.menu_site_lock) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_SITE_LOCK)); finish() } }
+        findViewById<TextView>(R.id.menu_find)?.let { wire(R.id.menu_find) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_FIND)); finish() } }
+        findViewById<TextView>(R.id.menu_share)?.let { wire(R.id.menu_share) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_SHARE)); finish() } }
         wire(R.id.menu_vpn) {
             startActivity(Intent(this, VpnActivity::class.java))
         }
@@ -66,6 +84,34 @@ class MenuActivity : AppCompatActivity() {
             setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_PULL_TO_REFRESH))
             finish()
         }
+        wire(R.id.menu_keep_screen_on) {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_KEEP_SCREEN_ON))
+        }
+        wire(R.id.menu_tab_environment) {
+            setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_TAB_ENVIRONMENT))
+            finish()
+        }
+        findViewById<TextView>(R.id.menu_navigation_lens)?.let {
+            wire(R.id.menu_navigation_lens) {
+                setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_NAVIGATION_LENS))
+                finish()
+            }
+        }
+        findViewById<TextView>(R.id.menu_object_anchors)?.let {
+            wire(R.id.menu_object_anchors) {
+                setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_OBJECT_ANCHORS))
+                finish()
+            }
+        }
+        findViewById<TextView>(R.id.menu_same_page_split)?.let {
+            wire(R.id.menu_same_page_split) {
+                setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_SAME_PAGE_SPLIT))
+                finish()
+            }
+        }
+        findViewById<TextView>(R.id.menu_desktop_mode)?.let { wire(R.id.menu_desktop_mode) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_DESKTOP_MODE)); finish() } }
+        findViewById<TextView>(R.id.menu_favorite)?.let { wire(R.id.menu_favorite) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_FAVORITE)); finish() } }
+        findViewById<TextView>(R.id.menu_help)?.let { wire(R.id.menu_help) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_HELP)); finish() } }
         wire(R.id.menu_split_screen) {
             setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, ACTION_SPLIT_SCREEN))
             finish()
