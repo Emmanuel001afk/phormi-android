@@ -32,6 +32,7 @@ import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.widget.EditText
@@ -48,6 +49,9 @@ import kotlinx.coroutines.launch
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
@@ -67,7 +71,8 @@ class MainActivity : AppCompatActivity() {
         var title: String,
         val chipView: View,
         val isGhost: Boolean = false,
-        var lastUsed: Long = System.currentTimeMillis()
+        var lastUsed: Long = System.currentTimeMillis(),
+        var profileName: String = DEFAULT_PROFILE_NAME
     )
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -117,6 +122,10 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_TAB_TITLES = "tab_titles"
         private const val KEY_ACTIVE_INDEX = "active_index"
         private const val KEY_TAB_LAST_USED = "tab_last_used"
+        private const val KEY_TAB_PROFILES = "tab_profiles"
+        private const val KEY_TAB_ENVIRONMENT = "tab_environment"
+        private const val DEFAULT_PROFILE_NAME = "Default"
+        private const val GHOST_PROFILE_NAME = "Ghost"
         private const val KEY_TAB_RETENTION = "tab_retention"
         private const val RETENTION_NEVER = "never"
         private const val RETENTION_1_MONTH = "1_month"
@@ -169,6 +178,8 @@ class MainActivity : AppCompatActivity() {
     private var pendingGeoCallback: android.webkit.GeolocationPermissions.Callback? = null
     private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var reloadRunnable: Runnable? = null
+    private val tabSaveHandler = Handler(Looper.getMainLooper())
+    private var tabSaveRunnable: Runnable? = null
     private var twoFingerHoldActive = false
     private var threeFingerStartX = 0f
     private var threeFingerTracking = false
@@ -185,6 +196,7 @@ class MainActivity : AppCompatActivity() {
         if (::prefs.isInitialized) {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
+            applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
             pruneExpiredTabs()
             updateHomeNewsVisibility()
             refreshHomeNews()
@@ -211,6 +223,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (PhormiEnvironmentManager.isSupported()) {
+            PhormiEnvironmentManager.delete(GHOST_PROFILE_NAME)
+        }
         CookieManager.getInstance().setAcceptCookie(true)
 
         swipeRefresh = findViewById(R.id.swipe_refresh)
@@ -323,7 +338,7 @@ class MainActivity : AppCompatActivity() {
             wv.canScrollVertically(-1)
         }
 
-        requestStartupPermissions()
+        // Sensitive permissions are requested only when a site actually needs them.
 
         // Keep WebView sessions (including website cookies/sign-ins) persisted across
         // Activity pauses and app restarts. This is the browser-style "sign in once"
@@ -555,16 +570,22 @@ class MainActivity : AppCompatActivity() {
             QuickSite("GitHub", "https://github.com", "", false),
             QuickSite("Add", "", "+", false)
         )
-        val personal = BookmarksActivity.getAll(this).take(8).map { QuickSite(it.title, it.url, "★", true) }.toMutableList()
-        val visited = HistoryActivity.getTopSites(this, 8)
-            .filter { b -> personal.none { it.url == b.url } }
-            .map { QuickSite(it.title, it.url, "•", true) }
-        personal += visited
+        // Custom shortcuts are newest-first and appear before bookmark/history suggestions.
+        // This guarantees that pressing Add produces a shortcut that is immediately visible.
+        val personal = mutableListOf<QuickSite>()
         val custom = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
-        for (i in 0 until custom.length()) {
+        for (i in custom.length() - 1 downTo 0) {
             val item = custom.optJSONObject(i) ?: continue
             val name = item.optString("name").trim(); val url = item.optString("url").trim()
-            if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) personal += QuickSite(name, url, "⌂", true)
+            if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) {
+                personal += QuickSite(name, url, "⌂", true)
+            }
+        }
+        BookmarksActivity.getAll(this).take(8).forEach { bookmark ->
+            if (personal.none { it.url == bookmark.url }) personal += QuickSite(bookmark.title, bookmark.url, "★", true)
+        }
+        HistoryActivity.getTopSites(this, 8).forEach { visited ->
+            if (personal.none { it.url == visited.url }) personal += QuickSite(visited.title, visited.url, "•", true)
         }
         (fixed + personal.take(12)).chunked(7).forEach { batch ->
             val row = LinearLayout(this).apply {
@@ -651,8 +672,15 @@ class MainActivity : AppCompatActivity() {
                 val list = runCatching {
                     JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]")
                 }.getOrElse { JSONArray() }
-                list.put(JSONObject().put("name", name).put("url", url))
-                prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, list.toString()).apply()
+                val kept = JSONArray()
+                for (i in 0 until list.length()) {
+                    val item = list.optJSONObject(i) ?: continue
+                    if (!item.optString("url").trim().equals(url, ignoreCase = true)) kept.put(item)
+                }
+                // Store the newest shortcut last; the renderer intentionally reads custom
+                // shortcuts newest-first so this one appears immediately.
+                kept.put(JSONObject().put("name", name).put("url", url))
+                prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, kept.toString()).apply()
                 loadQuickAccessRows()
             }
             .show()
@@ -1285,7 +1313,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         if (::prefs.isInitialized) {
-            saveTabs()
+            saveTabsImmediate()
             // A biometric/device-credential prompt can temporarily move the
             // Activity through the stopped state. Do not relock during that
             // authentication transaction; relock only after a real exit to
@@ -1393,11 +1421,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
 
-    private fun createNewTab(url: String) {
-        val isGhost = prefs.getBoolean("ghost_next_tab", false)
-        if (isGhost) prefs.edit().putBoolean("ghost_next_tab", false).apply()
+    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false) {
+        val ghostRequested = forceGhost || prefs.getBoolean("ghost_next_tab", false)
+        if (ghostRequested) prefs.edit().putBoolean("ghost_next_tab", false).apply()
         val id = nextTabId++
+        val requested = requestedProfile?.trim().takeIf { !it.isNullOrBlank() }
+            ?: if (ghostRequested) GHOST_PROFILE_NAME else selectedTabEnvironment()
         val webView = WebView(this)
+        var effectiveProfile = DEFAULT_PROFILE_NAME
+        if (requested != DEFAULT_PROFILE_NAME && isMultiProfileSupported()) {
+            val applied = runCatching { WebViewCompat.setProfile(webView, requested); true }.getOrDefault(false)
+            if (applied) effectiveProfile = requested
+        }
+        val isGhost = ghostRequested && effectiveProfile == GHOST_PROFILE_NAME
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         webViewContainer.addView(
@@ -1417,8 +1453,10 @@ class MainActivity : AppCompatActivity() {
         val chip = LayoutInflater.from(this).inflate(R.layout.tab_chip, tabStripContainer, false)
         val chipTitle = chip.findViewById<TextView>(R.id.tab_chip_title)
         val chipClose = chip.findViewById<TextView>(R.id.tab_chip_close)
+        val chipIcon = chip.findViewById<android.widget.ImageView>(R.id.tab_chip_icon)
 
-        val tab = Tab(id, webView, getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = System.currentTimeMillis())
+        val tab = Tab(id, webView, if (isGhost) "Ghost" else getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = System.currentTimeMillis(), profileName = effectiveProfile)
+        if (isGhost) chipIcon.visibility = View.VISIBLE
         tabs.add(tab)
         tabStripContainer.addView(chip)
 
@@ -1438,7 +1476,25 @@ class MainActivity : AppCompatActivity() {
         saveTabs()
     }
 
+    private fun createGhostTab(url: String = NEW_TAB_URL) {
+        if (!isMultiProfileSupported()) {
+            startActivity(Intent(this, GhostActivity::class.java))
+            return
+        }
+        createNewTab(url, GHOST_PROFILE_NAME, forceGhost = true)
+        urlBar.setText(if (url == NEW_TAB_URL) "" else url)
+    }
+
     private fun switchToTab(id: Int) {
+        val candidate = tabs.find { it.id == id }
+        if (candidate != null && candidate.id != activeTabId && isSiteLocked(candidate.webView.url)) {
+            requestSiteUnlock(candidate.webView.url.orEmpty()) { switchToTabUnlocked(id) }
+            return
+        }
+        switchToTabUnlocked(id)
+    }
+
+    private fun switchToTabUnlocked(id: Int) {
         activeTabId = id
         tabs.find { it.id == id }?.lastUsed = System.currentTimeMillis()
         tabs.forEach { tab ->
@@ -1458,6 +1514,33 @@ class MainActivity : AppCompatActivity() {
         saveTabs()
     }
 
+    private fun isSiteLocked(url: String?): Boolean {
+        val host = runCatching { Uri.parse(url.orEmpty()).host.orEmpty() }.getOrDefault("").lowercase(Locale.US)
+        if (host.isBlank()) return false
+        val prefs = getSharedPreferences("phormi_site_locks", MODE_PRIVATE)
+        val expiry = prefs.getLong(host, 0L)
+        if (expiry == 0L) return false
+        if (expiry != Long.MAX_VALUE && expiry <= System.currentTimeMillis()) {
+            prefs.edit().remove(host).apply()
+            return false
+        }
+        return true
+    }
+
+    private fun requestSiteUnlock(url: String, onSuccess: () -> Unit) {
+        val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("protected site")
+        if (browserLockManager.method(prefs) == BrowserLockManager.METHOD_PIN && browserLockManager.isPinConfigured(prefs)) {
+            val input = EditText(this).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD }
+            AlertDialog.Builder(this).setTitle("Unlock $host").setView(input)
+                .setPositiveButton("Unlock") { _, _ ->
+                    if (browserLockManager.verifyPin(prefs, input.text.toString())) onSuccess()
+                    else Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                }.setNegativeButton("Cancel", null).show()
+        } else {
+            browserLockManager.authenticate(onSuccess) { }
+        }
+    }
+
     private fun closeTab(id: Int) {
         if (splitMode && (id == splitTopTabId || id == splitBottomTabId)) setSplitMode(false)
         val index = tabs.indexOfFirst { it.id == id }
@@ -1468,6 +1551,9 @@ class MainActivity : AppCompatActivity() {
         tabStripContainer.removeView(tab.chipView)
         tab.webView.destroy()
         tabs.removeAt(index)
+        if (tab.isGhost && tabs.none { it.isGhost }) {
+            PhormiEnvironmentManager.delete(GHOST_PROFILE_NAME)
+        }
 
         if (tabs.isEmpty()) {
             createNewTab(NEW_TAB_URL)
@@ -1480,31 +1566,99 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveTabs() {
+        tabSaveRunnable?.let { tabSaveHandler.removeCallbacks(it) }
+        val runnable = Runnable { saveTabsImmediate() }
+        tabSaveRunnable = runnable
+        tabSaveHandler.postDelayed(runnable, 250L)
+    }
+
+    private fun saveTabsImmediate() {
+        tabSaveRunnable?.let { tabSaveHandler.removeCallbacks(it) }
+        tabSaveRunnable = null
         val persistTabs = tabs.filterNot { it.isGhost }
         val urls = JSONArray()
         val titles = JSONArray()
         val lastUsed = JSONArray()
+        val profiles = JSONArray()
         persistTabs.forEach { tab ->
             val u = tab.webView.url
             if (!u.isNullOrBlank()) {
                 urls.put(u)
                 titles.put(tab.title.ifBlank { "Tab" })
                 lastUsed.put(tab.lastUsed)
+                profiles.put(tab.profileName)
             }
         }
         if (urls.length() == 0) {
             urls.put(NEW_TAB_URL)
             titles.put(getString(R.string.new_tab))
             lastUsed.put(System.currentTimeMillis())
+            profiles.put(DEFAULT_PROFILE_NAME)
         }
         val activeIndex = persistTabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
             .putString(KEY_TAB_TITLES, titles.toString())
             .putString(KEY_TAB_LAST_USED, lastUsed.toString())
+            .putString(KEY_TAB_PROFILES, profiles.toString())
             .putString(KEY_TAB_RETENTION, prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER)
+            .putString(KEY_TAB_ENVIRONMENT, selectedTabEnvironment())
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
             .apply()
+    }
+
+    private fun selectedTabEnvironment(): String =
+        prefs.getString(KEY_TAB_ENVIRONMENT, DEFAULT_PROFILE_NAME)
+            ?.trim()?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_NAME
+
+    private fun isMultiProfileSupported(): Boolean =
+        WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+
+    private fun availableTabEnvironments(): List<String> {
+        if (!isMultiProfileSupported()) return listOf(DEFAULT_PROFILE_NAME)
+        return runCatching {
+            ProfileStore.getInstance().getAllProfileNames()
+                .filter { it.isNotBlank() && !it.equals(GHOST_PROFILE_NAME, ignoreCase = true) }.distinct()
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+                .ifEmpty { listOf(DEFAULT_PROFILE_NAME) }
+        }.getOrDefault(listOf(DEFAULT_PROFILE_NAME))
+    }
+
+    private fun showTabEnvironmentChooser() {
+        if (!isMultiProfileSupported()) {
+            Toast.makeText(this, "Separate tab environments are not supported by this WebView.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val values = availableTabEnvironments().toMutableList()
+        val current = selectedTabEnvironment()
+        if (!values.contains(current)) values.add(current)
+        val checked = values.indexOf(current).coerceAtLeast(0)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Tab environment")
+            .setMessage("Choose the browsing identity for new tabs. Existing tabs keep their own environment.")
+            .setSingleChoiceItems(values.toTypedArray(), checked) { dialog, which ->
+                val selected = values[which]
+                prefs.edit().putString(KEY_TAB_ENVIRONMENT, selected).apply()
+                dialog.dismiss()
+                Toast.makeText(this, "New tabs: $selected", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("New environment") { _, _ ->
+                val input = EditText(this).apply { hint = "Environment name"; setSingleLine(true) }
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Create environment").setView(input)
+                    .setPositiveButton("Create") { _, _ ->
+                        val name = input.text.toString().trim()
+                        if (name.isBlank() || name.equals(DEFAULT_PROFILE_NAME, true)) {
+                            Toast.makeText(this, "Choose a different name.", Toast.LENGTH_SHORT).show()
+                        } else runCatching {
+                            ProfileStore.getInstance().getOrCreateProfile(name)
+                            prefs.edit().putString(KEY_TAB_ENVIRONMENT, name).apply()
+                            Toast.makeText(this, "New tabs: $name", Toast.LENGTH_SHORT).show()
+                        }.onFailure {
+                            Toast.makeText(this, "Could not create environment.", Toast.LENGTH_SHORT).show()
+                        }
+                    }.setNegativeButton("Cancel", null).show()
+            }.show()
     }
 
     private fun restoreTabs() {
@@ -1525,11 +1679,15 @@ class MainActivity : AppCompatActivity() {
             val lastUsed = runCatching {
                 JSONArray(prefs.getString(KEY_TAB_LAST_USED, "[]") ?: "[]")
             }.getOrElse { JSONArray() }
+            val profiles = runCatching {
+                JSONArray(prefs.getString(KEY_TAB_PROFILES, "[]") ?: "[]")
+            }.getOrElse { JSONArray() }
             val count = arr.length()
             val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
                 val restoredUrl = arr.optString(i, NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
-                createNewTab(restoredUrl)
+                val restoredProfile = profiles.optString(i, DEFAULT_PROFILE_NAME).trim().ifBlank { DEFAULT_PROFILE_NAME }
+                createNewTab(restoredUrl, restoredProfile)
                 if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
                 if (restoredTitle.isNotBlank() && i < tabs.size) {
@@ -2065,7 +2223,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         // Persist both browser state and website sessions when the app leaves the foreground.
-        saveTabs()
+        saveTabsImmediate()
         CookieManager.getInstance().flush()
         super.onPause()
     }
@@ -2347,7 +2505,7 @@ class MainActivity : AppCompatActivity() {
                     showKeyboard()
                 }
                 MenuActivity.ACTION_GHOST -> {
-                    startActivity(Intent(this, GhostActivity::class.java))
+                    createGhostTab()
                 }
                 MenuActivity.ACTION_BROWSER_LOCK -> {
                     val enabled = prefs.getBoolean(KEY_BROWSER_LOCK, false)
@@ -2359,6 +2517,35 @@ class MainActivity : AppCompatActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                     if (!enabled) authenticateBrowserLock()
+                }
+                MenuActivity.ACTION_TAB_ENVIRONMENT -> showTabEnvironmentChooser()
+                MenuActivity.ACTION_NOTIFICATIONS -> {
+                    val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                    }
+                    runCatching { startActivity(intent) }.onFailure {
+                        startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                    }
+                }
+                MenuActivity.ACTION_SECURITY -> startActivity(Intent(this, PhormiSecurityCenterActivity::class.java))
+                MenuActivity.ACTION_SITE_LOCK -> showSiteLockDialog()
+                MenuActivity.ACTION_FIND -> showFindInPage()
+                MenuActivity.ACTION_SHARE -> shareCurrentPage()
+                MenuActivity.ACTION_NAVIGATION_LENS -> showNavigationLens()
+                MenuActivity.ACTION_OBJECT_ANCHORS -> showObjectAnchors()
+                MenuActivity.ACTION_SAME_PAGE_SPLIT -> openSamePageSplit()
+                MenuActivity.ACTION_DESKTOP_MODE -> toggleDesktopMode()
+                MenuActivity.ACTION_FAVORITE -> addCurrentPageToBookmarks()
+                MenuActivity.ACTION_HELP -> showPhormiHelp()
+                MenuActivity.ACTION_KEEP_SCREEN_ON -> {
+                    val enabled = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
+                    prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, !enabled).apply()
+                    applyKeepScreenOn(!enabled)
+                    Toast.makeText(
+                        this,
+                        if (!enabled) "Keep screen on: on" else "Keep screen on: off",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
                 MenuActivity.ACTION_THEME -> showAppearanceChooser()
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
@@ -2463,32 +2650,199 @@ class MainActivity : AppCompatActivity() {
         }
         return super.dispatchTouchEvent(ev)
     }
+    private fun showNavigationLens() {
+        val view = activeWebView() ?: return
+        PhormiNavigationLens.inspect(view) { objects ->
+            runOnUiThread {
+                if (objects.isEmpty()) {
+                    Toast.makeText(this, "Navigation Lens found no navigable objects.", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                val labels = objects.map { "${it.kind}: ${it.label.ifBlank { "(unnamed)" }}" }.toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("Navigation Lens")
+                    .setItems(labels) { _, which ->
+                        val selected = objects[which]
+                        PhormiNavigationLens.focus(view, selected.locator)
+                        AlertDialog.Builder(this)
+                            .setTitle(selected.label.ifBlank { "Anchored object" })
+                            .setMessage("${selected.kind}\n${selected.href.ifBlank { "Current page" }}")
+                            .setPositiveButton("Anchor") { _, _ ->
+                                val url = view.url.orEmpty()
+                                if (url.isNotBlank()) {
+                                    PhormiObjectAnchorStore.add(this, selected.label, url, selected.locator, selected.kind)
+                                    Toast.makeText(this, "Object anchored", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            .setNegativeButton("Close", null)
+                            .show()
+                    }.show()
+            }
+        }
+    }
+
+    private fun showObjectAnchors() {
+        val anchors = PhormiObjectAnchorStore.list(this)
+        if (anchors.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("Object Anchors").setMessage("No anchors saved yet. Open Navigation Lens and anchor a page object.").setPositiveButton("Close", null).show()
+            return
+        }
+        val labels = anchors.map { "${it.label}\n${it.url}" }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Object Anchors").setItems(labels) { _, which ->
+            val anchor = anchors[which]
+            createNewTab(anchor.url)
+            activeWebView()?.postDelayed({ PhormiNavigationLens.focus(activeWebView()!!, anchor.locator) }, 900)
+        }.setNegativeButton("Close", null).show()
+    }
+
+    private fun openSamePageSplit() {
+        val currentUrl = activeWebView()?.url?.takeIf { it.startsWith("http") } ?: return
+        val originalId = activeTabId
+        createNewTab(currentUrl)
+        if (tabs.any { it.id == originalId } && tabs.any { it.id == activeTabId && it.id != originalId }) {
+            setSplitMode(true)
+        }
+    }
+
+    private fun showSiteLockDialog() {
+        val view = activeWebView() ?: return
+        val url = view.url.orEmpty()
+        if (!url.startsWith("http")) return
+        val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
+        if (host.isBlank()) return
+        val options = arrayOf("15 minutes", "1 hour", "Until removed")
+        AlertDialog.Builder(this)
+            .setTitle("Protect $host")
+            .setItems(options) { _, which ->
+                val expiry = when (which) {
+                    0 -> System.currentTimeMillis() + 15 * 60 * 1000L
+                    1 -> System.currentTimeMillis() + 60 * 60 * 1000L
+                    else -> Long.MAX_VALUE
+                }
+                val lockPrefs = getSharedPreferences("phormi_site_locks", MODE_PRIVATE)
+                lockPrefs.edit().putLong(host.lowercase(Locale.US), expiry).apply()
+                Toast.makeText(this, "Site protection enabled for $host", Toast.LENGTH_SHORT).show()
+            }.show()
+    }
+
+    private fun showFindInPage() {
+        val view = activeWebView() ?: return
+        val input = EditText(this).apply { hint = "Find text"; setSingleLine(true) }
+        AlertDialog.Builder(this)
+            .setTitle("Find in page")
+            .setView(input)
+            .setNegativeButton("Close") { _, _ -> view.clearMatches() }
+            .setPositiveButton("Find") { _, _ ->
+                val q = input.text.toString()
+                if (q.isNotBlank()) view.findAllAsync(q)
+            }.show()
+    }
+
+    private fun shareCurrentPage() {
+        val view = activeWebView() ?: return
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, view.url.orEmpty())
+            putExtra(Intent.EXTRA_TITLE, view.title.orEmpty())
+        }
+        startActivity(Intent.createChooser(send, "Share page"))
+    }
+
+    private fun addCurrentPageToBookmarks() {
+        val view = activeWebView() ?: return
+        val url = view.url.orEmpty()
+        if (!url.startsWith("http")) return
+        BookmarksActivity.add(this, view.title.orEmpty(), url)
+        loadQuickAccessRows()
+        Toast.makeText(this, "Added to favorites", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun toggleDesktopMode() {
+        val view = activeWebView() ?: return
+        val desktop = !prefs.getBoolean("desktop_mode", false)
+        prefs.edit().putBoolean("desktop_mode", desktop).apply()
+        val settings = view.settings
+        settings.userAgentString = if (desktop) {
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+        } else {
+            WebSettings.getDefaultUserAgent(this)
+        }
+        view.reload()
+        Toast.makeText(this, if (desktop) "Desktop mode: on" else "Desktop mode: off", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showPhormiHelp() {
+        AlertDialog.Builder(this)
+            .setTitle("Phormi")
+            .setMessage("Phormi is a full browser foundation with Ghost private tabs, tab environments, Split Screen, Navigation Lens, Object Anchors, Central Hub control, downloads, search, and optional AI assistance.")
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
     fun handleCentralHubCommand(command: JSONObject): JSONObject {
         return try {
             when (command.optString("command")) {
-                "state" -> JSONObject()
-                    .put("ok", true)
+                "state" -> JSONObject().put("ok", true)
                     .put("tabs", tabs.size)
+                    .put("ghostTabs", tabs.count { it.isGhost })
                     .put("activeUrl", activeWebView()?.url ?: "")
                     .put("title", tabs.find { it.id == activeTabId }?.title ?: "")
+                    .put("profile", tabs.find { it.id == activeTabId }?.profileName ?: DEFAULT_PROFILE_NAME)
                 "open_url" -> {
                     val url = command.optString("url").trim()
-                    if (url.startsWith("http")) {
-                        runOnUiThread { createNewTab(url) }
-                        JSONObject().put("ok", true)
-                    } else {
-                        JSONObject().put("ok", false).put("error", "bad_url")
-                    }
+                    if (url.startsWith("http")) { createNewTab(url); JSONObject().put("ok", true) }
+                    else JSONObject().put("ok", false).put("error", "bad_url")
                 }
-                "new_tab" -> {
-                    runOnUiThread { createNewTab(NEW_TAB_URL) }
+                "new_tab" -> { createNewTab(NEW_TAB_URL); JSONObject().put("ok", true) }
+                "ghost_tab" -> { createGhostTab(command.optString("url", NEW_TAB_URL)); JSONObject().put("ok", true) }
+                "back" -> { activeWebView()?.let { if (it.canGoBack()) it.goBack() }; JSONObject().put("ok", true) }
+                "forward" -> { activeWebView()?.let { if (it.canGoForward()) it.goForward() }; JSONObject().put("ok", true) }
+                "reload" -> { activeWebView()?.reload(); JSONObject().put("ok", true) }
+                "read_page" -> {
+                    val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    var payload = JSONObject().put("ok", false).put("error", "read_timeout")
+                    view.evaluateJavascript("JSON.stringify({title:document.title,url:location.href,text:(document.body?.innerText||'').slice(0,20000),links:Array.from(document.querySelectorAll('a[href]')).slice(0,120).map(a=>({text:(a.innerText||'').trim().slice(0,120),href:a.href}))})") { raw ->
+                        payload = runCatching { JSONObject(org.json.JSONTokener(raw).nextValue().toString()) }
+                            .getOrElse { JSONObject() }
+                            .put("ok", true)
+                        latch.countDown()
+                    }
+                    latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                    payload
+                }
+                "click_text" -> {
+                    val text = JSONObject.quote(command.optString("text"))
+                    activeWebView()?.evaluateJavascript("(()=>{const t=$text;const e=[...document.querySelectorAll('button,a,[role=button],input[type=submit]')].find(x=>(x.innerText||x.value||x.getAttribute('aria-label')||'').includes(t));if(e){e.click();return true}return false})()") { }
                     JSONObject().put("ok", true)
+                }
+                "type_text" -> {
+                    val text = JSONObject.quote(command.optString("text"))
+                    val selector = command.optString("selector").trim()
+                    val script = if (selector.isBlank()) "document.activeElement?.value!==undefined?(document.activeElement.value=$text,document.activeElement.dispatchEvent(new Event('input',{bubbles:true})),true):false" else "(()=>{const e=document.querySelector(${JSONObject.quote(selector)});if(!e)return false;e.focus();e.value=$text;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()"
+                    activeWebView()?.evaluateJavascript(script) { }
+                    JSONObject().put("ok", true)
+                }
+                "scroll" -> {
+                    val dy = command.optInt("dy", 600)
+                    activeWebView()?.evaluateJavascript("window.scrollBy(0,$dy);true") { }
+                    JSONObject().put("ok", true)
+                }
+                "screenshot", "frame" -> {
+                    val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
+                    JSONObject().put("ok", true).put("image", PhormiViewportCapture.toBase64Jpeg(view, 1280, 62))
+                }
+                "webgpu_diagnostics" -> {
+                    val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    var result = JSONObject().put("ok", false).put("error", "diagnostics_timeout")
+                    PhormiWebGpuDiagnostics.run(view) { json -> result = json; latch.countDown() }
+                    latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                    result
                 }
                 else -> JSONObject().put("ok", false).put("error", "unknown_command")
             }
-        } catch (e: Exception) {
-            JSONObject().put("ok", false).put("error", e.message ?: "error")
-        }
+        } catch (e: Exception) { JSONObject().put("ok", false).put("error", e.message ?: "error") }
     }
 
 } 
