@@ -12,6 +12,15 @@
     android:orientation="horizontal"
     android:background="@drawable/bg_tab_circle">
 
+    <ImageView
+        android:id="@+id/tab_chip_icon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="4dp"
+        android:visibility="gone"
+        android:src="@drawable/ic_phormi_ghost"
+        android:contentDescription="Ghost tab" />
+
     <TextView
         android:id="@+id/tab_chip_title"
         android:layout_width="0dp"
