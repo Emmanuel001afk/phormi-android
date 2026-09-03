@@ -18,14 +18,12 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * True ephemeral browser session.
+ * Compatibility fallback for WebViews that do not support MULTI_PROFILE.
  *
- * This activity keeps its own temporary WebView state and explicitly clears
- * cookies, cache, history and form data when it closes. It does not write
- * browser tabs/history through MainActivity.
- *
- * The layout is built here so the activity does not depend on a missing
- * activity_ghost.xml resource.
+ * Modern devices use MainActivity's dedicated Ghost WebView profile, which
+ * provides real cookie/storage isolation. This fallback still avoids writing
+ * tabs/history through MainActivity and clears its own WebView cache/history
+ * when it closes, but cannot provide profile-level isolation on old WebViews.
  */
 class GhostActivity : AppCompatActivity() {
 
@@ -36,10 +34,9 @@ class GhostActivity : AppCompatActivity() {
         (value * resources.displayMetrics.density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        runCatching {
-            WebView.setDataDirectorySuffix("ghost")
-        }
-
+        // Do not call WebView.setDataDirectorySuffix here: MainActivity may already
+        // have initialized WebView in this process, which would make that API illegal.
+        // Devices with WebKit MULTI_PROFILE use the real Ghost profile in MainActivity.
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
