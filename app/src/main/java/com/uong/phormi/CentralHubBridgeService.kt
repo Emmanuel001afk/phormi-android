@@ -139,6 +139,9 @@ class CentralHubBridgeService : Service() {
                 method == "GET" && target.substringBefore('?') == "/v1/state" -> {
                     writeResponse(s, 200, dispatchToActivity(JSONObject().put("command", "state")))
                 }
+                method == "GET" && (target.substringBefore('?') == "/v1/screenshot" || target.substringBefore('?') == "/v1/frame") -> {
+                    writeResponse(s, 200, dispatchToActivity(JSONObject().put("command", "screenshot")))
+                }
                 method == "POST" && target.substringBefore('?') == "/v1/command" -> {
                     val command = runCatching { JSONObject(String(body)) }.getOrElse {
                         JSONObject().put("ok", false).put("error", "invalid_json").toString()
