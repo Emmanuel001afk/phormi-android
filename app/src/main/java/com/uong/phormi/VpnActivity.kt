@@ -76,6 +76,7 @@ class VpnActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.vpn_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.vpn_refresh).setOnClickListener { loadServers() }
+        findViewById<TextView>(R.id.vpn_engine_validation)?.setOnClickListener { showEngineValidation() }
         btnConnect.setOnClickListener { connectSelected() }
         btnDisconnect.setOnClickListener { disconnectVpn() }
 
@@ -122,6 +123,15 @@ class VpnActivity : AppCompatActivity() {
         })
 
         loadServers()
+    }
+
+    private fun showEngineValidation() {
+        val result = PhormiVpnEngineValidator.inspect(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Embedded VPN engine check")
+            .setMessage(PhormiVpnEngineValidator.format(result))
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     override fun onResume() {
