@@ -106,6 +106,7 @@ class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
+    private var pendingLockedNavigationUrl: String? = null
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
@@ -2258,6 +2259,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                val target = request?.url?.toString().orEmpty()
+                if (target.isBlank()) return false
+                val host = PhormiSiteLockManager.normalizeHost(target)
+                if (host != null && PhormiSiteLockManager.isLocked(this@MainActivity, target)) {
+                    pendingLockedNavigationUrl = target
+                    showSiteUnlockDialog(host)
+                    return true
+                }
+                return false
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
+                super.onPageStarted(view, url, favicon)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                     val t = view?.title ?: ""
                     val u = view?.url ?: url ?: ""
@@ -2275,6 +2293,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     updateNavButtons()
                 }
+                tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.finish(it.id, u) }
                 saveTabs()
             }
         }
@@ -2719,10 +2738,48 @@ class MainActivity : AppCompatActivity() {
                     1 -> System.currentTimeMillis() + 60 * 60 * 1000L
                     else -> Long.MAX_VALUE
                 }
-                val lockPrefs = getSharedPreferences("phormi_site_locks", MODE_PRIVATE)
-                lockPrefs.edit().putLong(host.lowercase(Locale.US), expiry).apply()
+                PhormiSiteLockManager.lock(this, host, expiry)
                 Toast.makeText(this, "Site protection enabled for $host", Toast.LENGTH_SHORT).show()
             }.show()
+    }
+
+    private fun showSiteUnlockDialog(host: String) {
+        val unlock = {
+            PhormiSiteLockManager.unlock(this, host)
+            val url = pendingLockedNavigationUrl
+            pendingLockedNavigationUrl = null
+            if (!url.isNullOrBlank()) activeWebView()?.loadUrl(url)
+        }
+
+        if (browserLockManager.isPinConfigured(prefs)) {
+            val input = EditText(this).apply {
+                hint = "Phormi PIN"
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                    android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                setSingleLine(true)
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Site protected")
+                .setMessage("$host is currently protected. Enter your Phormi PIN to continue.")
+                .setView(input)
+                .setNegativeButton("Cancel") { _, _ -> pendingLockedNavigationUrl = null }
+                .setPositiveButton("Unlock once") { _, _ ->
+                    if (browserLockManager.verifyPin(prefs, input.text.toString())) {
+                        unlock()
+                    } else {
+                        pendingLockedNavigationUrl = null
+                        Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                    }
+                }.show()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("Site protected")
+                .setMessage("$host is currently protected. Use device authentication to continue.")
+                .setNegativeButton("Cancel") { _, _ -> pendingLockedNavigationUrl = null }
+                .setPositiveButton("Authenticate") { _, _ ->
+                    browserLockManager.authenticate(unlock) { pendingLockedNavigationUrl = null }
+                }.show()
+        }
     }
 
     private fun showFindInPage() {
