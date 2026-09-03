@@ -2,7 +2,6 @@ package com.uong.phormi
 
 import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -85,7 +84,11 @@ class DownloadsActivity : AppCompatActivity() {
                 while (cursor.moveToNext()) {
                     items += DownloadItem(
                         id = cursor.getLong(idCol),
-                        title = cursor.getString(titleCol) ?: "Download",
+                        title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() } ?: run {
+                            val local = if (uriCol >= 0) cursor.getString(uriCol) else null
+                            if (local.isNullOrBlank()) "Download" else
+                                PhormiFileOpener.displayName(this@DownloadsActivity, Uri.parse(local), "Download")
+                        },
                         status = cursor.getInt(statusCol),
                         localUri = if (uriCol >= 0) cursor.getString(uriCol) else null,
                         size = if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
@@ -134,11 +137,9 @@ class DownloadsActivity : AppCompatActivity() {
         }
         try {
             val uri = Uri.parse(item.localUri)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, item.mimeType ?: contentResolver.getType(uri) ?: "application/octet-stream")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (!PhormiFileOpener.open(this, uri, item.mimeType)) {
+                Toast.makeText(this, "No installed app can open ${item.title}", Toast.LENGTH_SHORT).show()
             }
-            startActivity(intent)
         } catch (_: Exception) {
             Toast.makeText(this, "No app can open this file", Toast.LENGTH_SHORT).show()
         }
