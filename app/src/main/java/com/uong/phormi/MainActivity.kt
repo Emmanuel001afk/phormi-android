@@ -67,7 +67,7 @@ class MainActivity : AppCompatActivity() {
 
     private data class Tab(
         val id: Int,
-        val webView: WebView,
+        var webView: WebView,
         var title: String,
         val chipView: View,
         val isGhost: Boolean = false,
@@ -1399,6 +1399,48 @@ class MainActivity : AppCompatActivity() {
         updateHomeChromeVisibility()
     }
 
+    private fun reassignTabEnvironment(tabId: Int, requestedProfile: String?) {
+        val tab = tabs.find { it.id == tabId } ?: return
+        val target = requestedProfile?.trim().takeIf { !it.isNullOrBlank() } ?: return
+        if (tab.isGhost || target == GHOST_PROFILE_NAME) {
+            Toast.makeText(this, "Ghost tabs use the Ghost environment", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!isMultiProfileSupported()) {
+            Toast.makeText(this, "Named environments are unavailable on this WebView", Toast.LENGTH_LONG).show()
+            return
+        }
+        val old = tab.webView
+        val url = old.url.orEmpty()
+        val newWebView = WebView(this)
+        if (!runCatching { WebViewCompat.setProfile(newWebView, target); true }.getOrDefault(false)) {
+            newWebView.destroy()
+            Toast.makeText(this, "Environment could not be applied", Toast.LENGTH_LONG).show()
+            return
+        }
+        CookieManager.getInstance().setAcceptThirdPartyCookies(newWebView, true)
+        configureWebView(newWebView)
+        newWebView.isClickable = true
+        newWebView.isFocusable = true
+        newWebView.isFocusableInTouchMode = true
+        newWebView.setBackgroundColor(Color.TRANSPARENT)
+        registerForContextMenu(newWebView)
+        val parent = old.parent as? ViewGroup
+        parent?.removeView(old)
+        parent?.addView(newWebView, 0, FrameLayout.LayoutParams(-1, -1))
+        old.destroy()
+        tab.webView = newWebView
+        tab.profileName = target
+        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text =
+            if (tab.title.isBlank()) target else "${tab.title} · $target"
+        if (url.isBlank() || url == NEW_TAB_URL) updateStartPageVisibility() else newWebView.loadUrl(url)
+        saveTabs()
+        if (tab.id == activeTabId) {
+            updateNavButtons()
+            updateStartPageVisibility()
+        }
+    }
+
     private fun moveTabWebViewToHost(tabId: Int, host: FrameLayout) {
         val webView = tabs.find { it.id == tabId }?.webView ?: return
         (webView.parent as? ViewGroup)?.removeView(webView)
@@ -2570,6 +2612,9 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
+                MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController(this).showKeyboardPicker()
+                MenuActivity.ACTION_DEFAULT_BROWSER -> PhormiDefaultBrowserController.request(this)
+                MenuActivity.ACTION_TAB_GROUPS -> startActivity(Intent(this, TabGroupsActivity::class.java))
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
                     if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
