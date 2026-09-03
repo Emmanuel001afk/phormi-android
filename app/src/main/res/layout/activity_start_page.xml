@@ -23,7 +23,7 @@
         <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:layout_marginTop="9dp" android:gravity="center_vertical">
             <TextView android:id="@+id/start_page_quick_access" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Quick access" android:textColor="#CBD5E1" android:textSize="13sp" android:textStyle="bold" />
             <TextView android:id="@+id/start_page_news" android:layout_width="wrap_content" android:layout_height="28dp" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="News · On" android:textColor="#38BDF8" android:textSize="10sp" android:background="@drawable/bg_start_action" android:clickable="true" android:focusable="true" />
-            <TextView android:id="@+id/start_page_ai" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginStart="6dp" android:gravity="center" android:drawableTop="@drawable/ic_phormi_logo" android:contentDescription="Phormi AI mode" android:clickable="true" android:focusable="true" android:background="@drawable/bg_start_action" android:padding="5dp" />
+            <TextView android:id="@+id/start_page_ai" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginStart="6dp" android:gravity="center" android:drawableTop="@drawable/ic_phormi_ai" android:contentDescription="Phormi AI mode" android:clickable="true" android:focusable="true" android:background="@drawable/bg_start_action" android:padding="5dp" />
         </LinearLayout>
 
         <!-- Dynamic quick access rows (MainActivity.loadQuickAccessRows) -->
