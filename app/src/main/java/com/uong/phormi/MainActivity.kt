@@ -191,6 +191,8 @@ class MainActivity : AppCompatActivity() {
     private val unifiedSearchLock = Any()
     private var unifiedSearchFutures = mutableListOf<java.util.concurrent.Future<*>>()
     private var localSearchPageActive = false
+    @Volatile private var lastVideoAnalysis: String = ""
+    @Volatile private var videoAnalysisRunning: Boolean = false
 
     override fun onResume() {
         super.onResume()
@@ -1499,7 +1501,10 @@ class MainActivity : AppCompatActivity() {
         val chipIcon = chip.findViewById<android.widget.ImageView>(R.id.tab_chip_icon)
 
         val tab = Tab(id, webView, if (isGhost) "Ghost" else getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = System.currentTimeMillis(), profileName = effectiveProfile)
-        if (isGhost) chipIcon.visibility = View.VISIBLE
+        if (isGhost) {
+            chipIcon.setImageResource(R.drawable.ic_phormi_ghost)
+            chipIcon.visibility = View.VISIBLE
+        }
         tabs.add(tab)
         tabStripContainer.addView(chip)
 
@@ -2615,6 +2620,8 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController(this).showKeyboardPicker()
                 MenuActivity.ACTION_DEFAULT_BROWSER -> PhormiDefaultBrowserController.request(this)
                 MenuActivity.ACTION_TAB_GROUPS -> startActivity(Intent(this, TabGroupsActivity::class.java))
+                MenuActivity.ACTION_VIDEO_ANALYSIS -> analyzeCurrentVideo()
+                MenuActivity.ACTION_LOCAL_AI -> startActivity(Intent(this, PhormiLocalAiActivity::class.java))
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
                     if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
@@ -2873,6 +2880,44 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, if (desktop) "Desktop mode: on" else "Desktop mode: off", Toast.LENGTH_SHORT).show()
     }
 
+    private fun analyzeCurrentVideo(showDialog: Boolean = true) {
+        val view = activeWebView()
+        if (view == null) {
+            Toast.makeText(this, "No active page to analyze.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (videoAnalysisRunning) {
+            Toast.makeText(this, "Video analysis is already running.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        videoAnalysisRunning = true
+        if (showDialog) Toast.makeText(this, "Reading the current video…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            try {
+                val capture = PhormiVideoAnalyzer.capture(view)
+                if (!capture.metadata.optBoolean("found", false)) {
+                    lastVideoAnalysis = "No HTML5 video element was detected on the active page.\nURL: ${capture.metadata.optString("url")}"
+                    if (showDialog) AlertDialog.Builder(this@MainActivity).setTitle("Video analysis").setMessage(lastVideoAnalysis).setPositiveButton("Close", null).show()
+                    return@launch
+                }
+                val answer = aiController.analyzeVideo(capture.metadata, capture.frames)
+                lastVideoAnalysis = answer ?: "Video detected, but no configured AI provider accepted multimodal video frames.\n\nMetadata: ${capture.metadata.toString(2)}"
+                if (showDialog) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Phormi video analysis")
+                        .setMessage(lastVideoAnalysis)
+                        .setPositiveButton("Close", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                lastVideoAnalysis = "Video analysis failed: ${e.message ?: "unknown error"}"
+                if (showDialog) AlertDialog.Builder(this@MainActivity).setTitle("Video analysis").setMessage(lastVideoAnalysis).setPositiveButton("Close", null).show()
+            } finally {
+                videoAnalysisRunning = false
+            }
+        }
+    }
+
     private fun showPhormiHelp() {
         AlertDialog.Builder(this)
             .setTitle("Phormi")
@@ -2934,6 +2979,11 @@ class MainActivity : AppCompatActivity() {
                     val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
                     JSONObject().put("ok", true).put("image", PhormiViewportCapture.toBase64Jpeg(view, 1280, 62))
                 }
+                "analyze_current_video", "video_analyze" -> {
+                    analyzeCurrentVideo(showDialog = false)
+                    JSONObject().put("ok", true).put("started", true).put("message", "Video analysis started").put("resultAvailableCommand", "video_analysis_result")
+                }
+                "video_analysis_result" -> JSONObject().put("ok", lastVideoAnalysis.isNotBlank()).put("running", videoAnalysisRunning).put("result", lastVideoAnalysis)
                 "webgpu_diagnostics" -> {
                     val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
                     val latch = java.util.concurrent.CountDownLatch(1)
