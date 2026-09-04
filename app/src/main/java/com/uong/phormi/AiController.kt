@@ -296,6 +296,45 @@ class AiController(private val context: Context) {
         } catch (_: Exception) { null }
     }
 
+    suspend fun analyzeVideo(metadata: JSONObject, frames: List<String>): String? = withContext(Dispatchers.IO) {
+        val providers = listProviders().filter { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() }
+        if (providers.isEmpty()) return@withContext null
+
+        val frameLimit = frames.take(3)
+        val prompt = "Analyze the current browser video. Use only the supplied page metadata, visible page text, and sampled frames. State what the video appears to show, main points, important on-screen evidence, and uncertainty. Do not invent audio/transcript content that was not supplied. If this is a YouTube page, identify the title/channel context only when visible in the supplied data." +
+            "\n\nPage/video metadata:\n" + metadata.toString(2)
+
+        for (provider in providers) {
+            try {
+                val content = JSONArray().put(JSONObject().put("type", "text").put("text", prompt))
+                frameLimit.forEachIndexed { index, b64 ->
+                    content.put(JSONObject().put("type", "text").put("text", "Sampled frame ${index + 1}:"))
+                    content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+                }
+                val messages = JSONArray().put(JSONObject().put("role", "user").put("content", content))
+                val body = JSONObject().put("model", provider.model).put("messages", messages)
+                val request = Request.Builder().url(provider.endpoint)
+                    .addHeader("Authorization", "Bearer ${provider.apiKey}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                    val root = JSONObject(response.body?.string().orEmpty())
+                    val contentValue = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
+                    val answer = when (contentValue) {
+                        is String -> contentValue
+                        is JSONArray -> buildString { for (i in 0 until contentValue.length()) { val part=contentValue.opt(i); if(part is JSONObject) append(part.optString("text")) } }
+                        else -> ""
+                    }.trim()
+                    if (answer.isNotBlank()) return@withContext "${provider.name}:\n$answer"
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Video analysis via ${provider.name} failed: ${e.message}")
+            }
+        }
+        null
+    }
+
     suspend fun runTask(instruction: String, onStatus: (String) -> Unit) {
         if (!isActive()) {
             onStatus("AI is inactive. Save & Run an AI provider first.")
