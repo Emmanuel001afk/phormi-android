@@ -68,6 +68,11 @@
             android:theme="@style/Theme.Phormi" />
 
         <activity
+            android:name=".PhormiLocalAiActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Phormi" />
+
+        <activity
             android:name=".DownloadsActivity"
             android:exported="false"
             android:label="@string/downloads_title"
@@ -102,6 +107,15 @@
             android:name=".AccountsActivity"
             android:exported="false"
             android:theme="@style/Theme.Phormi" />
+
+
+        <service android:name=".PhormiKeyboardService" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true">
+            <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
+            <meta-data android:name="android.view.im" android:resource="@xml/method_phormi_keyboard" />
+        </service>
+        <activity android:name=".PhormiKeyboardVoiceActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name=".PhormiKeyboardMediaActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name=".TabGroupsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
 
         <service
             android:name=".CentralHubBridgeService"
