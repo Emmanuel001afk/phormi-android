@@ -8,6 +8,8 @@ import android.speech.RecognizerIntent
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Spinner
+import android.widget.ArrayAdapter
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -17,7 +19,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
-/** Provider setup + voice/text control for Phormi's general browser assistant. */
+/** Configuration + voice/text control for Phormi's main browser assistant. */
 class AiActivity : AppCompatActivity() {
     private lateinit var aiController: AiController
     private lateinit var statusLog: TextView
@@ -40,31 +42,66 @@ class AiActivity : AppCompatActivity() {
         val inputKey = findViewById<EditText>(R.id.input_api_key)
         val inputEndpoint = findViewById<EditText>(R.id.input_endpoint)
         val inputModel = findViewById<EditText>(R.id.input_model)
-        inputEndpoint.visibility = View.GONE
-        inputModel.visibility = View.GONE
+        val transportSpinner = findViewById<Spinner>(R.id.input_transport)
+
+        val transports = listOf("openai-compatible", "generic-http-json", "central-hub")
+        transportSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, transports)
         refreshKeyStatus()
 
+        findViewById<Button>(R.id.btn_template).setOnClickListener {
+            val options = AiController.TEMPLATES.map { it.name }.toTypedArray()
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Endpoint preset (no model is selected)")
+                .setItems(options) { _, which ->
+                    val selected = AiController.TEMPLATES[which]
+                    inputName.setText(selected.name)
+                    inputEndpoint.setText(selected.endpoint)
+                    statusLog.text = "Preset loaded. Enter your API key and the model ID supplied by that service."
+                }
+                .show()
+        }
+
         findViewById<Button>(R.id.btn_save_keys).setOnClickListener {
-            val name = inputName.text.toString().trim()
+            val name = inputName.text.toString().trim().ifBlank { "AI" }
             val key = inputKey.text.toString().trim()
-            if (name.isBlank() || key.isBlank()) {
-                Toast.makeText(this, "Enter the AI name and API key", Toast.LENGTH_SHORT).show(); return@setOnClickListener
+            val endpoint = inputEndpoint.text.toString().trim()
+            val model = inputModel.text.toString().trim()
+            val transport = transportSpinner.selectedItem?.toString().orEmpty()
+
+            if (key.isBlank()) {
+                Toast.makeText(this, "Enter the API key", Toast.LENGTH_SHORT).show(); return@setOnClickListener
             }
+            if (endpoint.isBlank()) {
+                Toast.makeText(this, "Enter the API endpoint (or choose a preset)", Toast.LENGTH_SHORT).show(); return@setOnClickListener
+            }
+            if (transport == "openai-compatible" && model.isBlank()) {
+                Toast.makeText(this, "Enter the model ID for an OpenAI-compatible API", Toast.LENGTH_SHORT).show(); return@setOnClickListener
+            }
+
             val saveButton = findViewById<Button>(R.id.btn_save_keys)
             saveButton.isEnabled = false
-            statusLog.text = "Detecting endpoint and available models…"
+            statusLog.text = "Checking the configured AI connection…"
             lifecycleScope.launch {
                 try {
-                    val cfg = aiController.resolveProviderConfig(name, key)
-                    aiController.upsertProvider(AiController.Provider(UUID.randomUUID().toString().take(8), name, cfg.endpoint, cfg.model, key))
+                    val cfg = aiController.resolveProviderConfig(name, key, endpoint, model, transport)
+                    aiController.upsertProvider(
+                        AiController.Provider(
+                            id = UUID.randomUUID().toString().take(12),
+                            name = name,
+                            apiKey = key,
+                            endpoint = cfg.endpoint,
+                            model = cfg.model,
+                            transport = cfg.transport
+                        )
+                    )
                     aiController.setActive(true)
                     activeSwitch.isChecked = true
                     inputKey.text.clear()
-                    keyStatus.text = "${name}: ready · model detected automatically"
-                    appendStatus("Saved ${name} · detected model ${cfg.model}")
-                    Toast.makeText(this@AiActivity, "AI saved and running", Toast.LENGTH_SHORT).show()
+                    refreshKeyStatus()
+                    appendStatus("Saved $name · $transport · model ${if (cfg.model.isBlank()) "service-selected" else cfg.model}")
+                    Toast.makeText(this@AiActivity, "AI connection saved", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    appendStatus("AI setup failed: ${e.message ?: "unable to detect provider/model"}")
+                    appendStatus("AI setup failed: ${e.message ?: "unable to save connection"}")
                 } finally { saveButton.isEnabled = true }
             }
         }
@@ -86,7 +123,7 @@ class AiActivity : AppCompatActivity() {
     private fun runAssistant() {
         val instruction = inputInstruction.text.toString().trim()
         if (instruction.isBlank()) { startVoiceInput(); return }
-        if (!aiController.hasAnyKey()) { Toast.makeText(this, "Save an AI provider first", Toast.LENGTH_LONG).show(); return }
+        if (!aiController.hasAnyKey()) { Toast.makeText(this, "Save an AI connection first", Toast.LENGTH_LONG).show(); return }
         if (!aiController.isActive()) { activeSwitch.isChecked = true; aiController.setActive(true) }
         if (PhormiAccessibilityService.instance == null) {
             appendStatus(getString(R.string.accessibility_reminder))
