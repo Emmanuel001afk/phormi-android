@@ -13,7 +13,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Digital Assistant for Mayoko Needs"
+            android:text="Phormi Browser AI"
             android:textColor="#FFFFFF"
             android:textSize="21sp"
             android:textStyle="bold"
@@ -22,7 +22,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Add an AI by name + API key. Phormi detects the endpoint and available models automatically, chooses a suitable model, and keeps providers in a fallback chain."
+            android:text="Connect any AI service that exposes a reachable API. Phormi does not require one model, one vendor, or one model size. Use a direct native API, a generic HTTP JSON API, or Central Hub."
             android:textColor="#94A3B8"
             android:textSize="12sp"
             android:layout_marginBottom="12dp" />
@@ -42,7 +42,7 @@
             android:id="@+id/input_provider_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="AI name (e.g. Grok, OpenAI, Gemini, Groq)"
+            android:hint="Connection name (e.g. My Model Server)"
             android:inputType="text"
             android:textColorHint="#64748B"
             android:textColor="#FFFFFF"
@@ -52,36 +52,67 @@
             android:id="@+id/input_api_key"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="API key"
+            android:hint="API key / access token"
             android:inputType="textPassword"
             android:textColorHint="#64748B"
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp" />
 
-        <TextView
-            android:id="@+id/auto_detect_note"
+        <EditText
+            android:id="@+id/input_endpoint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Endpoint + model: automatic (never shown as required fields)"
-            android:textColor="#38BDF8"
-            android:textSize="12sp"
-            android:layout_marginBottom="10dp" />
+            android:hint="API endpoint URL (https://...)"
+            android:inputType="textUri"
+            android:textColorHint="#64748B"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp" />
 
-        <EditText android:id="@+id/input_endpoint" android:visibility="gone" android:layout_width="1dp" android:layout_height="1dp" />
-        <EditText android:id="@+id/input_model" android:visibility="gone" android:layout_width="1dp" android:layout_height="1dp" />
+        <EditText
+            android:id="@+id/input_model"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Model ID (required for OpenAI-compatible APIs)"
+            android:inputType="text"
+            android:textColorHint="#64748B"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp" />
+
+        <Spinner
+            android:id="@+id/input_transport"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="OpenAI-compatible = common /v1/chat/completions-style API
+Generic HTTP JSON = custom prompt/model/response fields
+Central Hub = send the browser task to a Hub endpoint"
+            android:textColor="#94A3B8"
+            android:textSize="11sp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_template"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Load endpoint preset" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
+            android:layout_marginTop="8dp"
             android:layout_marginBottom="18dp">
             <Button
                 android:id="@+id/btn_save_keys"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Run" />
+                android:text="Save connection" />
             <Switch
                 android:id="@+id/switch_ai_active"
                 android:layout_width="wrap_content"
@@ -142,7 +173,7 @@
             android:id="@+id/status_log"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Add an AI provider to begin."
+            android:text="Add an AI connection to begin."
             android:textColor="#E2E8F0"
             android:background="#1E293B"
             android:padding="12dp"
