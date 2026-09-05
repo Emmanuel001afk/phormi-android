@@ -37,7 +37,6 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_DEFAULT_BROWSER = "default_browser"
         const val ACTION_TAB_GROUPS = "tab_groups"
         const val ACTION_VIDEO_ANALYSIS = "video_analysis"
-        const val ACTION_LOCAL_AI = "local_ai"
         private const val REQ_NESTED = 2100
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,8 +52,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
         wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
         wire(R.id.menu_video_analysis) { finishWith(ACTION_VIDEO_ANALYSIS) }
-        wire(R.id.menu_local_ai) { startActivity(Intent(this, PhormiLocalAiActivity::class.java)) }
-        wire(R.id.menu_keyboard) { PhormiKeyboardController(this).showKeyboardPicker() }
+        wire(R.id.menu_keyboard) { PhormiKeyboardController.showKeyboardPicker(this) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }
         wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
         wire(R.id.menu_security) { startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }
