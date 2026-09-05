@@ -14,12 +14,8 @@
 
     <ImageView
         android:id="@+id/tab_chip_icon"
-        android:layout_width="18dp"
-        android:layout_height="18dp"
-        android:layout_marginEnd="4dp"
-        android:visibility="gone"
-        android:src="@drawable/ic_phormi_ghost"
-        android:contentDescription="Ghost tab" />
+        android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="5dp"
+        android:src="@drawable/ic_phormi_logo" android:contentDescription="Tab icon" />
 
     <TextView
         android:id="@+id/tab_chip_title"
