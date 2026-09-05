@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /** Browser-side WebGPU capability check. This never claims that a model runtime is installed. */
 object PhormiWebGpuDiagnostics {
-    private const val SCRIPT = """
+    private val SCRIPT = """
         (() => {
           const gpu = navigator && navigator.gpu;
           const info = {
