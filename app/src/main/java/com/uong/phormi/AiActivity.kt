@@ -66,16 +66,11 @@ class AiActivity : AppCompatActivity() {
             val key = inputKey.text.toString().trim()
             val endpoint = inputEndpoint.text.toString().trim()
             val model = inputModel.text.toString().trim()
-            val transport = transportSpinner.selectedItem?.toString().orEmpty()
-
             if (key.isBlank()) {
                 Toast.makeText(this, "Enter the API key", Toast.LENGTH_SHORT).show(); return@setOnClickListener
             }
             if (endpoint.isBlank()) {
                 Toast.makeText(this, "Enter the API endpoint (or choose a preset)", Toast.LENGTH_SHORT).show(); return@setOnClickListener
-            }
-            if (transport == "openai-compatible" && model.isBlank()) {
-                Toast.makeText(this, "Enter the model ID for an OpenAI-compatible API", Toast.LENGTH_SHORT).show(); return@setOnClickListener
             }
 
             val saveButton = findViewById<Button>(R.id.btn_save_keys)
@@ -83,22 +78,25 @@ class AiActivity : AppCompatActivity() {
             statusLog.text = "Checking the configured AI connection…"
             lifecycleScope.launch {
                 try {
-                    val cfg = aiController.resolveProviderConfig(name, key, endpoint, model, transport)
+                    val cfg = aiController.resolveProviderConfig(name, key)
+                    val resolvedEndpoint = endpoint.ifBlank { cfg.endpoint }
+                    val resolvedModel = model.ifBlank { cfg.model }
+                    if (resolvedEndpoint.isBlank()) throw IllegalArgumentException("AI endpoint could not be determined from the connection name")
+                    if (resolvedModel.isBlank()) throw IllegalArgumentException("AI model could not be discovered for this connection")
                     aiController.upsertProvider(
                         AiController.Provider(
                             id = UUID.randomUUID().toString().take(12),
                             name = name,
                             apiKey = key,
-                            endpoint = cfg.endpoint,
-                            model = cfg.model,
-                            transport = cfg.transport
+                            endpoint = resolvedEndpoint,
+                            model = resolvedModel
                         )
                     )
                     aiController.setActive(true)
                     activeSwitch.isChecked = true
                     inputKey.text.clear()
                     refreshKeyStatus()
-                    appendStatus("Saved $name · $transport · model ${if (cfg.model.isBlank()) "service-selected" else cfg.model}")
+                    appendStatus("Saved $name · model $resolvedModel")
                     Toast.makeText(this@AiActivity, "AI connection saved", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     appendStatus("AI setup failed: ${e.message ?: "unable to save connection"}")
