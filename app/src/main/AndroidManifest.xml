@@ -68,11 +68,6 @@
             android:theme="@style/Theme.Phormi" />
 
         <activity
-            android:name=".PhormiLocalAiActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Phormi" />
-
-        <activity
             android:name=".DownloadsActivity"
             android:exported="false"
             android:label="@string/downloads_title"
