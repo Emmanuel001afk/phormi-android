@@ -44,6 +44,7 @@ import android.widget.Button
 import android.os.Looper
 import android.text.Html
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import androidx.core.app.ActivityCompat
@@ -2617,11 +2618,10 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
-                MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController(this).showKeyboardPicker()
+                MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController.showKeyboardPicker(this)
                 MenuActivity.ACTION_DEFAULT_BROWSER -> PhormiDefaultBrowserController.request(this)
                 MenuActivity.ACTION_TAB_GROUPS -> startActivity(Intent(this, TabGroupsActivity::class.java))
                 MenuActivity.ACTION_VIDEO_ANALYSIS -> analyzeCurrentVideo()
-                MenuActivity.ACTION_LOCAL_AI -> startActivity(Intent(this, PhormiLocalAiActivity::class.java))
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
                     if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
