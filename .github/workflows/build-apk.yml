@@ -18,16 +18,19 @@ jobs:
       - name: Apply Round 5 WebView state restoration
         run: python3 tools/apply_round5_state_restore.py
 
-      - name: Commit Round 5 patch
+      - name: Apply compile repairs
+        run: python3 tools/repair_compile.py
+
+      - name: Commit generated source repairs
         run: |
           if git diff --quiet; then
-            echo "Round 5 state restoration already applied"
+            echo "Source repairs already applied"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/com/uong/phormi/MainActivity.kt
-          git commit -m "Implement Round 5 WebView state restoration"
+          git add app/src/main/java/com/uong/phormi/MainActivity.kt app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt
+          git commit -m "Fix browser and keyboard compilation"
           git push
 
       - name: Set up JDK 17
