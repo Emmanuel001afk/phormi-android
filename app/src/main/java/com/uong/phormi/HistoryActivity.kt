@@ -19,7 +19,7 @@ import java.util.Date
 /** Local visit history stored only on this phone. Ghost tabs are not recorded. */
 class HistoryActivity : AppCompatActivity() {
 
-    data class Entry(val title: String, val url: String, val visitedAt: Long)
+    data class Entry(val title: String, val url: String, val visitedAt: Long, val visitCount: Int = 1)
 
     private val items = mutableListOf<Entry>()
     private lateinit var adapter: BaseAdapter
@@ -38,10 +38,15 @@ class HistoryActivity : AppCompatActivity() {
                 JSONArray(prefs.getString(KEY, "[]"))
             }.getOrElse { JSONArray() }
 
-            if (
-                arr.length() > 0 &&
-                arr.optJSONObject(arr.length() - 1)?.optString("url") == url
-            ) {
+            val now = System.currentTimeMillis()
+            val last = arr.optJSONObject(arr.length() - 1)
+            if (last?.optString("url") == url) {
+                // A reload/revisit of the same page is still a visit for Most Visited.
+                // Keep one history row while accumulating its frequency.
+                last.put("title", title.ifBlank { url })
+                    .put("visitedAt", now)
+                    .put("visitCount", last.optInt("visitCount", 1) + 1)
+                prefs.edit().putString(KEY, arr.toString()).apply()
                 return
             }
 
@@ -49,7 +54,8 @@ class HistoryActivity : AppCompatActivity() {
                 JSONObject()
                     .put("title", title.ifBlank { url })
                     .put("url", url)
-                    .put("visitedAt", System.currentTimeMillis())
+                    .put("visitedAt", now)
+                    .put("visitCount", 1)
             )
 
             while (arr.length() > MAX) arr.remove(0)
@@ -101,7 +107,8 @@ class HistoryActivity : AppCompatActivity() {
                 entries += Entry(
                     title = o.optString("title", url).ifBlank { url },
                     url = url,
-                    visitedAt = o.optLong("visitedAt", 0L)
+                    visitedAt = o.optLong("visitedAt", 0L),
+                    visitCount = o.optInt("visitCount", 1).coerceAtLeast(1)
                 )
             }
 
@@ -111,15 +118,16 @@ class HistoryActivity : AppCompatActivity() {
                 grouped.getOrPut(key) { mutableListOf() }.add(entry)
             }
 
+            val threshold = minVisits.coerceAtLeast(1)
             return grouped.values
-                .filter { it.size >= minVisits.coerceAtLeast(1) }
+                .filter { group -> group.sumOf { it.visitCount } >= threshold }
                 .map { group ->
-                    group.maxByOrNull { it.visitedAt } ?: group.first()
+                    val latest = group.maxByOrNull { it.visitedAt } ?: group.first()
+                    latest.copy(visitCount = group.sumOf { it.visitCount })
                 }
                 .sortedWith(
-                    compareByDescending<Entry> { entry ->
-                        grouped[canonical(entry.url)]?.size ?: 0
-                    }.thenByDescending { it.visitedAt }
+                    compareByDescending<Entry> { it.visitCount }
+                        .thenByDescending { it.visitedAt }
                 )
                 .take(limit)
         }
@@ -241,7 +249,8 @@ class HistoryActivity : AppCompatActivity() {
                 Entry(
                     title = o.optString("title", "Page"),
                     url = o.optString("url", ""),
-                    visitedAt = o.optLong("visitedAt", 0L)
+                    visitedAt = o.optLong("visitedAt", 0L),
+                    visitCount = o.optInt("visitCount", 1).coerceAtLeast(1)
                 )
             )
         }
