@@ -24,6 +24,9 @@ jobs:
       - name: Apply menu integration repairs
         run: python3 tools/repair_menu_features.py
 
+      - name: Apply Round 6 browser foundation repairs
+        run: python3 tools/repair_round6_features.py
+
       - name: Run Phormi foundation audit
         run: python3 tools/audit_project.py
 
@@ -73,5 +76,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: phormi-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+            name: phormi-debug-apk
+            path: app/build/outputs/apk/debug/app-debug.apk
