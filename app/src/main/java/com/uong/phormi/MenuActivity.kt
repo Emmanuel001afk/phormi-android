@@ -6,7 +6,7 @@ import android.provider.Settings
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
-/** Browser menu. Nested browser surfaces return their action to MainActivity through this activity. */
+/** Browser menu. Nested browser surfaces return their action to MainActivity when necessary. */
 class MenuActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_ACTION = "menu_action"
@@ -71,19 +71,18 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_favorite) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
         wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
-        wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
         wire(R.id.menu_pull_to_refresh) { finishWith(ACTION_PULL_TO_REFRESH) }
         wire(R.id.menu_split_screen) { finishWith(ACTION_SPLIT_SCREEN) }
         wire(R.id.menu_tab_retention) { finishWith(ACTION_TAB_RETENTION) }
         wire(R.id.menu_theme) { finishWith(ACTION_THEME) }
-        wire(R.id.menu_settings) { startActivityForResult(Intent(this, AccountsActivity::class.java), REQ_NESTED) }
+        // Accounts are a separate authentication surface, not a normal browser tab.
+        wire(R.id.menu_settings) { startActivity(Intent(this, AccountsActivity::class.java)) }
         wire(R.id.menu_close) { finish() }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK || data == null) return
-        // Forward tab-overview actions (select/close/group/split/new tab) back to MainActivity.
         if (requestCode == REQ_TABS) {
             setResult(RESULT_OK, data)
             finish()
