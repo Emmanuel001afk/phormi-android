@@ -1,14 +1,20 @@
 package com.uong.phormi
 
 import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Context
 import android.os.Build
 import android.widget.Toast
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import java.security.MessageDigest
 import java.util.concurrent.Executor
 
 /**
- * Device lock for Phormi (biometrics/device credential or a local Phormi PIN).
- * The PIN is stored only as a SHA-256 hash in SharedPreferences.
+ * Browser Lock for Phormi.
+ *
+ * Device mode delegates to Android's system authentication UI, including the phone's
+ * configured screen lock where the platform allows it. PIN mode is local to Phormi.
  */
 class BrowserLockManager(
     private val activity: Activity,
@@ -16,11 +22,9 @@ class BrowserLockManager(
 ) {
     companion object {
         const val PREF_KEY = "browser_lock_enabled"
-
         const val PREF_METHOD = "browser_lock_method"
         const val METHOD_DEVICE = "device"
         const val METHOD_PIN = "pin"
-
         private const val PREF_PIN_HASH = "browser_lock_pin_hash"
     }
 
@@ -31,18 +35,29 @@ class BrowserLockManager(
 
     fun isPromptInProgress(): Boolean = promptInProgress
 
-    fun method(prefs: android.content.SharedPreferences): String {
-        return prefs.getString(PREF_METHOD, METHOD_DEVICE) ?: METHOD_DEVICE
-    }
+    fun method(prefs: android.content.SharedPreferences): String =
+        prefs.getString(PREF_METHOD, METHOD_DEVICE) ?: METHOD_DEVICE
 
-    fun isPinConfigured(prefs: android.content.SharedPreferences): Boolean {
-        return !prefs.getString(PREF_PIN_HASH, null).isNullOrBlank()
+    fun isPinConfigured(prefs: android.content.SharedPreferences): Boolean =
+        !prefs.getString(PREF_PIN_HASH, null).isNullOrBlank()
+
+    fun canUseDeviceAuthentication(): Boolean {
+        val keyguard = activity.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        if (keyguard?.isDeviceSecure == true) return true
+        return if (Build.VERSION.SDK_INT >= 30) {
+            BiometricManager.from(activity).canAuthenticate(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            ) == BiometricManager.BIOMETRIC_SUCCESS
+        } else {
+            BiometricManager.from(activity).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+                BiometricManager.BIOMETRIC_SUCCESS
+        }
     }
 
     fun setPin(prefs: android.content.SharedPreferences, pin: String): Boolean {
         val normalized = pin.trim()
         if (normalized.length < 4 || normalized.any { !it.isDigit() }) return false
-
         prefs.edit()
             .putString(PREF_METHOD, METHOD_PIN)
             .putString(PREF_PIN_HASH, sha256(normalized))
@@ -65,11 +80,10 @@ class BrowserLockManager(
 
     fun authenticate(onSuccess: () -> Unit, onFailure: () -> Unit) {
         if (promptInProgress) return
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+        if (!canUseDeviceAuthentication()) {
             Toast.makeText(
                 activity,
-                "Browser Lock requires Android 9 or newer.",
+                "No usable phone lock or biometric authentication is configured. Set a device screen lock or use a Phormi PIN.",
                 Toast.LENGTH_LONG
             ).show()
             onFailure()
@@ -78,16 +92,27 @@ class BrowserLockManager(
 
         promptInProgress = true
         try {
-            val prompt = android.hardware.biometrics.BiometricPrompt.Builder(activity)
+            val authenticators = if (Build.VERSION.SDK_INT >= 30) {
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            } else {
+                BiometricManager.Authenticators.BIOMETRIC_STRONG
+            }
+            val canAuthenticate = BiometricManager.from(activity).canAuthenticate(authenticators)
+            if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+                promptInProgress = false
+                Toast.makeText(activity, "Device authentication is unavailable. Use a Phormi PIN.", Toast.LENGTH_LONG).show()
+                onFailure()
+                return
+            }
+
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
                 .setTitle("Unlock Phormi")
                 .setSubtitle("Browser Lock")
-                .setDescription("Use your fingerprint, face, or device screen lock to continue.")
+                .setDescription("Use your fingerprint, face, or phone screen lock to continue.")
                 .apply {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        setAllowedAuthenticators(
-                            android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                                android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-                        )
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        setAllowedAuthenticators(authenticators)
                     } else {
                         @Suppress("DEPRECATION")
                         setDeviceCredentialAllowed(true)
@@ -95,42 +120,26 @@ class BrowserLockManager(
                 }
                 .build()
 
-            prompt.authenticate(
-                android.os.CancellationSignal(),
+            val prompt = BiometricPrompt(
+                activity,
                 executor,
-                object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(
-                        result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult
-                    ) {
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         promptInProgress = false
                         onSuccess()
                     }
 
-                    override fun onAuthenticationError(
-                        errorCode: Int,
-                        errString: CharSequence
-                    ) {
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                         promptInProgress = false
-                        Toast.makeText(
-                            activity,
-                            "Phormi remains locked",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(activity, "Phormi remains locked", Toast.LENGTH_SHORT).show()
                         onFailure()
-                    }
-
-                    override fun onAuthenticationFailed() {
-                        super.onAuthenticationFailed()
                     }
                 }
             )
+            prompt.authenticate(promptInfo)
         } catch (_: Exception) {
             promptInProgress = false
-            Toast.makeText(
-                activity,
-                "Unable to open device authentication",
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(activity, "Unable to open device authentication. Use a Phormi PIN.", Toast.LENGTH_LONG).show()
             onFailure()
         }
     }
