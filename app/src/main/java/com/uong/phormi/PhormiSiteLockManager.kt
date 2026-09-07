@@ -40,6 +40,20 @@ object PhormiSiteLockManager {
         return LockState(key, expiry)
     }
 
+    fun clearAll(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
+    fun list(context: Context): List<LockState> {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val out = mutableListOf<LockState>()
+        prefs.all.forEach { (host, value) ->
+            val expiry = value as? Long ?: return@forEach
+            if (expiry > 0L && (expiry == Long.MAX_VALUE || expiry > System.currentTimeMillis())) out += LockState(host, expiry)
+        }
+        return out.sortedBy { it.host }
+    }
+
     fun isLocked(context: Context, url: String?): Boolean {
         val host = normalizeHost(url) ?: return false
         return get(context, host) != null
