@@ -41,10 +41,10 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.Button
+import android.widget.Space
 import android.os.Looper
 import android.text.Html
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import androidx.core.app.ActivityCompat
@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         val chipView: View,
         val isGhost: Boolean = false,
         var lastUsed: Long = System.currentTimeMillis(),
+        var createdAt: Long = System.currentTimeMillis(),
         var profileName: String = DEFAULT_PROFILE_NAME
     )
 
@@ -124,6 +125,9 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_TAB_TITLES = "tab_titles"
         private const val KEY_ACTIVE_INDEX = "active_index"
         private const val KEY_TAB_LAST_USED = "tab_last_used"
+        private const val KEY_TAB_CREATED_AT = "tab_created_at"
+        private const val KEY_TAB_IDS = "tab_ids"
+        private const val KEY_FAVORITE_CONTEXTS = "favorite_contexts"
         private const val KEY_TAB_PROFILES = "tab_profiles"
         private const val KEY_TAB_ENVIRONMENT = "tab_environment"
         private const val DEFAULT_PROFILE_NAME = "Default"
@@ -192,8 +196,6 @@ class MainActivity : AppCompatActivity() {
     private val unifiedSearchLock = Any()
     private var unifiedSearchFutures = mutableListOf<java.util.concurrent.Future<*>>()
     private var localSearchPageActive = false
-    @Volatile private var lastVideoAnalysis: String = ""
-    @Volatile private var videoAnalysisRunning: Boolean = false
 
     override fun onResume() {
         super.onResume()
@@ -228,7 +230,7 @@ class MainActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (PhormiEnvironmentManager.isSupported()) {
-            PhormiEnvironmentManager.delete(GHOST_PROFILE_NAME)
+            PhormiEnvironmentManager.ensure(GHOST_PROFILE_NAME)
         }
         CookieManager.getInstance().setAcceptCookie(true)
 
@@ -322,6 +324,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.btn_refresh).setOnClickListener { activeWebView()?.reload() }
+        findViewById<TextView>(R.id.btn_favorite).setOnClickListener { addCurrentPageToBookmarks() }
         splitLockButton.setOnClickListener { setSplitChromeLocked(!splitChromeLocked) }
         installSplitDividerResize()
         findViewById<TextView>(R.id.btn_go).setOnClickListener { navigateFromUrlBar() }
@@ -363,7 +366,7 @@ class MainActivity : AppCompatActivity() {
         val checked = values.indexOf(current).coerceAtLeast(0)
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Tab retention")
-            .setMessage("Automatically close only tabs you have not used for the selected period. Your active/recent tabs are never removed.")
+            .setMessage("Close each normal tab when its age reaches the selected period. Tab use does not reset the age clock.")
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 prefs.edit().putString(KEY_TAB_RETENTION, values[which]).apply()
                 pruneExpiredTabs()
@@ -560,7 +563,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private data class QuickSite(val name: String, val url: String, val tag: String, val removable: Boolean)
+    private data class QuickSite(val name: String, val url: String, val tag: String, val removable: Boolean, val tabId: Int? = null)
 
     private fun loadQuickAccessRows() {
         val rows = findViewById<LinearLayout>(R.id.quick_access_rows) ?: return
@@ -571,33 +574,37 @@ class MainActivity : AppCompatActivity() {
             QuickSite("YouTube", "https://www.youtube.com", "", false),
             QuickSite("Facebook", "https://www.facebook.com", "", false),
             QuickSite("Instagram", "https://www.instagram.com", "", false),
-            QuickSite("GitHub", "https://github.com", "", false),
-            QuickSite("Add", "", "+", false)
+            QuickSite("GitHub", "https://github.com", "", false)
         )
-        // Custom shortcuts are newest-first and appear before bookmark/history suggestions.
-        // This guarantees that pressing Add produces a shortcut that is immediately visible.
         val personal = mutableListOf<QuickSite>()
         val custom = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
         for (i in custom.length() - 1 downTo 0) {
             val item = custom.optJSONObject(i) ?: continue
             val name = item.optString("name").trim(); val url = item.optString("url").trim()
-            if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) {
-                personal += QuickSite(name, url, "⌂", true)
+            if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) personal += QuickSite(name, url, "⌂", true)
+        }
+        val favoriteContexts = runCatching { JSONObject(prefs.getString(KEY_FAVORITE_CONTEXTS, "{}") ?: "{}") }.getOrElse { JSONObject() }
+        BookmarksActivity.getAll(this).forEach { bookmark ->
+            if (personal.none { it.url == bookmark.url }) {
+                val tabId = favoriteContexts.optInt(bookmark.url, -1).takeIf { it > 0 }
+                personal += QuickSite(bookmark.title, bookmark.url, "◇", true, tabId)
             }
         }
-        BookmarksActivity.getAll(this).take(8).forEach { bookmark ->
-            if (personal.none { it.url == bookmark.url }) personal += QuickSite(bookmark.title, bookmark.url, "★", true)
-        }
-        HistoryActivity.getTopSites(this, 8).forEach { visited ->
+        HistoryActivity.getMostVisited(this, 8, 10).forEach { visited ->
             if (personal.none { it.url == visited.url }) personal += QuickSite(visited.title, visited.url, "•", true)
         }
-        (fixed + personal.take(12)).chunked(7).forEach { batch ->
+        val all = fixed + personal.take(18) + QuickSite("Add", "", "+", false)
+        val columns = when { resources.displayMetrics.widthPixels >= 900 -> 8; resources.displayMetrics.widthPixels >= 600 -> 7; else -> 6 }
+        all.chunked(columns).forEach { batch ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 50.dp())
+                gravity = android.view.Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 60.dp())
             }
-            batch.forEach { site -> row.addView(makeQuickSiteView(site)) }
+            batch.forEach { site ->
+                row.addView(makeQuickSiteView(site), LinearLayout.LayoutParams(0, 56.dp(), 1f).apply { leftMargin = 2.dp(); rightMargin = 2.dp() })
+            }
+            repeat(columns - batch.size) { row.addView(Space(this), LinearLayout.LayoutParams(0, 56.dp(), 1f)) }
             rows.addView(row)
         }
     }
@@ -606,38 +613,37 @@ class MainActivity : AppCompatActivity() {
         val surfaceSoft = Color.rgb(23, 32, 51)
         val outline = Color.rgb(51, 65, 85)
         return TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp()).apply { leftMargin = 3.dp(); rightMargin = 3.dp() }
             gravity = android.view.Gravity.CENTER
-            text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(10) else site.name.take(10)
+            text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(9) else site.name.take(9)
             setTextColor(if (site.tag == "+") Color.rgb(56,189,248) else Color.WHITE)
-            textSize = 9f
+            textSize = 8.5f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
             setBackgroundResource(R.drawable.bg_shortcut)
             isClickable = true
             isFocusable = true
             contentDescription = if (site.tag == "+") "Add a website shortcut" else "Open ${site.name}"
-            setOnClickListener { if (site.url.isBlank()) showAddShortcutDialog() else openShortcut(site.url) }
+            setOnClickListener {
+                if (site.url.isBlank()) showAddShortcutDialog()
+                else if (site.tabId != null && tabs.any { it.id == site.tabId }) switchToTab(site.tabId)
+                else openShortcut(site.url)
+            }
             if (site.removable) setOnLongClickListener { confirmQuickSiteRemoval(site); true }
             if (site.url.isNotBlank()) loadFaviconInto(this, site.url)
-            styleSurface(this, surfaceSoft, outline, 20)
+            styleSurface(this, surfaceSoft, outline, 28)
         }
     }
 
     private fun confirmQuickSiteRemoval(site: QuickSite) {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Remove from Quick access?")
-            .setMessage(site.name)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Remove") { _, _ ->
+        AlertDialog.Builder(this).setTitle("Remove from Quick access?").setMessage(site.name)
+            .setNegativeButton("Cancel", null).setPositiveButton("Remove") { _, _ ->
                 when (site.tag) {
-                    "★" -> BookmarksActivity.remove(this, site.url)
+                    "◇" -> BookmarksActivity.remove(this, site.url)
                     "•" -> HistoryActivity.removeUrl(this, site.url)
                     else -> {
                         val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
                         val kept = JSONArray()
-                        for (i in 0 until list.length()) {
-                            val item = list.optJSONObject(i) ?: continue
-                            if (item.optString("url") != site.url) kept.put(item)
-                        }
+                        for (i in 0 until list.length()) { val item = list.optJSONObject(i) ?: continue; if (item.optString("url") != site.url) kept.put(item) }
                         prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, kept.toString()).apply()
                     }
                 }
@@ -1260,6 +1266,14 @@ class MainActivity : AppCompatActivity() {
         tabCountView.text = tabs.size.toString()
     }
 
+    private fun updateFavoriteButton() {
+        val button = findViewById<TextView>(R.id.btn_favorite) ?: return
+        val url = activeWebView()?.url.orEmpty()
+        val favorite = url.startsWith("http") && BookmarksActivity.getAll(this).any { it.url == url }
+        button.alpha = if (favorite) 1f else 0.55f
+        button.contentDescription = if (favorite) "Remove current page from favorites" else "Add current page to favorites"
+    }
+
     private fun updateNavButtons() {
         val webView = activeWebView()
         val back = findViewById<TextView>(R.id.btn_back) ?: return
@@ -1467,10 +1481,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
 
-    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false) {
+    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null) {
         val ghostRequested = forceGhost || prefs.getBoolean("ghost_next_tab", false)
         if (ghostRequested) prefs.edit().putBoolean("ghost_next_tab", false).apply()
-        val id = nextTabId++
+        val id = requestedId?.takeIf { it > 0 } ?: nextTabId++
+        if (id >= nextTabId) nextTabId = id + 1
         val requested = requestedProfile?.trim().takeIf { !it.isNullOrBlank() }
             ?: if (ghostRequested) GHOST_PROFILE_NAME else selectedTabEnvironment()
         val webView = WebView(this)
@@ -1501,7 +1516,8 @@ class MainActivity : AppCompatActivity() {
         val chipClose = chip.findViewById<TextView>(R.id.tab_chip_close)
         val chipIcon = chip.findViewById<android.widget.ImageView>(R.id.tab_chip_icon)
 
-        val tab = Tab(id, webView, if (isGhost) "Ghost" else getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = System.currentTimeMillis(), profileName = effectiveProfile)
+        val now = System.currentTimeMillis()
+        val tab = Tab(id, webView, if (isGhost) "Ghost" else getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = now, createdAt = requestedCreatedAt ?: now, profileName = effectiveProfile)
         if (isGhost) {
             chipIcon.setImageResource(R.drawable.ic_phormi_ghost)
             chipIcon.visibility = View.VISIBLE
@@ -1526,12 +1542,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createGhostTab(url: String = NEW_TAB_URL) {
-        if (!isMultiProfileSupported()) {
-            startActivity(Intent(this, GhostActivity::class.java))
-            return
-        }
-        createNewTab(url, GHOST_PROFILE_NAME, forceGhost = true)
-        urlBar.setText(if (url == NEW_TAB_URL) "" else url)
+        val intent = Intent(this, GhostActivity::class.java)
+        if (url != NEW_TAB_URL) intent.data = Uri.parse(url)
+        startActivity(intent)
     }
 
     private fun switchToTab(id: Int) {
@@ -1554,6 +1567,7 @@ class MainActivity : AppCompatActivity() {
         updateStartPageVisibility()
         updateTabCount()
         updateNavButtons()
+        updateFavoriteButton()
         val current = tabs.find { it.id == id }?.webView?.url
         if (!current.isNullOrBlank() && current != "about:blank") {
             urlBar.setText(current)
@@ -1563,18 +1577,7 @@ class MainActivity : AppCompatActivity() {
         saveTabs()
     }
 
-    private fun isSiteLocked(url: String?): Boolean {
-        val host = runCatching { Uri.parse(url.orEmpty()).host.orEmpty() }.getOrDefault("").lowercase(Locale.US)
-        if (host.isBlank()) return false
-        val prefs = getSharedPreferences("phormi_site_locks", MODE_PRIVATE)
-        val expiry = prefs.getLong(host, 0L)
-        if (expiry == 0L) return false
-        if (expiry != Long.MAX_VALUE && expiry <= System.currentTimeMillis()) {
-            prefs.edit().remove(host).apply()
-            return false
-        }
-        return true
-    }
+    private fun isSiteLocked(url: String?): Boolean = PhormiSiteLockManager.isLocked(this, url)
 
     private fun requestSiteUnlock(url: String, onSuccess: () -> Unit) {
         val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("protected site")
@@ -1628,28 +1631,29 @@ class MainActivity : AppCompatActivity() {
         val urls = JSONArray()
         val titles = JSONArray()
         val lastUsed = JSONArray()
+        val createdAt = JSONArray()
         val profiles = JSONArray()
+        val ids = JSONArray()
         persistTabs.forEach { tab ->
-            val u = tab.webView.url
-            if (!u.isNullOrBlank()) {
-                urls.put(u)
-                titles.put(tab.title.ifBlank { "Tab" })
-                lastUsed.put(tab.lastUsed)
-                profiles.put(tab.profileName)
-            }
+            val u = tab.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
+            urls.put(u)
+            titles.put(tab.title.ifBlank { "Tab" })
+            lastUsed.put(tab.lastUsed)
+            createdAt.put(tab.createdAt)
+            profiles.put(tab.profileName)
+            ids.put(tab.id)
         }
         if (urls.length() == 0) {
-            urls.put(NEW_TAB_URL)
-            titles.put(getString(R.string.new_tab))
-            lastUsed.put(System.currentTimeMillis())
-            profiles.put(DEFAULT_PROFILE_NAME)
+            urls.put(NEW_TAB_URL); titles.put(getString(R.string.new_tab)); lastUsed.put(System.currentTimeMillis()); createdAt.put(System.currentTimeMillis()); profiles.put(DEFAULT_PROFILE_NAME); ids.put(nextTabId++)
         }
         val activeIndex = persistTabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
             .putString(KEY_TAB_TITLES, titles.toString())
             .putString(KEY_TAB_LAST_USED, lastUsed.toString())
+            .putString(KEY_TAB_CREATED_AT, createdAt.toString())
             .putString(KEY_TAB_PROFILES, profiles.toString())
+            .putString(KEY_TAB_IDS, ids.toString())
             .putString(KEY_TAB_RETENTION, prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER)
             .putString(KEY_TAB_ENVIRONMENT, selectedTabEnvironment())
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
@@ -1728,15 +1732,17 @@ class MainActivity : AppCompatActivity() {
             val lastUsed = runCatching {
                 JSONArray(prefs.getString(KEY_TAB_LAST_USED, "[]") ?: "[]")
             }.getOrElse { JSONArray() }
-            val profiles = runCatching {
-                JSONArray(prefs.getString(KEY_TAB_PROFILES, "[]") ?: "[]")
-            }.getOrElse { JSONArray() }
+            val profiles = runCatching { JSONArray(prefs.getString(KEY_TAB_PROFILES, "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val createdAt = runCatching { JSONArray(prefs.getString(KEY_TAB_CREATED_AT, "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val ids = runCatching { JSONArray(prefs.getString(KEY_TAB_IDS, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val count = arr.length()
             val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
                 val restoredUrl = arr.optString(i, NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
                 val restoredProfile = profiles.optString(i, DEFAULT_PROFILE_NAME).trim().ifBlank { DEFAULT_PROFILE_NAME }
-                createNewTab(restoredUrl, restoredProfile)
+                val restoredId = ids.optInt(i, 0).takeIf { it > 0 }
+                val restoredCreatedAt = createdAt.optLong(i, 0L).takeIf { it > 0L } ?: lastUsed.optLong(i, System.currentTimeMillis()).takeIf { it > 0L }
+                createNewTab(restoredUrl, restoredProfile, requestedId = restoredId, requestedCreatedAt = restoredCreatedAt)
                 if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
                 if (restoredTitle.isNotBlank() && i < tabs.size) {
@@ -1763,7 +1769,7 @@ class MainActivity : AppCompatActivity() {
     private fun pruneExpiredTabs() {
         val age = retentionAgeMillis() ?: return
         val cutoff = System.currentTimeMillis() - age
-        val expired = tabs.filter { !it.isGhost && it.lastUsed < cutoff }.map { it.id }
+        val expired = tabs.filter { !it.isGhost && it.createdAt <= cutoff }.map { it.id }
         expired.forEach { closeTab(it) }
     }
 
@@ -2277,6 +2283,24 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (android.os.Build.VERSION.SDK_INT >= 26 && customView != null && !isInPictureInPictureMode) {
+            runCatching { enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().build()) }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
+            findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
+        } else if (!splitChromeLocked) {
+            findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
+            findViewById<View>(R.id.bottom_toolbar)?.visibility = View.VISIBLE
+        }
+    }
     override fun onDestroy() {
         synchronized(unifiedSearchLock) {
             unifiedSearchGeneration.incrementAndGet()
@@ -2304,6 +2328,10 @@ class MainActivity : AppCompatActivity() {
             setAllowContentAccess(true)
             builtInZoomControls = true
             displayZoomControls = false
+            val desktop = prefs.getBoolean("desktop_mode", false)
+            userAgentString = if (desktop) "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" else WebSettings.getDefaultUserAgent(this@MainActivity)
+            loadWithOverviewMode = desktop
+            useWideViewPort = desktop
         }
 
         webView.webViewClient = object : WebViewClient() {
@@ -2340,6 +2368,7 @@ class MainActivity : AppCompatActivity() {
                         urlBar.setText(url)
                     }
                     updateNavButtons()
+                    updateFavoriteButton()
                 }
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.finish(it.id, u) }
                 saveTabs()
@@ -2559,6 +2588,22 @@ class MainActivity : AppCompatActivity() {
                     tabs.getOrNull(index)?.let { closeTab(it.id) }
                 }
                 "toggle_split" -> setSplitMode(!splitMode)
+                "assign_group" -> {
+                    val groupId = data.getStringExtra("group_id").orEmpty()
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    val index = data.getIntExtra("index", -1)
+                    val resolvedId = if (tabId > 0) tabId else tabs.getOrNull(index)?.id ?: -1
+                    if (groupId.isNotBlank() && resolvedId > 0) TabGroupManager(this).assignTab(groupId, resolvedId, tabs.find { it.id == resolvedId }?.webView?.url.orEmpty())
+                }
+                "reassign_env" -> {
+                    val index = data.getIntExtra("index", -1); val profile = data.getStringExtra("profile").orEmpty()
+                    val old = tabs.getOrNull(index)
+                    if (old != null && profile.isNotBlank()) {
+                        val oldId = old.id; val oldUrl = old.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
+                        createNewTab(oldUrl, profile)
+                        closeTab(oldId)
+                    }
+                }
             }
             return
         }
@@ -2618,10 +2663,9 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
-                MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController.showKeyboardPicker(this)
+                MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController(this).showKeyboardPicker()
                 MenuActivity.ACTION_DEFAULT_BROWSER -> PhormiDefaultBrowserController.request(this)
                 MenuActivity.ACTION_TAB_GROUPS -> startActivity(Intent(this, TabGroupsActivity::class.java))
-                MenuActivity.ACTION_VIDEO_ANALYSIS -> analyzeCurrentVideo()
                 else -> {
                     val openUrl = data?.getStringExtra("open_url")
                     if (!openUrl.isNullOrBlank()) createNewTab(openUrl)
@@ -2861,9 +2905,22 @@ class MainActivity : AppCompatActivity() {
         val view = activeWebView() ?: return
         val url = view.url.orEmpty()
         if (!url.startsWith("http")) return
-        BookmarksActivity.add(this, view.title.orEmpty(), url)
+        val bookmarks = BookmarksActivity.getAll(this)
+        if (bookmarks.any { it.url == url }) {
+            BookmarksActivity.remove(this, url)
+            val contexts = runCatching { JSONObject(prefs.getString(KEY_FAVORITE_CONTEXTS, "{}") ?: "{}") }.getOrElse { JSONObject() }
+            contexts.remove(url)
+            prefs.edit().putString(KEY_FAVORITE_CONTEXTS, contexts.toString()).apply()
+            Toast.makeText(this, "Removed from favorites", Toast.LENGTH_SHORT).show()
+        } else {
+            BookmarksActivity.add(this, view.title.orEmpty(), url)
+            val contexts = runCatching { JSONObject(prefs.getString(KEY_FAVORITE_CONTEXTS, "{}") ?: "{}") }.getOrElse { JSONObject() }
+            contexts.put(url, activeTabId)
+            prefs.edit().putString(KEY_FAVORITE_CONTEXTS, contexts.toString()).apply()
+            Toast.makeText(this, "Added to favorites", Toast.LENGTH_SHORT).show()
+        }
         loadQuickAccessRows()
-        Toast.makeText(this, "Added to favorites", Toast.LENGTH_SHORT).show()
+        updateFavoriteButton()
     }
 
     private fun toggleDesktopMode() {
@@ -2872,58 +2929,13 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().putBoolean("desktop_mode", desktop).apply()
         val settings = view.settings
         settings.userAgentString = if (desktop) {
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-        } else {
-            WebSettings.getDefaultUserAgent(this)
-        }
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        } else WebSettings.getDefaultUserAgent(this)
+        settings.useWideViewPort = desktop
+        settings.loadWithOverviewMode = desktop
+        if (desktop) view.setInitialScale(100) else view.setInitialScale(0)
         view.reload()
         Toast.makeText(this, if (desktop) "Desktop mode: on" else "Desktop mode: off", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun analyzeCurrentVideo(showDialog: Boolean = true) {
-        val view = activeWebView()
-        if (view == null) {
-            Toast.makeText(this, "No active page to analyze.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (videoAnalysisRunning) {
-            Toast.makeText(this, "Video analysis is already running.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        videoAnalysisRunning = true
-        if (showDialog) Toast.makeText(this, "Reading the current video…", Toast.LENGTH_SHORT).show()
-        lifecycleScope.launch {
-            try {
-                val capture = PhormiVideoAnalyzer.capture(view)
-                if (!capture.metadata.optBoolean("found", false)) {
-                    lastVideoAnalysis = "No HTML5 video element was detected on the active page.\nURL: ${capture.metadata.optString("url")}"
-                    if (showDialog) AlertDialog.Builder(this@MainActivity).setTitle("Video analysis").setMessage(lastVideoAnalysis).setPositiveButton("Close", null).show()
-                    return@launch
-                }
-                val answer = aiController.analyzeVideo(capture.metadata, capture.frames)
-                lastVideoAnalysis = answer ?: "Video detected, but no configured AI provider accepted multimodal video frames.\n\nMetadata: ${capture.metadata.toString(2)}"
-                if (showDialog) {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Phormi video analysis")
-                        .setMessage(lastVideoAnalysis)
-                        .setPositiveButton("Close", null)
-                        .show()
-                }
-            } catch (e: Exception) {
-                lastVideoAnalysis = "Video analysis failed: ${e.message ?: "unknown error"}"
-                if (showDialog) AlertDialog.Builder(this@MainActivity).setTitle("Video analysis").setMessage(lastVideoAnalysis).setPositiveButton("Close", null).show()
-            } finally {
-                videoAnalysisRunning = false
-            }
-        }
-    }
-
-    private fun showPhormiHelp() {
-        AlertDialog.Builder(this)
-            .setTitle("Phormi")
-            .setMessage("Phormi is a full browser foundation with Ghost private tabs, tab environments, Split Screen, Navigation Lens, Object Anchors, Central Hub control, downloads, search, and optional AI assistance.")
-            .setPositiveButton("Close", null)
-            .show()
     }
 
     fun handleCentralHubCommand(command: JSONObject): JSONObject {
@@ -2979,11 +2991,6 @@ class MainActivity : AppCompatActivity() {
                     val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
                     JSONObject().put("ok", true).put("image", PhormiViewportCapture.toBase64Jpeg(view, 1280, 62))
                 }
-                "analyze_current_video", "video_analyze" -> {
-                    analyzeCurrentVideo(showDialog = false)
-                    JSONObject().put("ok", true).put("started", true).put("message", "Video analysis started").put("resultAvailableCommand", "video_analysis_result")
-                }
-                "video_analysis_result" -> JSONObject().put("ok", lastVideoAnalysis.isNotBlank()).put("running", videoAnalysisRunning).put("result", lastVideoAnalysis)
                 "webgpu_diagnostics" -> {
                     val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
                     val latch = java.util.concurrent.CountDownLatch(1)
