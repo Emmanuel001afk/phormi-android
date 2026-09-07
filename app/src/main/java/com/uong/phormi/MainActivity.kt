@@ -2314,12 +2314,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        reloadRunnable?.let(reloadHandler::removeCallbacks)
+        reloadRunnable = null
+        tabSaveRunnable?.let(tabSaveHandler::removeCallbacks)
+        tabSaveRunnable = null
         synchronized(unifiedSearchLock) {
             unifiedSearchGeneration.incrementAndGet()
             unifiedSearchFutures.forEach { it.cancel(true) }
             unifiedSearchFutures.clear()
         }
         unifiedSearchExecutor.shutdownNow()
+        pendingPermissionRequest?.deny()
+        pendingPermissionRequest = null
+        pendingGeoCallback?.invoke(pendingGeoOrigin, false, false)
+        pendingGeoCallback = null
+        filePathCallback?.onReceiveValue(null)
+        filePathCallback = null
+        runCatching { exitFullscreenVideo() }
+        tabs.toList().forEach { tab ->
+            (tab.webView.parent as? ViewGroup)?.removeView(tab.webView)
+            runCatching { unregisterForContextMenu(tab.webView) }
+            runCatching { tab.webView.stopLoading(); tab.webView.destroy() }
+        }
+        tabs.clear()
         PhormiBrowserPerformance.clearAll()
         CookieManager.getInstance().flush()
         super.onDestroy()
@@ -2364,6 +2381,65 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
+            }
+
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: android.webkit.SslErrorHandler?,
+                error: android.net.http.SslError?
+            ) {
+                handler?.cancel()
+                if (view == activeWebView()) Toast.makeText(this@MainActivity, "Secure connection could not be verified.", Toast.LENGTH_LONG).show()
+            }
+
+            override fun onSafeBrowsingHit(
+                view: WebView?,
+                request: WebResourceRequest?,
+                threatType: Int,
+                callback: android.webkit.SafeBrowsingResponse?
+            ) {
+                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)
+                else callback?.showInterstitial(true)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Phormi blocked an unsafe page.", Toast.LENGTH_LONG).show()
+                }
+            }
+
+            override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                if (view == null) return true
+                val tab = tabs.firstOrNull { it.webView === view } ?: return true
+                val tabId = tab.id
+                val oldUrl = view.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
+                val profile = tab.profileName
+                val ghost = tab.isGhost
+                val created = tab.createdAt
+                val index = tabs.indexOf(tab)
+                val previousActiveId = activeTabId
+                val wasInSplit = splitMode && (splitTopTabId == tabId || splitBottomTabId == tabId)
+                if (wasInSplit) {
+                    splitMode = false
+                    splitTopTabId = -1
+                    splitBottomTabId = -1
+                    splitContainer.visibility = View.GONE
+                    moveTabWebViewToHost(previousActiveId, webViewContainer)
+                }
+                (view.parent as? ViewGroup)?.removeView(view)
+                runCatching { unregisterForContextMenu(view) }
+                runCatching { view.stopLoading(); view.destroy() }
+                tabStripContainer.removeView(tab.chipView)
+                tabs.remove(tab)
+                PhormiBrowserPerformance.clear(tabId)
+                createNewTab(oldUrl, profile, forceGhost = ghost, requestedId = tabId, requestedCreatedAt = created)
+                val replacement = tabs.lastOrNull { it.id == tabId }
+                if (replacement != null && index in 0 until tabs.size - 1) {
+                    tabs.remove(replacement)
+                    tabs.add(index.coerceIn(0, tabs.size), replacement)
+                }
+                if (previousActiveId != tabId && tabs.any { it.id == previousActiveId }) {
+                    switchToTab(previousActiveId)
+                }
+                Toast.makeText(this@MainActivity, "A page renderer stopped unexpectedly; the tab was recovered.", Toast.LENGTH_LONG).show()
+                return true
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -2461,20 +2537,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
+                val allowed = request.resources.filter {
+                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                }.toTypedArray()
+                if (allowed.isEmpty()) { request.deny(); return }
+                pendingPermissionRequest?.deny()
                 pendingPermissionRequest = request
                 val needed = mutableListOf<String>()
-                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA)
-                    != PackageManager.PERMISSION_GRANTED
-                ) needed.add(Manifest.permission.CAMERA)
-                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO)
-                    != PackageManager.PERMISSION_GRANTED
-                ) needed.add(Manifest.permission.RECORD_AUDIO)
-                if (needed.isEmpty()) request.grant(request.resources)
-                else {
+                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in allowed &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    needed.add(Manifest.permission.CAMERA)
+                }
+                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in allowed &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    needed.add(Manifest.permission.RECORD_AUDIO)
+                }
+                if (needed.isEmpty()) {
+                    request.grant(allowed)
+                    pendingPermissionRequest = null
+                } else {
                     pendingPermissionPermissions = needed.toTypedArray()
-                    ActivityCompat.requestPermissions(
-                        this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS
-                    )
+                    ActivityCompat.requestPermissions(this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS)
                 }
             }
 
@@ -2729,7 +2812,7 @@ class MainActivity : AppCompatActivity() {
         }
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
-                if (ev.pointerCount == 2 && !twoFingerHoldActive) {
+                if (ev.pointerCount == 2 && !twoFingerHoldActive && customView == null) {
                     twoFingerHoldActive = true
                     val r = Runnable {
                         activeWebView()?.reload()
@@ -2748,7 +2831,7 @@ class MainActivity : AppCompatActivity() {
             android.view.MotionEvent.ACTION_MOVE -> {
                 if (threeFingerTracking && ev.pointerCount >= 3) {
                     val dx = ev.getX(0) - threeFingerStartX
-                    if (kotlin.math.abs(dx) >= 120f) {
+                    if (kotlin.math.abs(dx) >= 120f && customView == null) {
                         val current = tabs.indexOfFirst { it.id == activeTabId }
                         val target = if (dx < 0) current + 1 else current - 1
                         tabs.getOrNull(target)?.let { switchToTab(it.id) }
