@@ -20,6 +20,7 @@ class AccountsActivity : AppCompatActivity() {
     data class AccountProvider(val id: String, val label: String, val loginUrl: String, val switchUrl: String, val note: String)
 
     companion object {
+        const val EXTRA_OPEN_URL = "open_url"
         val PROVIDERS = listOf(
             AccountProvider("google", "Google", "https://accounts.google.com/", "https://accounts.google.com/AccountChooser", "Secure browser sign-in. Google accounts are handled by Google's own authentication surface."),
             AccountProvider("microsoft", "Microsoft", "https://account.microsoft.com/", "https://account.microsoft.com/", "Use Microsoft's own account switcher after signing in."),
@@ -56,9 +57,7 @@ class AccountsActivity : AppCompatActivity() {
                 val row = layoutInflater.inflate(R.layout.item_account, container, false)
                 row.findViewById<TextView>(R.id.account_label).text = session.label
                 row.findViewById<TextView>(R.id.account_note).text = "Last used ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.lastUsed))} · tap to switch"
-                row.setOnClickListener {
-                    PROVIDERS.firstOrNull { it.id == session.providerId }?.let { openProvider(it, true) }
-                }
+                row.setOnClickListener { PROVIDERS.firstOrNull { it.id == session.providerId }?.let { openProvider(it, true) } }
                 row.setOnLongClickListener {
                     androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("${session.label} account")
@@ -114,11 +113,7 @@ class AccountsActivity : AppCompatActivity() {
         AccountSessionStore.touch(this, provider.id, provider.label)
         val url = if (switch) provider.switchUrl else provider.loginUrl
         try {
-            val customTabs = CustomTabsIntent.Builder()
-                .setShowTitle(true)
-                .setUrlBarHidingEnabled(false)
-                .build()
-            customTabs.launchUrl(this, Uri.parse(url))
+            CustomTabsIntent.Builder().setShowTitle(true).setUrlBarHidingEnabled(false).build().launchUrl(this, Uri.parse(url))
         } catch (_: Exception) {
             runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 .onFailure { Toast.makeText(this, "No browser can open ${provider.label} sign-in", Toast.LENGTH_LONG).show() }
