@@ -7,50 +7,59 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 
-/** Opens downloaded/local files with the best available Android handler. */
+/** Opens downloaded/local content with the best available Android app. */
 object PhormiFileOpener {
-    fun displayName(context: Context, uri: Uri, fallback: String = "Download"): String {
+    fun displayName(context: Context, uri: Uri, fallback: String = "File"): String {
         if (uri.scheme == "content") {
             runCatching {
-                context.contentResolver.query(
-                    uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
-                )?.use { c ->
-                    val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (i >= 0 && c.moveToFirst()) {
-                        val name = c.getString(i)
-                        if (!name.isNullOrBlank()) return name
+                context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index >= 0) cursor.getString(index)?.takeIf { it.isNotBlank() }?.let { return it }
                     }
                 }
             }
         }
-        return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: fallback
+        return uri.lastPathSegment?.substringAfterLast('/').takeIf { !it.isNullOrBlank() } ?: fallback
     }
 
-    fun mimeType(context: Context, uri: Uri, known: String?): String {
-        if (!known.isNullOrBlank() && known != "application/octet-stream") return known
-        context.contentResolver.getType(uri)?.let { if (it.isNotBlank()) return it }
-        val name = displayName(context, uri)
+    fun resolveMimeType(context: Context, uri: Uri, knownMime: String? = null): String {
+        knownMime?.takeIf { it.isNotBlank() }?.let { return it }
+        if (uri.scheme == "content") context.contentResolver.getType(uri)?.takeIf { it.isNotBlank() }?.let { return it }
+        val name = displayName(context, uri, "")
         val ext = name.substringAfterLast('.', "").lowercase()
-        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+        if (ext.isNotBlank()) MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)?.let { return it }
+        return "application/octet-stream"
     }
 
     fun open(context: Context, uri: Uri, knownMime: String? = null): Boolean {
-        val mime = mimeType(context, uri, knownMime)
-        val view = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val mime = resolveMimeType(context, uri, knownMime)
+        if (mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/")) {
+            return runCatching {
+                context.startActivity(Intent(context, PhormiMediaViewerActivity::class.java).apply {
+                    putExtra("uri", uri); putExtra("mime", mime); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                true
+            }.getOrDefault(false)
         }
+        fun intent(type: String) = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, type)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val pm = context.packageManager
         return try {
-            context.startActivity(view)
-            true
-        } catch (_: ActivityNotFoundException) {
-            val chooser = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "*/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                pm.getPackageInfo("android", 0)
+                context.startActivity(intent(mime))
+                true
+            } catch (_: ActivityNotFoundException) {
+                context.startActivity(intent("*/*"))
+                true
             }
-            try { context.startActivity(chooser); true } catch (_: Exception) { false }
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
         }
     }
 }
