@@ -215,7 +215,6 @@ class PhormiKeyboardService : InputMethodService() {
 
     private fun buildKeyboard(): View {
         val root = baseRoot()
-        toolbar(root)
         val type = editorInfo?.inputType ?: InputType.TYPE_CLASS_TEXT
         val clazz = type and InputType.TYPE_MASK_CLASS
         val variation = type and InputType.TYPE_MASK_VARIATION
@@ -231,6 +230,7 @@ class PhormiKeyboardService : InputMethodService() {
 
         // Password fields intentionally expose no completion/suggestion strip.
         if (password) completions = emptyList()
+        toolbar(root)
 
         if (numeric) {
             listOf("123", "456", "789", "0.,+-").forEach { root.addView(charRow(it)) }
@@ -313,10 +313,6 @@ class PhormiKeyboardService : InputMethodService() {
         key(actions, "↵") { sendEditorAction() }
         key(actions, "🎙") {
             startActivity(Intent(this, PhormiKeyboardVoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
-        if (password) {
-            // Password fields still get normal editing, but do not expose completion candidates.
-            completions = emptyList()
         }
         root.addView(actions, LinearLayout.LayoutParams(-1, 54))
         return root
