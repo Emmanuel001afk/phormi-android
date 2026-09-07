@@ -67,7 +67,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_desktop_mode) { finishWith(ACTION_DESKTOP_MODE) }
         wire(R.id.menu_favorite) { finishWith(ACTION_FAVORITE) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
-        wire(R.id.menu_help) { finishWith(ACTION_HELP) }
+        wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
         wire(R.id.menu_tab_retention) { finishWith(ACTION_TAB_RETENTION) }
         wire(R.id.menu_pull_to_refresh) { finishWith(ACTION_PULL_TO_REFRESH) }
         wire(R.id.menu_split_screen) { finishWith(ACTION_SPLIT_SCREEN) }
