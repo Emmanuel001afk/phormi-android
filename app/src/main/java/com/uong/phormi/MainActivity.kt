@@ -130,6 +130,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_FAVORITE_CONTEXTS = "favorite_contexts"
         private const val KEY_TAB_PROFILES = "tab_profiles"
         private const val KEY_TAB_ENVIRONMENT = "tab_environment"
+        private const val KEY_TAB_WEBVIEW_STATES = "tab_webview_states"
+        private const val WEBVIEW_STATE_MAX_BYTES = 64 * 1024
         private const val DEFAULT_PROFILE_NAME = "Default"
         private const val GHOST_PROFILE_NAME = "Ghost"
         private const val KEY_TAB_RETENTION = "tab_retention"
@@ -1335,7 +1337,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         if (::prefs.isInitialized) {
-            saveTabsImmediate()
+            saveTabsImmediate(true)
             // A biometric/device-credential prompt can temporarily move the
             // Activity through the stopped state. Do not relock during that
             // authentication transaction; relock only after a real exit to
@@ -1501,7 +1503,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
 
-    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null) {
+    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null, restoredStateBase64: String? = null) {
         val ghostRequested = forceGhost || prefs.getBoolean("ghost_next_tab", false)
         if (ghostRequested) prefs.edit().putBoolean("ghost_next_tab", false).apply()
         val id = requestedId?.takeIf { it > 0 } ?: nextTabId++
@@ -1554,7 +1556,13 @@ class MainActivity : AppCompatActivity() {
             saveTabs()
         }
 
-        if (url != NEW_TAB_URL) webView.loadUrl(url)
+        var restored = false
+        if (!restoredStateBase64.isNullOrBlank() && WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
+            restored = runCatching {
+                restoreWebViewState(webView, restoredStateBase64)
+            }.getOrDefault(false)
+        }
+        if (!restored && url != NEW_TAB_URL) webView.loadUrl(url)
         switchToTab(id)
         updateTabCount()
         saveTabs()
@@ -1642,12 +1650,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveTabs() {
         tabSaveRunnable?.let { tabSaveHandler.removeCallbacks(it) }
-        val runnable = Runnable { saveTabsImmediate() }
+        val runnable = Runnable { saveTabsImmediate(false) }
         tabSaveRunnable = runnable
         tabSaveHandler.postDelayed(runnable, 250L)
     }
 
-    private fun saveTabsImmediate() {
+    private fun saveTabsImmediate(captureWebViewState: Boolean = false) {
         tabSaveRunnable?.let { tabSaveHandler.removeCallbacks(it) }
         tabSaveRunnable = null
         val persistTabs = tabs.filterNot { it.isGhost }
@@ -1657,6 +1665,7 @@ class MainActivity : AppCompatActivity() {
         val createdAt = JSONArray()
         val profiles = JSONArray()
         val ids = JSONArray()
+        val webViewStates = JSONArray()
         persistTabs.forEach { tab ->
             val u = tab.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
             urls.put(u)
@@ -1665,9 +1674,10 @@ class MainActivity : AppCompatActivity() {
             createdAt.put(tab.createdAt)
             profiles.put(tab.profileName)
             ids.put(tab.id)
+            webViewStates.put(if (captureWebViewState) (saveWebViewState(tab.webView) ?: "") else "")
         }
         if (urls.length() == 0) {
-            urls.put(NEW_TAB_URL); titles.put(getString(R.string.new_tab)); lastUsed.put(System.currentTimeMillis()); createdAt.put(System.currentTimeMillis()); profiles.put(DEFAULT_PROFILE_NAME); ids.put(nextTabId++)
+            urls.put(NEW_TAB_URL); titles.put(getString(R.string.new_tab)); lastUsed.put(System.currentTimeMillis()); createdAt.put(System.currentTimeMillis()); profiles.put(DEFAULT_PROFILE_NAME); ids.put(nextTabId++); webViewStates.put("")
         }
         val activeIndex = persistTabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
@@ -1677,6 +1687,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_TAB_CREATED_AT, createdAt.toString())
             .putString(KEY_TAB_PROFILES, profiles.toString())
             .putString(KEY_TAB_IDS, ids.toString())
+            .putString(KEY_TAB_WEBVIEW_STATES, webViewStates.toString())
             .putString(KEY_TAB_RETENTION, prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER)
             .putString(KEY_TAB_ENVIRONMENT, selectedTabEnvironment())
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
@@ -1758,6 +1769,7 @@ class MainActivity : AppCompatActivity() {
             val profiles = runCatching { JSONArray(prefs.getString(KEY_TAB_PROFILES, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val createdAt = runCatching { JSONArray(prefs.getString(KEY_TAB_CREATED_AT, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val ids = runCatching { JSONArray(prefs.getString(KEY_TAB_IDS, "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val webViewStates = runCatching { JSONArray(prefs.getString(KEY_TAB_WEBVIEW_STATES, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val count = arr.length()
             val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
@@ -1765,7 +1777,8 @@ class MainActivity : AppCompatActivity() {
                 val restoredProfile = profiles.optString(i, DEFAULT_PROFILE_NAME).trim().ifBlank { DEFAULT_PROFILE_NAME }
                 val restoredId = ids.optInt(i, 0).takeIf { it > 0 }
                 val restoredCreatedAt = createdAt.optLong(i, 0L).takeIf { it > 0L } ?: lastUsed.optLong(i, System.currentTimeMillis()).takeIf { it > 0L }
-                createNewTab(restoredUrl, restoredProfile, requestedId = restoredId, requestedCreatedAt = restoredCreatedAt)
+                val restoredState = webViewStates.optString(i, "").trim().takeIf { it.isNotBlank() }
+                createNewTab(restoredUrl, restoredProfile, requestedId = restoredId, requestedCreatedAt = restoredCreatedAt, restoredStateBase64 = restoredState)
                 if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
                 if (restoredTitle.isNotBlank() && i < tabs.size) {
@@ -1781,6 +1794,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    // PHORMI_ROUND5_STATE_RESTORE_V1
+    // WebViewCompat.saveState() preserves the navigation stack and page state while
+    // enforcing a hard size limit. The serialized Bundle is stored per tab so the
+    // browser can rebuild WebViews after process death instead of only reloading URLs.
+    private fun saveWebViewState(webView: WebView): String? {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) return null
+        return runCatching {
+            val state = Bundle()
+            WebViewCompat.saveState(webView, state, WEBVIEW_STATE_MAX_BYTES, false)
+            val parcel = android.os.Parcel.obtain()
+            try {
+                state.writeToParcel(parcel, 0)
+                android.util.Base64.encodeToString(parcel.marshall(), android.util.Base64.NO_WRAP)
+            } finally {
+                parcel.recycle()
+            }
+        }.getOrNull()
+    }
+
+    private fun restoreWebViewState(webView: WebView, encoded: String): Boolean {
+        if (encoded.isBlank()) return false
+        return runCatching {
+            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val parcel = android.os.Parcel.obtain()
+            try {
+                parcel.unmarshall(bytes, 0, bytes.size)
+                parcel.setDataPosition(0)
+                val state = Bundle.CREATOR.createFromParcel(parcel)
+                state.classLoader = MainActivity::class.java.classLoader
+                val history = webView.restoreState(state)
+                history != null && history.size > 0
+            } finally {
+                parcel.recycle()
+            }
+        }.getOrDefault(false)
+    }
 
     private fun retentionAgeMillis(): Long? = when (prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER)) {
         RETENTION_1_MONTH -> 30L * 24 * 60 * 60 * 1000
@@ -2282,11 +2332,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         // Persist both browser state and website sessions when the app leaves the foreground.
-        saveTabsImmediate()
+        saveTabsImmediate(true)
         CookieManager.getInstance().flush()
         super.onPause()
     }
 
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        saveTabsImmediate(true)
+        super.onSaveInstanceState(outState)
+    }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
