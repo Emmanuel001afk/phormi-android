@@ -61,11 +61,8 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 root.addView(playerView, FrameLayout.LayoutParams(-1, -1).apply {
                     gravity = Gravity.CENTER
                 })
-                playerView.setOnClickListener {
-                    if (Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode && playerView.isPlaying) {
-                        runCatching { enterPictureInPictureMode(PictureInPictureParams.Builder().build()) }
-                    }
-                }
+                // A normal tap controls playback; PiP is entered when the user leaves
+                // the app, matching Android's expected media/PiP interaction.
             }
             mime.startsWith("audio/") -> {
                 val label = TextView(this).apply {
@@ -93,7 +90,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        video?.visibility = if (isInPictureInPictureMode) View.VISIBLE else View.VISIBLE
+        video?.visibility = View.VISIBLE
     }
 
     private fun startAudio(uri: Uri) {
@@ -107,8 +104,13 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 )
                 setDataSource(this@PhormiMediaViewerActivity, uri)
                 setOnCompletionListener { releasePlayer() }
-                prepare()
-                start()
+                setOnPreparedListener { it.start() }
+                setOnErrorListener { _, _, _ ->
+                    releasePlayer()
+                    ToastMessage.show(this@PhormiMediaViewerActivity, "Audio could not be played")
+                    true
+                }
+                prepareAsync()
             }
         }.getOrElse {
             ToastMessage.show(this, "Audio could not be played")
