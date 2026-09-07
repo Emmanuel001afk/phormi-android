@@ -90,13 +90,30 @@ class DownloadsActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
     }
 
-    private fun statusText(item: DownloadItem): String = when (item.status) {
-        DownloadManager.STATUS_SUCCESSFUL -> "Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}"
+    private fun statusText(item: DownloadItem): String {
+        val type = category(item)
+        return when (item.status) {
+        DownloadManager.STATUS_SUCCESSFUL -> "$type · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}"
         DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)}"
         DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)}"
         DownloadManager.STATUS_PENDING -> "Waiting to download"
         DownloadManager.STATUS_FAILED -> "Download failed"
-        else -> "Status unavailable"
+        else -> "$type · Status unavailable"
+        }
+    }
+
+    private fun category(item: DownloadItem): String {
+        val mime = item.mimeType.orEmpty().lowercase()
+        val name = item.title.lowercase()
+        return when {
+            mime.startsWith("video/") || name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".mkv") -> "Video"
+            mime.startsWith("image/") -> "Image"
+            mime.startsWith("audio/") -> "Audio"
+            mime == "application/pdf" || name.endsWith(".pdf") -> "PDF"
+            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || mime.contains("zip") -> "Archive"
+            mime.startsWith("text/") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".xls") || name.endsWith(".xlsx") || name.endsWith(".ppt") || name.endsWith(".pptx") -> "Document"
+            else -> "Other"
+        }
     }
 
     private fun formatProgress(item: DownloadItem): String =
