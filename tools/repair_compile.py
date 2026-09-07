@@ -2,20 +2,27 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 
+# Keep build-time compatibility repairs idempotent. These are defensive guards for
+# source packages assembled by earlier Phormi passes; current source is also kept
+# in the corrected form in the repository whenever possible.
 p = root / "app/src/main/java/com/uong/phormi/MainActivity.kt"
 s = p.read_text()
 if "import android.app.AlertDialog" not in s:
     s = s.replace("import android.app.Activity\n", "import android.app.Activity\nimport android.app.AlertDialog\n", 1)
-s = s.replace("MenuActivity.ACTION_HELP -> showPhormiHelp()", 'MenuActivity.ACTION_HELP -> AlertDialog.Builder(this).setTitle("Phormi Help").setMessage("Use the address bar to search or open a site. Tabs, Ghost mode, split view, downloads, keyboard tools, privacy, and browser settings are available from the menu.").setPositiveButton("OK", null).show()')
+s = s.replace("MenuActivity.ACTION_HELP -> showPhormiHelp()", 'MenuActivity.ACTION_HELP -> startActivity(Intent(this, HelpActivity::class.java))')
 s = s.replace("PhormiKeyboardController(this).showKeyboardPicker()", "PhormiKeyboardController.showKeyboardPicker(this)")
+# Normal-browser-compatible security defaults: JavaScript on, mixed content blocked,
+# third-party cookies on unless the user explicitly hardens the setting.
 s = s.replace("javaScriptEnabled = true", "javaScriptEnabled = prefs.getBoolean(\"security_javascript\", true)", 1)
 s = s.replace("mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE", "mixedContentMode = if (prefs.getBoolean(\"security_mixed_content\", false)) android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW", 1)
-s = s.replace("CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)", "CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean(\"security_third_party_cookies\", false))", 1)
+s = s.replace("CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)", "CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean(\"security_third_party_cookies\", true))")
+# WebSQL/databaseEnabled is obsolete on modern WebView and can be removed without
+# removing DOM storage, which remains enabled above.
+s = s.replace("            databaseEnabled = true\n", "")
 p.write_text(s)
 
 p = root / "app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt"
 s = p.read_text()
-# The IME API does not expose getInputView(); always replace the input view when completions change.
 s = s.replace("if (panel == Panel.KEYBOARD && inputView != null) setInputView(render())", "if (panel == Panel.KEYBOARD) setInputView(render())")
 s = s.replace("if (panel == Panel.KEYBOARD && getInputView() != null) setInputView(render())", "if (panel == Panel.KEYBOARD) setInputView(render())")
 s = s.replace("shift = false\n        capsLock = false", "shift = PhormiKeyboardPreferences.autoCaps(this) && shouldAutoCapitalize(null)\n        capsLock = false", 1)
@@ -32,4 +39,4 @@ helpers = '''    private fun shouldAutoCapitalize(info: EditorInfo?): Boolean {\
 s = s.replace(marker, helpers + marker, 1)
 p.write_text(s)
 
-print("Applied browser security and keyboard foundation repairs")
+print("Applied idempotent browser security, help routing, and keyboard foundation repairs")
