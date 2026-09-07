@@ -164,14 +164,17 @@ class VpnActivity : AppCompatActivity() {
         }
 
         status.text = "Connecting · $label"
+        PhormiVpnNotification.show(this, connected = false, label = label, detail = "Connecting")
         openVpnController.connect(this, config) { ok, message ->
             runOnUiThread {
                 if (ok) {
                     prefs.edit().putBoolean("vpn_requested", true).apply()
                     status.text = "VPN requested · $label"
+                    PhormiVpnNotification.show(this, connected = true, label = label, detail = "Connection requested")
                 } else {
                     prefs.edit().putBoolean("vpn_requested", false).apply()
                     status.text = "VPN unavailable · $message"
+                    PhormiVpnNotification.clear(this)
                     Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                 }
                 refreshConnectionUi()
@@ -188,6 +191,8 @@ class VpnActivity : AppCompatActivity() {
                         val prefs = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
                         prefs.edit().putBoolean("vpn_requested", ok).apply()
                         status.text = message
+                        if (ok) PhormiVpnNotification.show(this, connected = true, label = prefs.getString("selected_label", "") ?: "", detail = message)
+                        else PhormiVpnNotification.clear(this)
                         if (!ok) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                         refreshConnectionUi()
                     }
@@ -196,6 +201,7 @@ class VpnActivity : AppCompatActivity() {
                 getSharedPreferences("phormi_vpn", MODE_PRIVATE).edit()
                     .putBoolean("vpn_requested", false).apply()
                 status.text = "VPN permission cancelled"
+                PhormiVpnNotification.clear(this)
                 refreshConnectionUi()
             }
         }
@@ -206,6 +212,7 @@ class VpnActivity : AppCompatActivity() {
         getSharedPreferences("phormi_vpn", MODE_PRIVATE).edit()
             .putBoolean("vpn_requested", false).apply()
         status.text = "Disconnected"
+        PhormiVpnNotification.clear(this)
         refreshConnectionUi()
     }
 
