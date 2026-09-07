@@ -17,14 +17,12 @@ import android.view.inputmethod.CompletionInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
-import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.util.Locale
 
 /**
  * System-wide Phormi IME.
@@ -56,7 +54,6 @@ class PhormiKeyboardService : InputMethodService() {
     private var repeatRunnable: Runnable? = null
     private val repeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var lastSpaceDownX = 0f
-    private var lastSpaceDownY = 0f
     private var lastSpaceDownAt = 0L
     private var suppressSpaceCommit = false
     private var spaceSwipeMoved = false
@@ -135,6 +132,20 @@ class PhormiKeyboardService : InputMethodService() {
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    override fun onInitializeInterface() {
+        super.onInitializeInterface()
+        // InputMethodService can keep the IME instance alive across orientation,
+        // density, and window-size changes. Rebuild the view against the new metrics.
+        stopRepeat()
+    }
+
+    override fun onFinishInput() {
+        stopRepeat()
+        editorInfo = null
+        completions = emptyList()
+        super.onFinishInput()
+    }
+
     override fun onCreateInputView(): View = render()
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -187,7 +198,7 @@ class PhormiKeyboardService : InputMethodService() {
         })
         key(bar, "↵", action = { sendEditorAction() })
         root.addView(bar, LinearLayout.LayoutParams(-1, 46))
-        addCompletions(root)
+        if (!isPasswordField()) addCompletions(root)
     }
 
     private fun addCompletions(root: LinearLayout) {
@@ -259,12 +270,17 @@ class PhormiKeyboardService : InputMethodService() {
             }
         }
 
-        val space = key(actions, "Space", if (numeric) 2.8f else 3.8f) { commitSpace() }
+        // Standard editor operations remain available even when an app's own
+        // selection toolbar is difficult to reach on a small screen.
+        key(actions, "Sel") { selectAll() }
+        key(actions, "Copy") { copySelection() }
+        key(actions, "Paste") { pasteClipboard() }
+
+        val space = key(actions, "Space", if (numeric) 2.2f else 3.0f) { commitSpace() }
         space.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     lastSpaceDownX = event.x
-                    lastSpaceDownY = event.y
                     lastSpaceDownAt = System.currentTimeMillis()
                     suppressSpaceCommit = false
                     spaceSwipeMoved = false
@@ -413,7 +429,7 @@ class PhormiKeyboardService : InputMethodService() {
             stopRepeat()
             val runnable = object : Runnable {
                 override fun run() {
-                    val ic = currentInputConnection ?: run { stopRepeat(); return }
+                    if (currentInputConnection == null) { stopRepeat(); return }
                     action()
                     repeatHandler.postDelayed(this, 65L)
                 }
@@ -439,25 +455,38 @@ class PhormiKeyboardService : InputMethodService() {
     }
 
     private fun commitSpace() {
-        val before = runCatching { currentInputConnection?.getTextBeforeCursor(2, 0)?.toString().orEmpty() }.getOrDefault("")
-        if (before.endsWith("  ")) {
-            // Common keyboard convenience: turn a double-space into a sentence period.
-            runCatching { currentInputConnection?.deleteSurroundingText(2, 0); currentInputConnection?.commitText(". ", 1) }
-        } else {
-            commitText(" ")
-        }
+        val ic = currentInputConnection ?: return
+        runCatching {
+            ic.beginBatchEdit()
+            val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+            if (before.endsWith("  ")) {
+                ic.deleteSurroundingText(2, 0)
+                ic.commitText(". ", 1)
+            } else {
+                ic.commitText(" ", 1)
+            }
+        }.also { runCatching { ic.endBatchEdit() } }
     }
 
     private fun deleteBackward() {
         val ic = currentInputConnection ?: return
         runCatching {
+            ic.beginBatchEdit()
             val selected = ic.getSelectedText(0)
             if (!selected.isNullOrEmpty()) {
                 ic.commitText("", 1)
                 return
             }
+            if (android.os.Build.VERSION.SDK_INT >= 24) {
+                val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+                if (before.isNotEmpty()) {
+                    val cp = before.codePointBefore(before.length)
+                    ic.deleteSurroundingTextInCodePoints(1, 0)
+                    return
+                }
+            }
             if (!deletePreviousCodePoint(ic)) ic.deleteSurroundingText(1, 0)
-        }
+        }.also { runCatching { ic.endBatchEdit() } }
     }
 
     private fun deletePreviousCodePoint(ic: InputConnection): Boolean {
@@ -503,6 +532,14 @@ class PhormiKeyboardService : InputMethodService() {
         runCatching {
             val before = ic.getTextBeforeCursor(2048, 0)?.toString().orEmpty()
             val after = ic.getTextAfterCursor(2048, 0)?.toString().orEmpty()
+            if (selectionStart != selectionEnd) {
+                val collapse = if (delta < 0) minOf(selectionStart, selectionEnd) else maxOf(selectionStart, selectionEnd)
+                if (ic.setSelection(collapse, collapse)) {
+                    selectionStart = collapse
+                    selectionEnd = collapse
+                    return
+                }
+            }
             val base = selectionStart.coerceAtLeast(0)
             val target = if (delta < 0) (base - 1).coerceAtLeast(0) else (base + 1).coerceAtMost(base + after.length)
             if (!ic.setSelection(target, target)) {
@@ -525,6 +562,35 @@ class PhormiKeyboardService : InputMethodService() {
                 ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
             }
         }
+    }
+
+    private fun isPasswordField(): Boolean {
+        val type = editorInfo?.inputType ?: 0
+        val variation = type and InputType.TYPE_MASK_VARIATION
+        return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+    }
+
+    private fun selectAll() {
+        val ic = currentInputConnection ?: return
+        runCatching {
+            if (!ic.performContextMenuAction(android.R.id.selectAll)) {
+                val text = ic.getTextBeforeCursor(100000, 0)?.length ?: 0
+                val after = ic.getTextAfterCursor(100000, 0)?.length ?: 0
+                ic.setSelection(0, text + after)
+            }
+        }
+    }
+
+    private fun copySelection() {
+        val ic = currentInputConnection ?: return
+        runCatching { ic.performContextMenuAction(android.R.id.copy) }
+    }
+
+    private fun pasteClipboard() {
+        val ic = currentInputConnection ?: return
+        runCatching { ic.performContextMenuAction(android.R.id.paste) }
     }
 
     private fun openMedia(mode: String) = startActivity(
