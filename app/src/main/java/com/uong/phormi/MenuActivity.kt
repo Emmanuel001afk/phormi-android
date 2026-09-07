@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
+/** Browser menu. Nested browser surfaces return their action to MainActivity through this activity. */
 class MenuActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_ACTION = "menu_action"
@@ -37,20 +38,22 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_DEFAULT_BROWSER = "default_browser"
         const val ACTION_TAB_GROUPS = "tab_groups"
         private const val REQ_NESTED = 2100
+        private const val REQ_TABS = 2101
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_menu)
         wire(R.id.menu_new_tab) { finishWith(ACTION_NEW_TAB) }
         wire(R.id.menu_ghost) { finishWith(ACTION_GHOST) }
-        wire(R.id.menu_tabs) { startActivity(Intent(this, TabsOverviewActivity::class.java)) }
+        wire(R.id.menu_tabs) { startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS) }
         wire(R.id.menu_groups) { startActivity(Intent(this, TabGroupsActivity::class.java)) }
         wire(R.id.menu_downloads) { startActivity(Intent(this, DownloadsActivity::class.java)) }
         wire(R.id.menu_bookmarks) { startActivityForResult(Intent(this, BookmarksActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
         wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
-        wire(R.id.menu_keyboard) { PhormiKeyboardController.showKeyboardPicker(this) }
+        wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }
         wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
         wire(R.id.menu_security) { startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }
@@ -65,22 +68,44 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_object_anchors) { finishWith(ACTION_OBJECT_ANCHORS) }
         wire(R.id.menu_same_page_split) { finishWith(ACTION_SAME_PAGE_SPLIT) }
         wire(R.id.menu_desktop_mode) { finishWith(ACTION_DESKTOP_MODE) }
-        wire(R.id.menu_favorite) { finishWith(ACTION_FAVORITE) }
+        wire(R.id.menu_favorite) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
         wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
-        wire(R.id.menu_tab_retention) { finishWith(ACTION_TAB_RETENTION) }
+        wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
         wire(R.id.menu_pull_to_refresh) { finishWith(ACTION_PULL_TO_REFRESH) }
         wire(R.id.menu_split_screen) { finishWith(ACTION_SPLIT_SCREEN) }
+        wire(R.id.menu_tab_retention) { finishWith(ACTION_TAB_RETENTION) }
         wire(R.id.menu_theme) { finishWith(ACTION_THEME) }
         wire(R.id.menu_settings) { startActivityForResult(Intent(this, AccountsActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_close) { finish() }
     }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK || data == null) return
+        // Forward tab-overview actions (select/close/group/split/new tab) back to MainActivity.
+        if (requestCode == REQ_TABS) {
+            setResult(RESULT_OK, data)
+            finish()
+            return
+        }
         val openUrl = data.getStringExtra("open_url") ?: data.getStringExtra(AccountsActivity.EXTRA_OPEN_URL)
-        if (!openUrl.isNullOrBlank()) { setResult(RESULT_OK, Intent().putExtra("open_url", openUrl)); finish() }
+        if (!openUrl.isNullOrBlank()) {
+            setResult(RESULT_OK, Intent().putExtra("open_url", openUrl))
+            finish()
+        }
     }
-    private fun finishWith(action: String) { setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, action)); finish() }
-    private fun wire(id: Int, action: () -> Unit) { findViewById<TextView>(id)?.apply { isClickable=true; isFocusable=true; setOnClickListener { action() } } }
+
+    private fun finishWith(action: String) {
+        setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, action))
+        finish()
+    }
+
+    private fun wire(id: Int, action: () -> Unit) {
+        findViewById<TextView>(id)?.apply {
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+    }
 }
