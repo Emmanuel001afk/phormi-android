@@ -8,19 +8,14 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 
-/**
- * Compatibility shell kept for the existing manifest.
- *
- * IMPORTANT: Phormi no longer creates a local TUN interface here. The previous
- * implementation routed 0.0.0.0/0 into a TUN and discarded every packet,
- * which made the entire phone appear offline. The real OpenVPN engine now owns
- * the Android VPN interface.
- */
+/** Compatibility foreground shell. The external OpenVPN engine owns the TUN interface. */
 class PhormiVpnService : VpnService() {
     companion object {
         const val ACTION_CONNECT = "com.uong.phormi.vpn.CONNECT"
         const val ACTION_DISCONNECT = "com.uong.phormi.vpn.DISCONNECT"
+        const val ACTION_STATUS = "com.uong.phormi.vpn.STATUS"
         const val EXTRA_SERVER_LABEL = "server_label"
+        const val EXTRA_STATUS = "status"
         const val CHANNEL_ID = "phormi_vpn"
 
         @Volatile var isRunning: Boolean = false
@@ -34,39 +29,54 @@ class PhormiVpnService : VpnService() {
             ACTION_DISCONNECT -> {
                 isRunning = false
                 currentLabel = ""
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                PhormiVpnNotification.clear(this)
+                stopForegroundCompat()
                 stopSelf()
             }
             ACTION_CONNECT -> {
-                // Never establish a local TUN here. OpenVPN for Android owns it.
                 currentLabel = intent.getStringExtra(EXTRA_SERVER_LABEL).orEmpty()
-                isRunning = false
-                startForeground(42, buildNotification("Controlled by OpenVPN engine"))
+                isRunning = true
+                startForeground(42, buildNotification("Connecting · $currentLabel"))
+            }
+            ACTION_STATUS -> {
+                val status = intent.getStringExtra(EXTRA_STATUS).orEmpty()
+                val connected = status.equals("connected", true)
+                isRunning = connected
+                if (connected) {
+                    currentLabel = intent.getStringExtra(EXTRA_SERVER_LABEL).orEmpty().ifBlank { currentLabel }
+                    startForeground(42, buildNotification("Connected · $currentLabel"))
+                } else {
+                    isRunning = false
+                    PhormiVpnNotification.clear(this)
+                    stopForegroundCompat()
+                }
             }
         }
         return START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent?) = super.onBind(intent)
+    private fun stopForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE)
+        else @Suppress("DEPRECATION") stopForeground(true)
+    }
 
     private fun buildNotification(text: String): Notification {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Phormi VPN", NotificationManager.IMPORTANCE_LOW)
-            )
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Phormi VPN", NotificationManager.IMPORTANCE_LOW))
         }
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, VpnActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        return if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("Phormi VPN")
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setContentIntent(open)
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .build()
         } else {
             @Suppress("DEPRECATION")
