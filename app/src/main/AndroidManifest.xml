@@ -157,6 +157,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <activity android:name=".PhormiMediaViewerActivity" android:exported="false" />
+        <activity android:name=".PhormiMediaViewerActivity" android:exported="false" android:supportsPictureInPicture="true" />
     </application>
 </manifest>
