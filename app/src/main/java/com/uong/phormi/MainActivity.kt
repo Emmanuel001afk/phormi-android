@@ -1353,6 +1353,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setActiveSplitPane(tabId: Int) {
+        if (!splitMode || tabs.none { it.id == tabId }) return
+        activeTabId = tabId
+        tabs.find { it.id == tabId }?.lastUsed = System.currentTimeMillis()
+        updateNavButtons()
+        updateFavoriteButton()
+        val url = tabs.find { it.id == tabId }?.webView?.url.orEmpty()
+        urlBar.setText(url.takeIf { it.isNotBlank() && it != NEW_TAB_URL } ?: "")
+        tabs.forEach { it.chipView.alpha = if (it.id == tabId) 1f else 0.55f }
+    }
+
     private fun installSplitDividerResize() {
         splitDivider.setOnTouchListener { _, event ->
             if (!splitMode || splitChromeLocked) return@setOnTouchListener false
@@ -1394,11 +1405,15 @@ class MainActivity : AppCompatActivity() {
         if (enabled && tabs.size < 2) createNewTab(NEW_TAB_URL)
         if (enabled) {
             splitMode = true
-            splitTopTabId = activeTabId
-            splitBottomTabId = tabs.firstOrNull { it.id != splitTopTabId }?.id ?: -1
-            if (splitBottomTabId == -1) { splitMode = false; return }
+            if (tabs.none { it.id == splitTopTabId }) splitTopTabId = activeTabId
+            if (tabs.none { it.id == splitBottomTabId } || splitBottomTabId == splitTopTabId) {
+                splitBottomTabId = tabs.firstOrNull { it.id != splitTopTabId }?.id ?: -1
+            }
+            if (splitTopTabId == -1 || splitBottomTabId == -1 || splitBottomTabId == splitTopTabId) { splitMode = false; return }
             moveTabWebViewToHost(splitTopTabId, splitTopHost)
             moveTabWebViewToHost(splitBottomTabId, splitBottomHost)
+            tabs.filter { it.id == splitTopTabId || it.id == splitBottomTabId }.forEach { it.webView.onResume() }
+            setActiveSplitPane(splitTopTabId)
             splitContainer.visibility = View.VISIBLE
             startPageContainer.visibility = View.GONE
             setSplitChromeLocked(false)
@@ -1408,6 +1423,7 @@ class MainActivity : AppCompatActivity() {
             splitMode = false
             listOf(splitTopTabId, splitBottomTabId).filter { it >= 0 }.forEach { moveTabWebViewToHost(it, webViewContainer) }
             splitTopTabId = -1; splitBottomTabId = -1
+            tabs.filter { it.id != activeTabId }.forEach { it.webView.onPause(); it.webView.visibility = View.GONE }
             splitRatio = 0.5f
             splitContainer.visibility = View.GONE
             updateStartPageVisibility()
@@ -1430,7 +1446,7 @@ class MainActivity : AppCompatActivity() {
         val old = tab.webView
         val url = old.url.orEmpty()
         val newWebView = WebView(this)
-        if (!runCatching { WebViewCompat.setProfile(newWebView, target); true }.getOrDefault(false)) {
+        if (!PhormiEnvironmentManager.apply(newWebView, target)) {
             newWebView.destroy()
             Toast.makeText(this, "Environment could not be applied", Toast.LENGTH_LONG).show()
             return
@@ -1491,8 +1507,7 @@ class MainActivity : AppCompatActivity() {
         val webView = WebView(this)
         var effectiveProfile = DEFAULT_PROFILE_NAME
         if (requested != DEFAULT_PROFILE_NAME && isMultiProfileSupported()) {
-            val applied = runCatching { WebViewCompat.setProfile(webView, requested); true }.getOrDefault(false)
-            if (applied) effectiveProfile = requested
+            if (PhormiEnvironmentManager.apply(webView, requested)) effectiveProfile = requested
         }
         val isGhost = ghostRequested && effectiveProfile == GHOST_PROFILE_NAME
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -1559,9 +1574,12 @@ class MainActivity : AppCompatActivity() {
     private fun switchToTabUnlocked(id: Int) {
         activeTabId = id
         tabs.find { it.id == id }?.lastUsed = System.currentTimeMillis()
+        val liveIds = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(id)
         tabs.forEach { tab ->
             val isActive = tab.id == id
-            tab.webView.visibility = if (isActive) View.VISIBLE else View.GONE
+            val isLive = tab.id in liveIds
+            tab.webView.visibility = if (isLive) View.VISIBLE else View.GONE
+            if (isLive) tab.webView.onResume() else tab.webView.onPause()
             tab.chipView.alpha = if (isActive) 1f else 0.55f
         }
         updateStartPageVisibility()
@@ -1601,6 +1619,7 @@ class MainActivity : AppCompatActivity() {
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
+        PhormiBrowserPerformance.clear(tab.id)
         tab.webView.destroy()
         tabs.removeAt(index)
         if (tab.isGhost && tabs.none { it.isGhost }) {
@@ -1900,45 +1919,26 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            var fileName = URLUtil.guessFileName(
-                url, contentDisposition, mimeType ?: "application/octet-stream"
-            )
-            if (fileName.endsWith(".bin", ignoreCase = true)) {
-                val lowerMime = (mimeType ?: "").lowercase()
-                when {
-                    lowerMime.contains("mp4") || lowerMime.contains("video") ->
-                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".mp4"
-                    lowerMime.contains("webm") ->
-                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".webm"
-                    url.contains(".mp4", ignoreCase = true) ->
-                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".mp4"
-                    url.contains(".apk", ignoreCase = true) ->
-                        fileName = fileName.removeSuffix(".bin").removeSuffix(".BIN") + ".apk"
-                }
-            }
-
             val webView = activeWebView()
             val userAgent = webView?.settings?.userAgentString
-                ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"
+                ?: WebSettings.getDefaultUserAgent(this)
             val referer = webView?.url ?: url
             val cookies = CookieManager.getInstance().getCookie(url)
                 ?: CookieManager.getInstance().getCookie(referer)
-
-            val request = DownloadManager.Request(Uri.parse(url)).apply {
-                setMimeType(mimeType ?: "application/octet-stream")
-                setTitle(fileName)
-                setDescription("Phormi download")
+            val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
+            val request = DownloadManager.Request(Uri.parse(info.sourceUrl)).apply {
+                setMimeType(info.mimeType)
+                setTitle(info.fileName)
+                setDescription("Phormi · ${info.category} · ${info.sourceUrl}")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, info.fileName)
                 allowScanningByMediaScanner()
                 setAllowedOverMetered(true)
                 setAllowedOverRoaming(true)
-                addRequestHeader("User-Agent", userAgent)
-                addRequestHeader("Referer", referer)
-                if (!cookies.isNullOrBlank()) addRequestHeader("Cookie", cookies)
+                info.headers.forEach { (key, value) -> addRequestHeader(key, value) }
             }
             (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            Toast.makeText(this, "Downloading $fileName\nOpen Downloads in app when done", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Downloading ${info.fileName}\n${info.sourceUrl}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -2296,11 +2296,23 @@ class MainActivity : AppCompatActivity() {
         if (isInPictureInPictureMode) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
             findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
-        } else if (!splitChromeLocked) {
+        } else if (customView == null && !splitChromeLocked) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
             findViewById<View>(R.id.bottom_toolbar)?.visibility = View.VISIBLE
         }
     }
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val keep = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(activeTabId)
+        tabs.filter { it.id !in keep }.forEach { tab ->
+            tab.webView.onPause()
+            tab.webView.visibility = View.GONE
+        }
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            tabs.filter { it.id !in keep }.forEach { it.webView.clearCache(false) }
+        }
+    }
+
     override fun onDestroy() {
         synchronized(unifiedSearchLock) {
             unifiedSearchGeneration.incrementAndGet()
@@ -2308,6 +2320,7 @@ class MainActivity : AppCompatActivity() {
             unifiedSearchFutures.clear()
         }
         unifiedSearchExecutor.shutdownNow()
+        PhormiBrowserPerformance.clearAll()
         CookieManager.getInstance().flush()
         super.onDestroy()
     }
@@ -2317,6 +2330,7 @@ class MainActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
+            cacheMode = WebSettings.LOAD_DEFAULT
             mediaPlaybackRequiresUserGesture = false
             setGeolocationEnabled(true)
             mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
@@ -2433,19 +2447,13 @@ class MainActivity : AppCompatActivity() {
                 )
                 window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
+                findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
                 swipeRefresh.visibility = View.GONE
             }
 
             override fun onHideCustomView() {
-                val container = fullscreenContainer ?: return
-                (window.decorView as ViewGroup).removeView(container)
-                fullscreenContainer = null
-                customView = null
-                customViewCallback?.onCustomViewHidden()
-                customViewCallback = null
-                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                requestedOrientation = originalOrientation
-                swipeRefresh.visibility = View.VISIBLE
+                if (customView != null) exitFullscreenVideo()
             }
 
             override fun getDefaultVideoPoster(): Bitmap? {
@@ -2599,9 +2607,7 @@ class MainActivity : AppCompatActivity() {
                     val index = data.getIntExtra("index", -1); val profile = data.getStringExtra("profile").orEmpty()
                     val old = tabs.getOrNull(index)
                     if (old != null && profile.isNotBlank()) {
-                        val oldId = old.id; val oldUrl = old.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
-                        createNewTab(oldUrl, profile)
-                        closeTab(oldId)
+                        reassignTabEnvironment(old.id, profile)
                     }
                 }
             }
@@ -2684,19 +2690,25 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent(this, DownloadsActivity::class.java))
     }
 
+    private fun exitFullscreenVideo() {
+        val container = fullscreenContainer
+        if (container != null) (window.decorView as ViewGroup).removeView(container)
+        fullscreenContainer = null
+        customView = null
+        customViewCallback?.onCustomViewHidden()
+        customViewCallback = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        requestedOrientation = originalOrientation
+        swipeRefresh.visibility = View.VISIBLE
+        if (!isInPictureInPictureMode && !splitChromeLocked) {
+            findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
+            findViewById<View>(R.id.bottom_toolbar)?.visibility = View.VISIBLE
+        }
+    }
+
     override fun onBackPressed() {
         if (customView != null) {
-            val container = fullscreenContainer
-            if (container != null) {
-                (window.decorView as ViewGroup).removeView(container)
-                fullscreenContainer = null
-                customView = null
-                customViewCallback?.onCustomViewHidden()
-                customViewCallback = null
-                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                requestedOrientation = originalOrientation
-                swipeRefresh.visibility = View.VISIBLE
-            }
+            exitFullscreenVideo()
             return
         }
         val webView = activeWebView()
@@ -2711,14 +2723,8 @@ class MainActivity : AppCompatActivity() {
             splitTopHost.getLocationOnScreen(topLoc)
             splitBottomHost.getLocationOnScreen(bottomLoc)
             when {
-                ev.rawY >= topLoc[1] && ev.rawY < topLoc[1] + splitTopHost.height -> {
-                    activeTabId = splitTopTabId
-                    updateNavButtons()
-                }
-                ev.rawY >= bottomLoc[1] && ev.rawY < bottomLoc[1] + splitBottomHost.height -> {
-                    activeTabId = splitBottomTabId
-                    updateNavButtons()
-                }
+                ev.rawY >= topLoc[1] && ev.rawY < topLoc[1] + splitTopHost.height -> setActiveSplitPane(splitTopTabId)
+                ev.rawY >= bottomLoc[1] && ev.rawY < bottomLoc[1] + splitBottomHost.height -> setActiveSplitPane(splitBottomTabId)
             }
         }
         when (ev.actionMasked) {
@@ -2785,7 +2791,7 @@ class MainActivity : AppCompatActivity() {
                             .setPositiveButton("Anchor") { _, _ ->
                                 val url = view.url.orEmpty()
                                 if (url.isNotBlank()) {
-                                    PhormiObjectAnchorStore.add(this, selected.label, url, selected.locator, selected.kind)
+                                    PhormiObjectAnchorStore.add(this, selected.label, url, selected.locator, selected.kind, tabs.find { it.webView === view }?.profileName ?: DEFAULT_PROFILE_NAME)
                                     Toast.makeText(this, "Object anchored", Toast.LENGTH_SHORT).show()
                                 }
                             }
@@ -2805,18 +2811,30 @@ class MainActivity : AppCompatActivity() {
         val labels = anchors.map { "${it.label}\n${it.url}" }.toTypedArray()
         AlertDialog.Builder(this).setTitle("Object Anchors").setItems(labels) { _, which ->
             val anchor = anchors[which]
-            createNewTab(anchor.url)
-            activeWebView()?.postDelayed({ PhormiNavigationLens.focus(activeWebView()!!, anchor.locator) }, 900)
+            createNewTab(anchor.url, anchor.profileName)
+            val anchorWebView = activeWebView()
+            anchorWebView?.postDelayed({
+                if (anchorWebView.url == anchor.url || anchor.url.isNotBlank()) {
+                    PhormiNavigationLens.focus(anchorWebView, anchor.locator)
+                }
+            }, 900)
         }.setNegativeButton("Close", null).show()
     }
 
     private fun openSamePageSplit() {
-        val currentUrl = activeWebView()?.url?.takeIf { it.startsWith("http") } ?: return
-        val originalId = activeTabId
-        createNewTab(currentUrl)
-        if (tabs.any { it.id == originalId } && tabs.any { it.id == activeTabId && it.id != originalId }) {
-            setSplitMode(true)
+        if (splitMode) {
+            Toast.makeText(this, "Already in split view", Toast.LENGTH_SHORT).show()
+            return
         }
+        val source = tabs.find { it.id == activeTabId } ?: return
+        val currentUrl = source.webView.url?.takeIf { it.startsWith("http") } ?: return
+        val originalId = source.id
+        createNewTab(currentUrl, source.profileName, forceGhost = false)
+        val duplicateId = activeTabId
+        if (duplicateId == originalId || tabs.none { it.id == duplicateId }) return
+        splitTopTabId = originalId
+        splitBottomTabId = duplicateId
+        setSplitMode(true)
     }
 
     private fun showSiteLockDialog() {
