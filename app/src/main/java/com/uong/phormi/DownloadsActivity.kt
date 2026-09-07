@@ -16,12 +16,29 @@ import androidx.appcompat.app.AppCompatActivity
 
 /** In-app view of downloads created through Android DownloadManager, with live progress. */
 class DownloadsActivity : AppCompatActivity() {
-    data class DownloadItem(val id: Long, val title: String, val status: Int, val localUri: String?, val sourceUrl: String?, val size: Long, val downloaded: Long, val mimeType: String?)
+    data class DownloadItem(
+        val id: Long,
+        val title: String,
+        val status: Int,
+        val reason: Int,
+        val localUri: String?,
+        val sourceUrl: String?,
+        val size: Long,
+        val downloaded: Long,
+        val mimeType: String?
+    )
     private val items = mutableListOf<DownloadItem>()
     private lateinit var adapter: BaseAdapter
     private lateinit var empty: TextView
     private val handler = Handler(Looper.getMainLooper())
-    private val poll = object : Runnable { override fun run() { if (!isFinishing && !isDestroyed) { loadDownloads(); handler.postDelayed(this, 700L) } } }
+    private val poll = object : Runnable {
+        override fun run() {
+            if (!isFinishing && !isDestroyed) {
+                loadDownloads()
+                handler.postDelayed(this, 700L)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +75,7 @@ class DownloadsActivity : AppCompatActivity() {
                 val idCol = cursor.getColumnIndex(DownloadManager.COLUMN_ID)
                 val titleCol = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
                 val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val reasonCol = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
                 val uriCol = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
                 val sourceCol = cursor.getColumnIndex(DownloadManager.COLUMN_URI)
                 val sizeCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
@@ -70,7 +88,9 @@ class DownloadsActivity : AppCompatActivity() {
                         cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
                             ?: local?.let { PhormiFileOpener.displayName(this, Uri.parse(it), "Download") }
                             ?: "Download",
-                        cursor.getInt(statusCol), local,
+                        cursor.getInt(statusCol),
+                        if (reasonCol >= 0) cursor.getInt(reasonCol) else 0,
+                        local,
                         if (sourceCol >= 0) cursor.getString(sourceCol) else null,
                         if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
                         if (doneCol >= 0) cursor.getLong(doneCol) else 0L,
@@ -95,15 +115,29 @@ class DownloadsActivity : AppCompatActivity() {
             DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)} · ${formatBytes(item.downloaded)}$source"
             DownloadManager.STATUS_PENDING -> "Waiting to download$source"
             DownloadManager.STATUS_SUCCESSFUL -> "${category(item)} · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}$source"
-            DownloadManager.STATUS_FAILED -> "Download failed$source"
+            DownloadManager.STATUS_FAILED -> "Download failed · ${failureReason(item.reason)}$source"
             else -> "${category(item)} · Status unavailable$source"
         }
     }
 
+    private fun failureReason(reason: Int): String = when (reason) {
+        DownloadManager.ERROR_CANNOT_RESUME -> "cannot resume"
+        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "storage unavailable"
+        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "file already exists"
+        DownloadManager.ERROR_FILE_ERROR -> "file error"
+        DownloadManager.ERROR_HTTP_DATA_ERROR -> "HTTP data error"
+        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "not enough storage"
+        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "too many redirects"
+        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "server HTTP error"
+        DownloadManager.ERROR_UNKNOWN -> "unknown error"
+        else -> if (reason in 400..599) "server HTTP $reason" else "error $reason"
+    }
+
     private fun category(item: DownloadItem): String {
-        val mime = item.mimeType.orEmpty().lowercase(); val name = item.title.lowercase()
+        val mime = item.mimeType.orEmpty().lowercase()
+        val name = item.title.lowercase()
         return when {
-            mime.startsWith("video/") || name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".mkv") -> "Video"
+            mime.startsWith("video/") || listOf(".mp4", ".webm", ".mkv", ".mov").any(name::endsWith) -> "Video"
             mime.startsWith("image/") -> "Image"
             mime.startsWith("audio/") -> "Audio"
             mime == "application/pdf" || name.endsWith(".pdf") -> "PDF"
@@ -117,8 +151,13 @@ class DownloadsActivity : AppCompatActivity() {
     private fun formatBytes(value: Long): String = when { value < 1024 -> "$value B"; value < 1024 * 1024 -> "${value / 1024} KB"; value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"; else -> "${value / (1024 * 1024 * 1024)} GB" }
 
     private fun openDownload(item: DownloadItem) {
-        if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) { Toast.makeText(this, statusText(item), Toast.LENGTH_SHORT).show(); return }
-        if (!PhormiFileOpener.open(this, Uri.parse(item.localUri), item.mimeType)) Toast.makeText(this, "No installed app can open ${item.title}", Toast.LENGTH_SHORT).show()
+        if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) {
+            Toast.makeText(this, statusText(item), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!PhormiFileOpener.open(this, Uri.parse(item.localUri), item.mimeType)) {
+            Toast.makeText(this, "No installed app can open ${item.title}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun cancelDownload(item: DownloadItem) {
