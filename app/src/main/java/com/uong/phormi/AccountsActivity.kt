@@ -1,22 +1,27 @@
 package com.uong.phormi
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 import java.text.DateFormat
 import java.util.Date
 
-/** General sign-in hub. It never stores passwords; provider cookies/sessions stay with the browser. */
+/**
+ * General sign-in hub. Third-party authentication is opened in an Android Custom Tab,
+ * not an ordinary Phormi browsing tab, so providers such as Google do not receive an
+ * embedded WebView sign-in flow that they may block or warn about.
+ */
 class AccountsActivity : AppCompatActivity() {
     data class AccountProvider(val id: String, val label: String, val loginUrl: String, val switchUrl: String, val note: String)
 
     companion object {
-        const val EXTRA_OPEN_URL = "open_url"
         val PROVIDERS = listOf(
-            AccountProvider("google", "Google", "https://accounts.google.com/AddSession", "https://accounts.google.com/AccountChooser", "Multiple Google accounts are supported by Google's account chooser."),
+            AccountProvider("google", "Google", "https://accounts.google.com/", "https://accounts.google.com/AccountChooser", "Secure browser sign-in. Google accounts are handled by Google's own authentication surface."),
             AccountProvider("microsoft", "Microsoft", "https://account.microsoft.com/", "https://account.microsoft.com/", "Use Microsoft's own account switcher after signing in."),
             AccountProvider("apple", "Apple", "https://appleid.apple.com/sign-in", "https://appleid.apple.com/", "Apple web session."),
             AccountProvider("github", "GitHub", "https://github.com/login", "https://github.com/login", "Developer account."),
@@ -31,7 +36,7 @@ class AccountsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_accounts)
         findViewById<TextView>(R.id.accounts_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.accounts_help).text =
-            "General sign-in. Phormi keeps provider sessions in its browser cookies, so after a successful sign-in you can return without retyping credentials. Sign out remains controlled by the provider."
+            "Sign in or switch accounts without creating a normal Phormi tab. Third-party authentication opens in a secure Custom Tab; when you close it, you return to Phormi. Provider sessions remain controlled by the provider."
         render()
     }
 
@@ -52,32 +57,26 @@ class AccountsActivity : AppCompatActivity() {
                 row.findViewById<TextView>(R.id.account_label).text = session.label
                 row.findViewById<TextView>(R.id.account_note).text = "Last used ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.lastUsed))} · tap to switch"
                 row.setOnClickListener {
-                    val p = PROVIDERS.firstOrNull { it.id == session.providerId }
-                    if (p != null) openProvider(p, true)
+                    PROVIDERS.firstOrNull { it.id == session.providerId }?.let { openProvider(it, true) }
                 }
                 row.setOnLongClickListener {
                     androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("${session.label} account")
                         .setItems(arrayOf("Switch account", "Sign out / clear saved session")) { _, which ->
                             val provider = PROVIDERS.firstOrNull { it.id == session.providerId } ?: return@setItems
-                            if (which == 0) {
-                                openProvider(provider, true)
-                            } else {
-                                clearProviderSession(provider)
-                            }
+                            if (which == 0) openProvider(provider, true) else clearProviderSession(provider)
                         }.show()
                     true
                 }
                 container.addView(row)
             }
         }
-        val heading = TextView(this).apply {
+        container.addView(TextView(this).apply {
             text = "Sign in / switch account"
             setTextColor(0xFF38BDF8.toInt())
             textSize = 14f
             setPadding(12, 18, 12, 8)
-        }
-        container.addView(heading)
+        })
         PROVIDERS.forEach { provider ->
             val row = layoutInflater.inflate(R.layout.item_account, container, false)
             row.findViewById<TextView>(R.id.account_label).text = provider.label
@@ -86,7 +85,6 @@ class AccountsActivity : AppCompatActivity() {
             container.addView(row)
         }
     }
-
 
     private fun clearProviderSession(provider: AccountProvider) {
         val hosts = when (provider.id) {
@@ -115,8 +113,16 @@ class AccountsActivity : AppCompatActivity() {
     private fun openProvider(provider: AccountProvider, switch: Boolean) {
         AccountSessionStore.touch(this, provider.id, provider.label)
         val url = if (switch) provider.switchUrl else provider.loginUrl
-        setResult(RESULT_OK, Intent().putExtra(EXTRA_OPEN_URL, url))
-        Toast.makeText(this, if (switch) "Opening ${provider.label} account switcher" else "Opening ${provider.label} sign-in", Toast.LENGTH_SHORT).show()
-        finish()
+        try {
+            val customTabs = CustomTabsIntent.Builder()
+                .setShowTitle(true)
+                .setUrlBarHidingEnabled(false)
+                .build()
+            customTabs.launchUrl(this, Uri.parse(url))
+        } catch (_: Exception) {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                .onFailure { Toast.makeText(this, "No browser can open ${provider.label} sign-in", Toast.LENGTH_LONG).show() }
+        }
+        Toast.makeText(this, "${provider.label} sign-in opened separately from your Phormi tabs", Toast.LENGTH_SHORT).show()
     }
 }
