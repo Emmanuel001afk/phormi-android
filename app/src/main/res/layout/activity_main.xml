@@ -110,6 +110,18 @@
             android:contentDescription="Refresh page" />
 
         <TextView
+            android:id="@+id/btn_favorite"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="2dp"
+            android:gravity="center"
+            android:drawableTop="@drawable/ic_favorite_decagon"
+            android:background="@android:color/transparent"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Add or remove favorite" />
+
+        <TextView
             android:id="@+id/tab_count"
             android:layout_width="24dp"
             android:layout_height="24dp"
