@@ -13,7 +13,7 @@ p.write_text(s)
 
 # InputMethodService compatibility plus keyboard foundations.
 p = root / "app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt"
-s = p.read_text().replace("if (panel == Panel.KEYBOARD && inputView != null)", "if (panel == Panel.KEYBOARD && getInputView() != null)")
+s = p.read_text().replace("if (panel == Panel.KEYBOARD && inputView != null)", "if (panel == Panel.KEYBOARD)")
 s = s.replace("shift = false\n        capsLock = false", "shift = PhormiKeyboardPreferences.autoCaps(this) && shouldAutoCapitalize(attribute)\n        capsLock = false", 1)
 old = 'if (completions.isEmpty()) return\n        val row = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }'
 new = '''val localPrefix = currentWordPrefix()\n        val localSuggestions = if (PhormiKeyboardPreferences.suggestions(this) && completions.isEmpty()) PhormiKeyboardLexicon.suggestions(localPrefix) else emptyList()\n        if (completions.isEmpty() && localSuggestions.isEmpty()) return\n        val row = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }'''
