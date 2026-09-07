@@ -15,7 +15,8 @@ p.write_text(s)
 
 p = root / "app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt"
 s = p.read_text()
-s = s.replace("if (panel == Panel.KEYBOARD && getInputView() != null) setInputView(render())", "if (panel == Panel.KEYBOARD && inputView != null) setInputView(render())")
+# InputMethodService exposes getInputView(); do not replace it with a nonexistent Kotlin property.
+s = s.replace("if (panel == Panel.KEYBOARD && inputView != null) setInputView(render())", "if (panel == Panel.KEYBOARD && getInputView() != null) setInputView(render())")
 s = s.replace("shift = false\n        capsLock = false", "shift = PhormiKeyboardPreferences.autoCaps(this) && shouldAutoCapitalize(null)\n        capsLock = false", 1)
 old = 'if (completions.isEmpty()) return\n        val row = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }'
 new = '''val localPrefix = currentWordPrefix()\n        val localSuggestions = if (PhormiKeyboardPreferences.suggestions(this) && completions.isEmpty()) PhormiKeyboardLexicon.suggestions(localPrefix) else emptyList()\n        if (completions.isEmpty() && localSuggestions.isEmpty()) return\n        val row = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }'''
