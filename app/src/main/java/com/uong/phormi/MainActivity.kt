@@ -198,6 +198,8 @@ class MainActivity : AppCompatActivity() {
     private val unifiedSearchLock = Any()
     private var unifiedSearchFutures = mutableListOf<java.util.concurrent.Future<*>>()
     private var localSearchPageActive = false
+    private val rendererCrashCounts = mutableMapOf<Int, Int>()
+    private val rendererCrashTimes = mutableMapOf<Int, Long>()
 
     override fun onResume() {
         super.onResume()
@@ -2306,12 +2308,12 @@ class MainActivity : AppCompatActivity() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         val keep = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(activeTabId)
-        tabs.filter { it.id !in keep }.forEach { tab ->
-            tab.webView.onPause()
-            tab.webView.visibility = View.GONE
-        }
-        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
-            tabs.filter { it.id !in keep }.forEach { it.webView.clearCache(false) }
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            tabs.filter { it.id !in keep }.forEach { tab ->
+                // Hiding inactive WebViews reduces view work without pretending that
+                // onPause() stops page JavaScript; renderer recovery remains authoritative.
+                tab.webView.visibility = View.GONE
+            }
         }
     }
 
@@ -2326,6 +2328,8 @@ class MainActivity : AppCompatActivity() {
             unifiedSearchFutures.clear()
         }
         unifiedSearchExecutor.shutdownNow()
+        rendererCrashCounts.clear()
+        rendererCrashTimes.clear()
         pendingPermissionRequest?.deny()
         pendingPermissionRequest = null
         pendingGeoCallback?.invoke(pendingGeoOrigin, false, false)
@@ -2369,7 +2373,8 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
-                val target = request?.url?.toString().orEmpty()
+                val targetUri = request?.url ?: return false
+                val target = targetUri.toString()
                 if (target.isBlank()) return false
                 val host = PhormiSiteLockManager.normalizeHost(target)
                 if (host != null && PhormiSiteLockManager.isLocked(this@MainActivity, target)) {
@@ -2377,7 +2382,55 @@ class MainActivity : AppCompatActivity() {
                     showSiteUnlockDialog(host)
                     return true
                 }
-                return false
+                val scheme = targetUri.scheme?.lowercase(Locale.US).orEmpty()
+                if (scheme.isBlank() || scheme == "http" || scheme == "https" ||
+                    scheme == "javascript" || scheme == "data" || scheme == "blob" || scheme == "file") return false
+
+                // Browser schemes such as mailto:, tel:, geo:, intent:, and custom
+                // app links belong to Android's external intent system, not WebView.
+                return try {
+                    val external = if (scheme == "intent") {
+                        Intent.parseUri(target, Intent.URI_INTENT_SCHEME).apply {
+                            addCategory(Intent.CATEGORY_BROWSABLE)
+                        }
+                    } else {
+                        Intent(Intent.ACTION_VIEW, targetUri).apply { addCategory(Intent.CATEGORY_BROWSABLE) }
+                    }
+                    startActivity(external)
+                    true
+                } catch (_: Exception) {
+                    Toast.makeText(this@MainActivity, "No app can open this link.", Toast.LENGTH_SHORT).show()
+                    true
+                }
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: android.webkit.WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame == true && view == activeWebView()) {
+                    swipeRefresh.isRefreshing = false
+                    val description = error?.description?.toString()?.trim().orEmpty()
+                    if (description.isNotBlank()) {
+                        Toast.makeText(this@MainActivity, "Page could not load: $description", Toast.LENGTH_SHORT).show()
+                    }
+                    updateNavButtons()
+                }
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: android.webkit.WebResourceResponse?
+            ) {
+                super.onReceivedHttpError(view, request, errorResponse)
+                if (request?.isForMainFrame == true && view == activeWebView()) {
+                    swipeRefresh.isRefreshing = false
+                    val code = errorResponse?.statusCode ?: 0
+                    if (code >= 400) Toast.makeText(this@MainActivity, "Page returned HTTP $code.", Toast.LENGTH_SHORT).show()
+                }
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
@@ -2411,12 +2464,20 @@ class MainActivity : AppCompatActivity() {
                 if (view == null) return true
                 val tab = tabs.firstOrNull { it.webView === view } ?: return true
                 val tabId = tab.id
-                val oldUrl = view.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
+                val oldUrl = view.url?.takeIf { it.isNotBlank() && it != "about:blank" }
                 val profile = tab.profileName
                 val ghost = tab.isGhost
                 val created = tab.createdAt
                 val index = tabs.indexOf(tab)
                 val previousActiveId = activeTabId
+                val now = System.currentTimeMillis()
+                val previousCrash = rendererCrashTimes[tabId] ?: 0L
+                val crashCount = if (detail?.didCrash() == true && now - previousCrash < 60_000L) {
+                    (rendererCrashCounts[tabId] ?: 0) + 1
+                } else 1
+                rendererCrashTimes[tabId] = now
+                rendererCrashCounts[tabId] = crashCount
+
                 val wasInSplit = splitMode && (splitTopTabId == tabId || splitBottomTabId == tabId)
                 if (wasInSplit) {
                     splitMode = false
@@ -2431,16 +2492,23 @@ class MainActivity : AppCompatActivity() {
                 tabStripContainer.removeView(tab.chipView)
                 tabs.remove(tab)
                 PhormiBrowserPerformance.clear(tabId)
-                createNewTab(oldUrl, profile, forceGhost = ghost, requestedId = tabId, requestedCreatedAt = created)
+
+                // Android explicitly warns against immediately reloading a page that
+                // just crashed a renderer. After repeated crashes, keep the tab alive
+                // but fall back to a blank page instead of creating a crash loop.
+                val safeRecoveryUrl = if (detail?.didCrash() == true && crashCount >= 2) NEW_TAB_URL else (oldUrl ?: NEW_TAB_URL)
+                createNewTab(safeRecoveryUrl, profile, forceGhost = ghost, requestedId = tabId, requestedCreatedAt = created)
                 val replacement = tabs.lastOrNull { it.id == tabId }
                 if (replacement != null) {
                     tabs.remove(replacement)
                     tabs.add(index.coerceIn(0, tabs.size), replacement)
                 }
-                if (previousActiveId != tabId && tabs.any { it.id == previousActiveId }) {
-                    switchToTab(previousActiveId)
+                if (previousActiveId != tabId && tabs.any { it.id == previousActiveId }) switchToTab(previousActiveId)
+                if (safeRecoveryUrl == NEW_TAB_URL && oldUrl != null) {
+                    Toast.makeText(this@MainActivity, "The page renderer crashed repeatedly; the tab was reset safely.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "A page renderer stopped unexpectedly; the tab was recovered.", Toast.LENGTH_LONG).show()
                 }
-                Toast.makeText(this@MainActivity, "A page renderer stopped unexpectedly; the tab was recovered.", Toast.LENGTH_LONG).show()
                 return true
             }
 
@@ -2489,7 +2557,7 @@ class MainActivity : AppCompatActivity() {
                 // external browser window. This keeps the browser architecture
                 // consistent with the circular tab overview.
                 createNewTab(NEW_TAB_URL)
-                val newWebView = activeWebView() ?: return false
+                val newWebView = tabs.lastOrNull()?.webView ?: return false
                 val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
                 transport.webView = newWebView
                 resultMsg.sendToTarget()
@@ -2567,6 +2635,9 @@ class MainActivity : AppCompatActivity() {
                 origin: String?,
                 callback: android.webkit.GeolocationPermissions.Callback?
             ) {
+                this@MainActivity.pendingGeoCallback?.invoke(this@MainActivity.pendingGeoOrigin, false, false)
+                this@MainActivity.pendingGeoCallback = null
+                this@MainActivity.pendingGeoOrigin = null
                 if (ContextCompat.checkSelfPermission(
                         this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION
                     ) == PackageManager.PERMISSION_GRANTED
@@ -2588,8 +2659,12 @@ class MainActivity : AppCompatActivity() {
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
+                this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
-                val params = fileChooserParams ?: return false
+                val params = fileChooserParams ?: run {
+                    this@MainActivity.filePathCallback = null
+                    return false
+                }
                 val intent = try {
                     params.createIntent().apply {
                         if (params.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
