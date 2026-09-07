@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/uong/phormi"
 MANIFEST = ROOT / "app/src/main/AndroidManifest.xml"
+MENU = ROOT / "app/src/main/res/layout/activity_menu.xml"
 errors = []
 
 required_files = [
@@ -31,10 +32,12 @@ else:
         ".MainActivity", ".HelpActivity", ".PhormiSecurityCenterActivity",
         ".PhormiKeyboardSettingsActivity", ".PhormiKeyboardVoiceActivity",
         ".PhormiKeyboardMediaActivity", ".PhormiMediaViewerActivity",
-        ".TabGroupsActivity", ".TabsOverviewActivity", ".DownloadsActivity",
+        ".TabGroupsActivity", ".TabsOverviewActivity", ".DownloadsActivity", ".GhostActivity",
     ]:
         if f'android:name="{activity}"' not in manifest_text:
             errors.append(f"manifest missing activity registration: {activity}")
+    if 'android:name=".GhostActivity"' in manifest_text and 'android:process=":ghost"' not in manifest_text:
+        errors.append("GhostActivity is not isolated in the :ghost process")
     if 'android:name=".PhormiKeyboardService"' not in manifest_text:
         errors.append("manifest missing keyboard service")
 
@@ -52,6 +55,23 @@ require("MainActivity.kt", [
     "saveTabsImmediate(true)", "findAllAsync", "shareCurrentPage",
     "addCurrentPageToBookmarks", "toggleDesktopMode", "setSplitMode",
     "openSamePageSplit", "PhormiSiteLockManager.isLocked", "PhormiDefaultBrowserController.request",
+    "pruneExpiredTabs", "retentionCheckRunnable", "startRetentionScheduler",
+    "site.tag.isBlank()", "select_tab_id", "removeBrowserLockOverlay",
+])
+
+require("MenuActivity.kt", [
+    "wire(R.id.menu_new_tab)", "wire(R.id.menu_ghost)", "wire(R.id.menu_tabs)",
+    "wire(R.id.menu_groups)", "wire(R.id.menu_downloads)", "wire(R.id.menu_bookmarks)",
+    "wire(R.id.menu_history)", "wire(R.id.menu_vpn)", "wire(R.id.menu_ai)",
+    "wire(R.id.menu_keyboard)", "wire(R.id.menu_default_browser)",
+    "wire(R.id.menu_browser_lock)", "wire(R.id.menu_security)", "wire(R.id.menu_site_lock)",
+    "wire(R.id.menu_notifications)", "wire(R.id.menu_find)", "wire(R.id.menu_share)",
+    "wire(R.id.menu_navigation_lens)", "wire(R.id.menu_object_anchors)",
+    "wire(R.id.menu_same_page_split)", "wire(R.id.menu_desktop_mode)",
+    "wire(R.id.menu_favorite)", "wire(R.id.menu_keep_screen_on)", "wire(R.id.menu_help)",
+    "wire(R.id.menu_tab_retention)", "wire(R.id.menu_pull_to_refresh)",
+    "wire(R.id.menu_split_screen)", "wire(R.id.menu_theme)", "wire(R.id.menu_settings)",
+    "wire(R.id.menu_close)",
 ])
 
 require("PhormiKeyboardService.kt", [
@@ -66,6 +86,25 @@ require("HelpActivity.kt", [
     "Downloads & files", "Security & privacy", "Keyboard", "Navigation Lens + Object Anchors",
     "Keep Screen On",
 ])
+require("TabGroupManager.kt", ["assignTab", "groupForTab", "tabIds"])
+require("TabGroupsActivity.kt", ["readCurrentTabs", "select_tab_id", "Task note"])
+require("BrowserLockManager.kt", ["BiometricPrompt", "DEVICE_CREDENTIAL", "canUseDeviceAuthentication"])
+
+# Menu XML must not expose a menu row that MenuActivity cannot wire.
+try:
+    menu_text = MENU.read_text()
+    for menu_id in [
+        "menu_new_tab", "menu_ghost", "menu_tabs", "menu_groups", "menu_downloads", "menu_bookmarks",
+        "menu_history", "menu_vpn", "menu_ai", "menu_keyboard", "menu_default_browser", "menu_security",
+        "menu_site_lock", "menu_notifications", "menu_find", "menu_share", "menu_navigation_lens",
+        "menu_object_anchors", "menu_same_page_split", "menu_desktop_mode", "menu_favorite",
+        "menu_keep_screen_on", "menu_help", "menu_browser_lock", "menu_pull_to_refresh", "menu_split_screen",
+        "menu_tab_retention", "menu_theme", "menu_settings", "menu_close",
+    ]:
+        if f'@+id/{menu_id}' not in menu_text:
+            errors.append(f"menu XML missing id: {menu_id}")
+except Exception as exc:
+    errors.append(f"menu XML read failed: {exc}")
 
 for path in SRC.glob("*.kt"):
     text = path.read_text().lower()
@@ -85,4 +124,4 @@ if errors:
     sys.exit(1)
 
 print("PHORMI FOUNDATION AUDIT: PASS")
-print(f"Checked {len(required_files)} required source files and core browser/keyboard integration markers.")
+print(f"Checked {len(required_files)} required source files plus menu wiring and operational browser/keyboard markers.")
