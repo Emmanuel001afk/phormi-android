@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -21,85 +20,42 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
-
     <queries>
         <package android:name="de.blinkt.openvpn" />
         <package android:name="net.openvpn.openvpn" />
+        <package android:name="com.openvpn.openvpn" />
         <package android:name="com.openvpn.client" />
     </queries>
-
-    <application
-        android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="@string/app_name"
-        android:theme="@style/Theme.Phormi"
-        android:usesCleartextTraffic="true"
-        android:requestLegacyExternalStorage="true">
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:supportsPictureInPicture="true"
-            android:screenOrientation="unspecified">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-            </intent-filter>
+    <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:label="@string/app_name" android:theme="@style/Theme.Phormi" android:usesCleartextTraffic="true" android:requestLegacyExternalStorage="true">
+        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:supportsPictureInPicture="true" android:screenOrientation="unspecified">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="http" /><data android:scheme="https" /></intent-filter>
         </activity>
-
         <activity android:name=".AiActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".DownloadsActivity" android:exported="false" android:label="@string/downloads_title" android:theme="@style/Theme.Phormi" />
         <activity android:name=".MenuActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".TabsOverviewActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".VpnActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".BookmarksActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".FavoritesActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".HistoryActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".AccountsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".HelpActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".PhormiSecurityCenterActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <!-- Ghost is intentionally isolated in its own Android process. -->
         <activity android:name=".GhostActivity" android:exported="false" android:process=":ghost" android:theme="@style/Theme.Phormi" />
-
-        <service android:name=".PhormiKeyboardService" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true">
-            <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
-            <meta-data android:name="android.view.im" android:resource="@xml/method_phormi_keyboard" />
-        </service>
+        <service android:name=".PhormiKeyboardService" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod" /></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method_phormi_keyboard" /></service>
         <activity android:name=".PhormiKeyboardSettingsActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name=".PhormiKeyboardVoiceActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name=".PhormiKeyboardMediaActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name=".TabGroupsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-
-        <service android:name=".CentralHubBridgeService" android:exported="false" android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="local Central Hub browser communication bridge" />
-        </service>
-
-        <service android:name=".PhormiAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="false">
-            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
-            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
-        </service>
-
-        <service android:name=".PhormiVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="vpn_tunneling" />
-            <intent-filter><action android:name="android.net.VpnService" /></intent-filter>
-        </service>
-
-        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
-            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
-        </provider>
+        <service android:name=".CentralHubBridgeService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="local Central Hub browser communication bridge" /></service>
+        <service android:name=".PhormiAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="false"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" /></service>
+        <service android:name=".PhormiVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="vpn_tunneling" /><intent-filter><action android:name="android.net.VpnService" /></intent-filter></service>
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" /></provider>
         <activity android:name=".PhormiMediaViewerActivity" android:exported="false" android:supportsPictureInPicture="true" />
     </application>
 </manifest>
