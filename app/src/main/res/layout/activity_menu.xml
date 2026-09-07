@@ -161,6 +161,7 @@
             android:layout_marginTop="8dp"
             android:gravity="center_vertical"
             android:text="Local AI on this device"
+            android:visibility="gone"
             android:textColor="#E2E8F0"
             android:textSize="16sp"
             android:paddingStart="12dp"
@@ -176,6 +177,7 @@
             android:layout_marginTop="8dp"
             android:gravity="center_vertical"
             android:text="Analyze current video with AI"
+            android:visibility="gone"
             android:textColor="#E2E8F0"
             android:textSize="16sp"
             android:paddingStart="12dp"
@@ -209,7 +211,7 @@
         <TextView android:id="@+id/menu_navigation_lens" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Navigation Lens" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
         <TextView android:id="@+id/menu_object_anchors" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Object Anchors" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
         <TextView android:id="@+id/menu_same_page_split" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Same-page split" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
-        <TextView android:id="@+id/menu_desktop_mode" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Desktop site" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
+        <TextView android:id="@+id/menu_desktop_mode" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="DM" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
         <TextView android:id="@+id/menu_favorite" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Favorite current page" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
         <TextView android:id="@+id/menu_keep_screen_on" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Keep screen on" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
         <TextView android:id="@+id/menu_help" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:gravity="center_vertical" android:text="Help" android:textColor="#E2E8F0" android:textSize="16sp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
