@@ -15,15 +15,20 @@ object PhormiNavigationLens {
 
     private val script = """
       (() => {
+        const esc = (v) => {
+          const raw = String(v ?? '');
+          try { if (globalThis.CSS && typeof CSS.escape === 'function') return CSS.escape(raw); } catch (_) {}
+          return raw.replace(/([^a-zA-Z0-9_-])/g, '\\$1');
+        };
         const cssPath = (el) => {
           if (!el || el.nodeType !== 1) return '';
-          if (el.id) return '#' + CSS.escape(el.id);
+          if (el.id) return '#' + esc(el.id);
           const parts = [];
           let cur = el;
           while (cur && cur.nodeType === 1 && parts.length < 9) {
             let part = cur.tagName.toLowerCase();
             const stable = cur.getAttribute('data-testid') || cur.getAttribute('name') || cur.getAttribute('aria-label');
-            if (stable) part += '[' + (cur.getAttribute('data-testid') ? 'data-testid' : cur.getAttribute('name') ? 'name' : 'aria-label') + '=\"' + CSS.escape(stable) + '\"]';
+            if (stable) part += '[' + (cur.getAttribute('data-testid') ? 'data-testid' : cur.getAttribute('name') ? 'name' : 'aria-label') + '=\"' + esc(stable) + '\"]';
             else {
               const same = cur.parentElement ? [...cur.parentElement.children].filter(x => x.tagName === cur.tagName) : [];
               if (same.length > 1) part += ':nth-of-type(' + (same.indexOf(cur) + 1) + ')';
