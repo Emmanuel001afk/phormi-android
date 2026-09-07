@@ -165,4 +165,12 @@ if idx >= 0:
         xml = xml[:t] + 'android:text="↵"' + xml[t + len('android:text="→"'):]
 layout.write_text(xml)
 
+# The homepage must not advertise Favorites as an automatic homepage surface.
+start_page = root / 'app/src/main/res/layout/activity_start_page.xml'
+start_xml = start_page.read_text().replace(
+    'Favorites and most-visited sites appear here automatically.',
+    'Pinned services and most-visited sites appear here automatically. Favorites stay in the current tab and Bookmarks.'
+)
+start_page.write_text(start_xml)
+
 print('Applied menu integration repairs')
