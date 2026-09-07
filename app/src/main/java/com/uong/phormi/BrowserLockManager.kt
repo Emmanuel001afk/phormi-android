@@ -120,8 +120,15 @@ class BrowserLockManager(
                 }
                 .build()
 
+            val fragmentActivity = activity as? androidx.fragment.app.FragmentActivity
+            if (fragmentActivity == null) {
+                promptInProgress = false
+                Toast.makeText(activity, "Browser Lock cannot open Android authentication from this screen. Use a Phormi PIN.", Toast.LENGTH_LONG).show()
+                onFailure()
+                return
+            }
             val prompt = BiometricPrompt(
-                activity,
+                fragmentActivity,
                 executor,
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
