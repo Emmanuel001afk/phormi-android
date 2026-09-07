@@ -81,9 +81,10 @@ class HistoryActivity : AppCompatActivity() {
          * Returns the most-used recent sites for the browser home page.
          * Frequency is the primary signal; most-recent visit breaks ties.
          */
-        fun getTopSites(
+        fun getMostVisited(
             context: android.content.Context,
-            limit: Int = 4
+            limit: Int = 8,
+            minVisits: Int = 10
         ): List<Entry> {
             if (limit <= 0) return emptyList()
 
@@ -111,6 +112,7 @@ class HistoryActivity : AppCompatActivity() {
             }
 
             return grouped.values
+                .filter { it.size >= minVisits.coerceAtLeast(1) }
                 .map { group ->
                     group.maxByOrNull { it.visitedAt } ?: group.first()
                 }
@@ -121,6 +123,9 @@ class HistoryActivity : AppCompatActivity() {
                 )
                 .take(limit)
         }
+
+        fun getTopSites(context: android.content.Context, limit: Int = 4): List<Entry> =
+            getMostVisited(context, limit, 1)
 
         private fun canonical(url: String): String {
             return try {
