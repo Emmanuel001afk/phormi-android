@@ -29,15 +29,7 @@ object PhormiObjectAnchorStore {
         val current = read(context).toMutableList()
         val existing = current.firstOrNull { it.url == url && it.locator == locator }
         if (existing != null) return existing
-        val anchor = Anchor(
-            UUID.randomUUID().toString(),
-            label.trim().ifBlank { "Anchored ${kind.ifBlank { "object" }}" }.take(160),
-            url,
-            locator,
-            kind.ifBlank { "object" },
-            System.currentTimeMillis(),
-            PhormiEnvironmentManager.normalize(profileName)
-        )
+        val anchor = Anchor(UUID.randomUUID().toString(), label.trim().ifBlank { "Anchored ${kind.ifBlank { "object" }}" }.take(160), url, locator, kind.ifBlank { "object" }, System.currentTimeMillis(), PhormiEnvironmentManager.normalize(profileName))
         current += anchor
         write(prefs, current.takeLast(200))
         return anchor
@@ -49,26 +41,23 @@ object PhormiObjectAnchorStore {
     }
 
     private fun read(context: Context): List<Anchor> {
-        val array = runCatching {
-            JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "[]"))
-        }.getOrElse { JSONArray() }
-        return buildList {
-            for (i in 0 until array.length()) {
-                val o = array.optJSONObject(i) ?: continue
-                val id = o.optString("id").ifBlank { continue }
-                val url = o.optString("url")
-                val locator = o.optString("locator")
-                if (!url.startsWith("http", true) || locator.isBlank()) continue
-                add(Anchor(id, o.optString("label", "Anchored object"), url, locator, o.optString("kind", "object"), o.optLong("createdAt", 0L), PhormiEnvironmentManager.normalize(o.optString("profileName"))))
-            }
-        }.sortedByDescending { it.createdAt }
+        val array = runCatching { JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "[]")) }.getOrElse { JSONArray() }
+        val out = mutableListOf<Anchor>()
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            val id = o.optString("id")
+            if (id.isBlank()) continue
+            val url = o.optString("url")
+            val locator = o.optString("locator")
+            if (!url.startsWith("http", true) || locator.isBlank()) continue
+            out += Anchor(id, o.optString("label", "Anchored object"), url, locator, o.optString("kind", "object"), o.optLong("createdAt", 0L), PhormiEnvironmentManager.normalize(o.optString("profileName")))
+        }
+        return out.sortedByDescending { it.createdAt }
     }
 
     private fun write(prefs: android.content.SharedPreferences, anchors: List<Anchor>) {
         val array = JSONArray()
-        anchors.forEach { a ->
-            array.put(JSONObject().put("id", a.id).put("label", a.label).put("url", a.url).put("locator", a.locator).put("kind", a.kind).put("createdAt", a.createdAt).put("profileName", a.profileName))
-        }
+        anchors.forEach { a -> array.put(JSONObject().put("id", a.id).put("label", a.label).put("url", a.url).put("locator", a.locator).put("kind", a.kind).put("createdAt", a.createdAt).put("profileName", a.profileName)) }
         prefs.edit().putString(KEY, array.toString()).apply()
     }
 }
