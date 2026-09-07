@@ -127,7 +127,7 @@ class PhormiKeyboardService : InputMethodService() {
     override fun onDisplayCompletions(completions: Array<out CompletionInfo>?) {
         super.onDisplayCompletions(completions)
         this.completions = completions?.filter { !it.text.isNullOrBlank() }?.take(5).orEmpty()
-        if (panel == Panel.KEYBOARD && inputView != null) setInputView(render())
+        if (panel == Panel.KEYBOARD && getInputView() != null) setInputView(render())
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
