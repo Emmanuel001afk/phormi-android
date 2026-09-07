@@ -2,13 +2,16 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 
-# MainActivity: deterministic source compatibility repairs.
+# MainActivity: deterministic source compatibility and browser security repairs.
 p = root / "app/src/main/java/com/uong/phormi/MainActivity.kt"
 s = p.read_text()
 if "import android.app.AlertDialog" not in s:
     s = s.replace("import android.app.Activity\n", "import android.app.Activity\nimport android.app.AlertDialog\n", 1)
 s = s.replace("MenuActivity.ACTION_HELP -> showPhormiHelp()", 'MenuActivity.ACTION_HELP -> AlertDialog.Builder(this).setTitle("Phormi Help").setMessage("Use the address bar to search or open a site. Tabs, Ghost mode, split view, downloads, keyboard tools, privacy, and browser settings are available from the menu.").setPositiveButton("OK", null).show()')
 s = s.replace("PhormiKeyboardController(this).showKeyboardPicker()", "PhormiKeyboardController.showKeyboardPicker(this)")
+s = s.replace("javaScriptEnabled = true", "javaScriptEnabled = prefs.getBoolean(\"security_javascript\", true)", 1)
+s = s.replace("mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE", "mixedContentMode = if (prefs.getBoolean(\"security_mixed_content\", false)) android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW", 1)
+s = s.replace("CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)", "CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean(\"security_third_party_cookies\", false))", 1)
 p.write_text(s)
 
 # InputMethodService compatibility plus keyboard foundations.
@@ -28,4 +31,4 @@ helpers = '''    private fun shouldAutoCapitalize(info: EditorInfo?): Boolean {\
 s = s.replace(marker, helpers + marker, 1)
 p.write_text(s)
 
-print("Applied browser, keyboard compatibility, and offline keyboard foundation repairs")
+print("Applied browser security, keyboard compatibility, and offline keyboard foundation repairs")
