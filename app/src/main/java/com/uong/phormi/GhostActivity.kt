@@ -1,7 +1,6 @@
 package com.uong.phormi
 
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
@@ -35,8 +34,10 @@ class GhostActivity : AppCompatActivity() {
     private val profile = "Ghost"
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        buildUi(); restoreTabs()
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        buildUi()
+        restoreTabs()
     }
 
     private fun buildUi() {
@@ -64,7 +65,7 @@ class GhostActivity : AppCompatActivity() {
         val tab=GhostTab(id,w,chip);tabs+=tab;strip.addView(chip,LinearLayout.LayoutParams(0,40,1f));host.addView(w,FrameLayout.LayoutParams(-1,-1));switchTo(id)
         if(initial!="about:blank")w.loadUrl(initial)
     }
-    private fun switchTo(id:Int){activeId=id;tabs.forEach{it.webView.visibility=if(it.id==id)View.VISIBLE else View.GONE;it.chip.alpha=if(it.id==id)1f:.55f};count.text=tabs.size.toString();active()?.url?.let{url.setText(if(it=="about:blank")"" else it)};persist()}
+    private fun switchTo(id:Int){activeId=id;tabs.forEach{it.webView.visibility=if(it.id==id)View.VISIBLE else View.GONE;it.chip.alpha=if(it.id==id) 1f else .55f};count.text=tabs.size.toString();active()?.url?.let{url.setText(if(it=="about:blank")"" else it)};persist()}
     private fun active():WebView?=tabs.firstOrNull{it.id==activeId}?.webView
     private fun navigate(){val raw=url.text.toString().trim();if(raw.isBlank())return;active()?.loadUrl(if(raw.startsWith("http://")||raw.startsWith("https://"))raw else if(raw.contains(".")&&!raw.contains(" "))"https://$raw" else "https://www.google.com/search?q="+java.net.URLEncoder.encode(raw,"UTF-8"))}
     private fun persist(){val a=JSONArray();tabs.forEach{a.put(it.webView.url?.takeIf{u->u.isNotBlank()}?:"about:blank")};prefs.edit().putString("urls",a.toString()).apply()}
