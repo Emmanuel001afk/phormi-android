@@ -28,7 +28,7 @@ jobs:
         run: python3 tools/repair_round6_features.py
 
       - name: Apply Round 7 whole-browser and keyboard foundation repairs
-        run: python3 tools/repair_round7_features.py
+        run: python3 tools/repair_round7_features_v2.py
 
       - name: Run Phormi foundation audit
         run: python3 tools/audit_project.py
