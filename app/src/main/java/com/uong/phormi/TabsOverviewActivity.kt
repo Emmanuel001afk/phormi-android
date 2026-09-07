@@ -13,7 +13,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
-/** Tab overview with a phone-first vertical default plus horizontal and grid alternatives. */
+/** Tab overview with visible group assignment, plus vertical/horizontal/grid layouts. */
 class TabsOverviewActivity : AppCompatActivity() {
     data class TabInfo(val index: Int, val id: Int, val title: String, val url: String, val profile: String)
     private val allTabs = mutableListOf<TabInfo>()
@@ -58,7 +58,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         findViewById<EditText>(R.id.search_tabs).addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val q=s?.toString()?.trim()?.lowercase().orEmpty()
+                val q = s?.toString()?.trim()?.lowercase().orEmpty()
                 renderTabs(allTabs.filter { it.title.lowercase().contains(q) || it.url.lowercase().contains(q) })
             }
             override fun afterTextChanged(s: Editable?) = Unit
@@ -73,30 +73,28 @@ class TabsOverviewActivity : AppCompatActivity() {
         tabsHorizontalScroll.visibility = if (mode == "horizontal") View.VISIBLE else View.GONE
         tabsGridScroll.visibility = if (mode == "grid") View.VISIBLE else View.GONE
         if (items.isEmpty()) {
-            val empty=TextView(this).apply { text="No matching tabs"; setTextColor(0xFF94A3B8.toInt()); textSize=14f; gravity=Gravity.CENTER; setPadding(24,24,24,24) }
-            when(mode) { "vertical" -> tabsVertical; "horizontal" -> tabsHorizontal; else -> tabsGrid }.addView(empty, LinearLayout.LayoutParams(-1,-1)); return
+            val empty = TextView(this).apply { text = "No matching tabs"; setTextColor(0xFF94A3B8.toInt()); textSize = 14f; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
+            when (mode) { "vertical" -> tabsVertical; "horizontal" -> tabsHorizontal; else -> tabsGrid }.addView(empty, LinearLayout.LayoutParams(-1, -1)); return
         }
         if (mode == "grid") {
             items.chunked(2).forEach { pair ->
-                val row=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; layoutParams=LinearLayout.LayoutParams(-1,160) }
-                pair.forEach { item -> row.addView(makeTab(item, "grid"), LinearLayout.LayoutParams(0,-1,1f)) }
-                if (pair.size==1) row.addView(View(this), LinearLayout.LayoutParams(0,-1,1f))
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, 160) }
+                pair.forEach { item -> row.addView(makeTab(item, "grid"), LinearLayout.LayoutParams(0, -1, 1f)) }
+                if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
                 tabsGrid.addView(row)
             }
         } else if (mode == "vertical") {
             items.forEach { item ->
-                val view=makeTab(item, "vertical")
-                tabsVertical.addView(view, LinearLayout.LayoutParams(-1,154).apply { topMargin=6 })
+                val view = makeTab(item, "vertical")
+                tabsVertical.addView(view, LinearLayout.LayoutParams(-1, 154).apply { topMargin = 6 })
             }
         } else {
-            // Horizontal mode is deliberately two-tier on phones: it uses both the
-            // upper and lower halves instead of wasting the large empty top/bottom space.
             tabsHorizontal.orientation = LinearLayout.VERTICAL
-            val topRow = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
-            val bottomRow = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
+            val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             items.forEachIndexed { index, item ->
                 val view = makeTab(item, "horizontal")
-                val lp = LinearLayout.LayoutParams(174.dp(), 174.dp()).apply { leftMargin=6; rightMargin=6 }
+                val lp = LinearLayout.LayoutParams(174.dp(), 174.dp()).apply { leftMargin = 6; rightMargin = 6 }
                 if (index % 2 == 0) topRow.addView(view, lp) else bottomRow.addView(view, lp)
             }
             tabsHorizontal.addView(topRow, LinearLayout.LayoutParams(-2, 182.dp()))
@@ -105,36 +103,53 @@ class TabsOverviewActivity : AppCompatActivity() {
     }
 
     private fun makeTab(item: TabInfo, style: String): View {
-        val v=LayoutInflater.from(this).inflate(R.layout.item_tab_circle, null, false)
-        val body=v.findViewById<View>(R.id.tab_circle_body)
-        val title=v.findViewById<TextView>(R.id.tab_circle_title)
-        val url=v.findViewById<TextView>(R.id.tab_circle_url)
-        title.text=item.title
-        url.text=if(item.url=="about:blank") "New tab" else item.url
+        val v = LayoutInflater.from(this).inflate(R.layout.item_tab_circle, null, false)
+        val body = v.findViewById<View>(R.id.tab_circle_body)
+        val title = v.findViewById<TextView>(R.id.tab_circle_title)
+        val url = v.findViewById<TextView>(R.id.tab_circle_url)
+        title.text = item.title
+        url.text = if (item.url == "about:blank") "New tab" else item.url
         if (style != "horizontal") {
-            val lp=body.layoutParams as android.widget.FrameLayout.LayoutParams
-            lp.width=android.view.ViewGroup.LayoutParams.MATCH_PARENT
-            lp.height=if(style=="vertical") 142.dp() else 148.dp()
-            lp.gravity=Gravity.CENTER
-            body.layoutParams=lp
-            body.background=android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xFFFFE9E2.toInt()); setStroke(2.dp(), 0xFFF6CFC5.toInt()); cornerRadius=18.dp().toFloat()
+            val lp = body.layoutParams as android.widget.FrameLayout.LayoutParams
+            lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            lp.height = if (style == "vertical") 142.dp() else 148.dp()
+            lp.gravity = Gravity.CENTER
+            body.layoutParams = lp
+            body.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFFFE9E2.toInt()); setStroke(2.dp(), 0xFFF6CFC5.toInt()); cornerRadius = 18.dp().toFloat()
             }
-            body.setPadding(if(style=="vertical") 18.dp() else 12.dp(), 14.dp(), 42.dp(), 14.dp())
-            title.gravity=Gravity.CENTER_VERTICAL
+            body.setPadding(if (style == "vertical") 18.dp() else 12.dp(), 14.dp(), 92.dp(), 14.dp())
+            title.gravity = Gravity.CENTER_VERTICAL
             title.setTextColor(0xFF111827.toInt())
-            url.gravity=Gravity.CENTER_VERTICAL
+            url.gravity = Gravity.CENTER_VERTICAL
             url.setTextColor(0xFF334155.toInt())
-            title.textSize=if(style=="vertical") 15f else 13f
-            url.textSize=if(style=="vertical") 10f else 9f
+            title.textSize = if (style == "vertical") 15f else 13f
+            url.textSize = if (style == "vertical") 10f else 9f
         }
-        body.setOnClickListener { setResult(RESULT_OK,Intent().putExtra("action","select").putExtra("index",item.index)); finish() }
+        body.setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("index", item.index)); finish() }
         body.setOnLongClickListener {
-            AlertDialog.Builder(this).setTitle(item.title).setItems(arrayOf("Environment","Assign to group")){_,which->
-                if(which==0) showEnvironmentChooser(item) else showGroupChooser(item)
+            AlertDialog.Builder(this).setTitle(item.title).setItems(arrayOf("Environment", "Assign to group")) { _, which ->
+                if (which == 0) showEnvironmentChooser(item) else showGroupChooser(item)
             }.show(); true
         }
-        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { setResult(RESULT_OK,Intent().putExtra("action","close").putExtra("index",item.index)); finish() }
+
+        // Make the group action visible instead of requiring a long press.
+        val groupButton = TextView(this).apply {
+            text = "Group"
+            contentDescription = "Assign ${item.title} to a tab group"
+            gravity = Gravity.CENTER
+            setTextColor(0xFF0F172A.toInt())
+            textSize = 11f
+            setPadding(10.dp(), 5.dp(), 10.dp(), 5.dp())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFBAE6FD.toInt()); cornerRadius = 14.dp().toFloat()
+            }
+            setOnClickListener { showGroupChooser(item) }
+        }
+        if (body is android.widget.FrameLayout) {
+            body.addView(groupButton, android.widget.FrameLayout.LayoutParams(-2, 34.dp(), Gravity.BOTTOM or Gravity.END).apply { rightMargin = 44.dp(); bottomMargin = 8.dp() })
+        }
+        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("index", item.index)); finish() }
         return v
     }
 
@@ -142,26 +157,35 @@ class TabsOverviewActivity : AppCompatActivity() {
 
     private fun loadTabs() {
         allTabs.clear()
-        val prefs=getSharedPreferences(PREFS,MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         try {
-            val urls=org.json.JSONArray(prefs.getString("tab_urls","[]") ?: "[]")
-            val titles=org.json.JSONArray(prefs.getString("tab_titles","[]") ?: "[]")
-            val profiles=org.json.JSONArray(prefs.getString("tab_profiles","[]") ?: "[]")
-            val ids=org.json.JSONArray(prefs.getString("tab_ids","[]") ?: "[]")
-            for(i in 0 until urls.length()) allTabs.add(TabInfo(i,ids.optInt(i,i+1),titles.optString(i,"Tab ${i+1}").ifBlank{"Tab ${i+1}"},urls.optString(i,"about:blank"),profiles.optString(i,"Default").ifBlank{"Default"}))
-        }catch(_:Exception){}
+            val urls = org.json.JSONArray(prefs.getString("tab_urls", "[]") ?: "[]")
+            val titles = org.json.JSONArray(prefs.getString("tab_titles", "[]") ?: "[]")
+            val profiles = org.json.JSONArray(prefs.getString("tab_profiles", "[]") ?: "[]")
+            val ids = org.json.JSONArray(prefs.getString("tab_ids", "[]") ?: "[]")
+            for (i in 0 until urls.length()) allTabs.add(TabInfo(i, ids.optInt(i, i + 1), titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }))
+        } catch (_: Exception) { }
     }
 
-    private fun showEnvironmentChooser(item:TabInfo){
-        val envs=PhormiEnvironmentManager.list().filter{it!="Ghost"}.toTypedArray()
-        if(envs.isEmpty())return
-        AlertDialog.Builder(this).setTitle("Environment for ${item.title}").setItems(envs){_,which->setResult(RESULT_OK,Intent().putExtra("action","reassign_env").putExtra("index",item.index).putExtra("profile",envs[which]));finish()}.show()
+    private fun showEnvironmentChooser(item: TabInfo) {
+        val envs = PhormiEnvironmentManager.list().filter { it != "Ghost" }.toTypedArray()
+        if (envs.isEmpty()) return
+        AlertDialog.Builder(this).setTitle("Environment for ${item.title}").setItems(envs) { _, which ->
+            setResult(RESULT_OK, Intent().putExtra("action", "reassign_env").putExtra("index", item.index).putExtra("profile", envs[which])); finish()
+        }.show()
     }
 
-    private fun showGroupChooser(item:TabInfo){
-        val groups=TabGroupManager(this).list()
-        if(groups.isEmpty()){startActivity(Intent(this,TabGroupsActivity::class.java));return}
-        AlertDialog.Builder(this).setTitle("Add tab to group").setItems(groups.map{it.name}.toTypedArray()){_,which->setResult(RESULT_OK,Intent().putExtra("action","assign_group").putExtra("group_id",groups[which].id).putExtra("url",item.url).putExtra("tab_id",item.id));finish()}.show()
+    private fun showGroupChooser(item: TabInfo) {
+        val groups = TabGroupManager(this).list()
+        if (groups.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("No tab groups").setMessage("Create a group first, then assign this tab. You can assign as many tabs as you want to the same group.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Create group") { _, _ -> startActivity(Intent(this, TabGroupsActivity::class.java)) }
+                .show()
+            return
+        }
+        AlertDialog.Builder(this).setTitle("Add tab to group").setItems(groups.map { it.name }.toTypedArray()) { _, which ->
+            setResult(RESULT_OK, Intent().putExtra("action", "assign_group").putExtra("group_id", groups[which].id).putExtra("url", item.url).putExtra("tab_id", item.id)); finish()
+        }.show()
     }
-
 }
