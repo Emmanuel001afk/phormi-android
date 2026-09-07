@@ -7,11 +7,11 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
-import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.MediaController
 import android.widget.TextView
 import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
@@ -20,7 +20,6 @@ import androidx.appcompat.app.AppCompatActivity
 class PhormiMediaViewerActivity : AppCompatActivity() {
     private var player: MediaPlayer? = null
     private var video: VideoView? = null
-    private var isVideo = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,94 +31,111 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             textSize = 32f
             setTextColor(0xFFFFFFFF.toInt())
             setPadding(18, 10, 18, 10)
-            contentDescription = "Close media viewer"
+            contentDescription = "Close viewer"
             setOnClickListener { finish() }
         }
         root.addView(back, FrameLayout.LayoutParams(70, 70))
 
         when {
-            mime.startsWith("image/") -> root.addView(ImageView(this).apply {
-                setImageURI(uri)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                contentDescription = "Downloaded image"
-            }, FrameLayout.LayoutParams(-1, -1))
+            mime.startsWith("image/") -> {
+                val image = ImageView(this).apply {
+                    setImageURI(uri)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    contentDescription = "Downloaded image"
+                }
+                root.addView(image, FrameLayout.LayoutParams(-1, -1))
+            }
             mime.startsWith("video/") -> {
-                isVideo = true
                 val playerView = VideoView(this)
                 video = playerView
                 playerView.setVideoURI(uri)
-                playerView.setOnPreparedListener { mp ->
-                    mp.isLooping = false
+                playerView.setMediaController(MediaController(this))
+                playerView.setOnPreparedListener { media ->
+                    media.isLooping = false
                     playerView.start()
-                    enterImmersive()
                 }
-                playerView.setOnCompletionListener { showChrome() }
-                root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+                playerView.setOnErrorListener { _, _, _ ->
+                    ToastMessage.show(this, "Video could not be played")
+                    true
+                }
+                root.addView(playerView, FrameLayout.LayoutParams(-1, -1).apply {
+                    gravity = Gravity.CENTER
+                })
+                playerView.setOnClickListener {
+                    if (Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode && playerView.isPlaying) {
+                        runCatching { enterPictureInPictureMode(PictureInPictureParams.Builder().build()) }
+                    }
+                }
             }
             mime.startsWith("audio/") -> {
                 val label = TextView(this).apply {
                     text = "Audio playback"
                     textSize = 20f
                     setTextColor(0xFFFFFFFF.toInt())
-                    gravity = android.view.Gravity.CENTER
-                    contentDescription = "Audio playback"
+                    gravity = Gravity.CENTER
                     setOnClickListener { startAudio(uri) }
                 }
                 root.addView(label, FrameLayout.LayoutParams(-1, -1))
                 startAudio(uri)
             }
-            else -> { finish(); return }
+            else -> finish()
         }
         setContentView(root)
     }
 
-    private fun startAudio(uri: Uri) {
-        player?.release()
-        player = MediaPlayer().apply {
-            setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            setDataSource(this@PhormiMediaViewerActivity, uri)
-            setOnPreparedListener { it.start() }
-            setOnErrorListener { _, _, _ -> true }
-            prepareAsync()
-        }
-    }
-
-    private fun enterImmersive() {
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.insetsController?.hide(WindowInsets.Type.systemBars())
-            window.insetsController?.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                )
-        }
-    }
-
-    private fun showChrome() {
-        if (Build.VERSION.SDK_INT >= 30) window.insetsController?.show(WindowInsets.Type.systemBars())
-        else @Suppress("DEPRECATION") run { window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE }
-    }
-
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= 26 && isVideo && video?.isPlaying == true && !isInPictureInPictureMode) {
+        val v = video
+        if (Build.VERSION.SDK_INT >= 26 && v?.isPlaying == true && !isInPictureInPictureMode) {
             runCatching { enterPictureInPictureMode(PictureInPictureParams.Builder().build()) }
         }
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        if (!isInPictureInPictureMode && isVideo) showChrome()
+        video?.visibility = if (isInPictureInPictureMode) View.VISIBLE else View.VISIBLE
+    }
+
+    private fun startAudio(uri: Uri) {
+        player?.release()
+        player = runCatching {
+            MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                setDataSource(this@PhormiMediaViewerActivity, uri)
+                setOnCompletionListener { releasePlayer() }
+                prepare()
+                start()
+            }
+        }.getOrElse {
+            ToastMessage.show(this, "Audio could not be played")
+            null
+        }
+    }
+
+    private fun releasePlayer() {
+        player?.release()
+        player = null
+    }
+
+    override fun onStop() {
+        if (!isInPictureInPictureMode) video?.pause()
+        super.onStop()
     }
 
     override fun onDestroy() {
+        releasePlayer()
         video?.stopPlayback()
         video = null
-        player?.release()
-        player = null
         super.onDestroy()
+    }
+
+    private object ToastMessage {
+        fun show(activity: AppCompatActivity, message: String) {
+            android.widget.Toast.makeText(activity, message, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 }
