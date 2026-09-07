@@ -21,6 +21,9 @@ jobs:
       - name: Apply compile repairs
         run: python3 tools/repair_compile.py
 
+      - name: Apply menu integration repairs
+        run: python3 tools/repair_menu_features.py
+
       - name: Run Phormi foundation audit
         run: python3 tools/audit_project.py
 
