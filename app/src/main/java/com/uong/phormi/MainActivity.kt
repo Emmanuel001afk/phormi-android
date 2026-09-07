@@ -2553,12 +2553,43 @@ class MainActivity : AppCompatActivity() {
                 isUserGesture: Boolean,
                 resultMsg: android.os.Message?
             ): Boolean {
-                // A new-window request becomes a normal Phormi tab instead of an
-                // external browser window. This keeps the browser architecture
-                // consistent with the circular tab overview.
-                createNewTab(NEW_TAB_URL)
-                val newWebView = tabs.lastOrNull()?.webView ?: return false
                 val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                val sourceTabId = tabs.firstOrNull { it.webView === view }?.id ?: activeTabId
+                val wasSplit = splitMode
+                val targetPane = when {
+                    wasSplit && sourceTabId == splitTopTabId -> splitTopHost
+                    wasSplit && sourceTabId == splitBottomTabId -> splitBottomHost
+                    else -> null
+                }
+                val oldPaneTabId = when {
+                    wasSplit && sourceTabId == splitTopTabId -> splitTopTabId
+                    wasSplit && sourceTabId == splitBottomTabId -> splitBottomTabId
+                    else -> -1
+                }
+
+                // Popup/new-window requests become normal Phormi tabs. In split view,
+                // the new tab replaces the requesting pane rather than being created
+                // invisibly in the normal host or stealing the other pane.
+                createNewTab(NEW_TAB_URL, requestedProfile = tabs.firstOrNull { it.id == sourceTabId }?.profileName)
+                val newTab = tabs.lastOrNull() ?: return false
+                val newWebView = newTab.webView
+
+                if (wasSplit && targetPane != null && oldPaneTabId > 0) {
+                    val oldPaneWebView = tabs.firstOrNull { it.id == oldPaneTabId }?.webView
+                    oldPaneWebView?.let { old ->
+                        (old.parent as? ViewGroup)?.removeView(old)
+                        if (webViewContainer.indexOfChild(old) < 0) {
+                            webViewContainer.addView(old, FrameLayout.LayoutParams(-1, -1))
+                            old.visibility = View.GONE
+                        }
+                    }
+                    if (sourceTabId == splitTopTabId) splitTopTabId = newTab.id
+                    if (sourceTabId == splitBottomTabId) splitBottomTabId = newTab.id
+                    moveTabWebViewToHost(newTab.id, targetPane)
+                    activeTabId = newTab.id
+                    setActiveSplitPane(newTab.id)
+                }
+
                 transport.webView = newWebView
                 resultMsg.sendToTarget()
                 return true
