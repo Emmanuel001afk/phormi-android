@@ -48,6 +48,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden"
+            android:supportsPictureInPicture="true"
             android:screenOrientation="unspecified">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -156,5 +157,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <activity android:name=".PhormiMediaViewerActivity" android:exported="false" />
     </application>
 </manifest>
