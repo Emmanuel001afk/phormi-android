@@ -106,21 +106,28 @@ if 'private val retentionCheckRunnable' not in s:
         saveTabsImmediate(true)''', 1)
     s = s.replace('    override fun onDestroy() {\n        reloadRunnable?.let', '    override fun onDestroy() {\n        stopRetentionScheduler()\n        reloadRunnable?.let', 1)
 
-# Browser Lock should behave like an app lock: internal Phormi activities do not relock it.
-# Normalize any earlier repair copies first, then install exactly one lifecycle hook.
+# Browser Lock is an app-style lock. Opening Phormi's own menu must not count as leaving the app.
 s = re.sub(r'\n    override fun onUserLeaveHint\(\) \{.*?\n    \}\n', '\n', s, flags=re.S)
-if 'override fun onUserLeaveHint()' not in s:
-    s = s.replace('''    override fun onStop() {
+if 'private var internalActivityLaunch' not in s:
+    s = s.replace('    private var browserUnlockedThisSession = false\n', '    private var browserUnlockedThisSession = false\n    private var internalActivityLaunch = false\n', 1)
+# Mark the menu launch as internal before it moves MainActivity to the stopped state.
+s = re.sub(r'(findViewById<View>\(R\.id\.btn_menu\)\?\.setOnClickListener \{)', r'\1\n            internalActivityLaunch = true', s, count=1)
+# Clear the marker when MainActivity becomes visible again.
+if 'if (internalActivityLaunch) internalActivityLaunch = false' not in s:
+    s = s.replace('''    override fun onResume() {
+        super.onResume()''', '''    override fun onResume() {
+        if (internalActivityLaunch) internalActivityLaunch = false
+        super.onResume()''', 1)
+# Relock only when MainActivity actually goes to the background, not for the menu activity.
+s = s.replace('''    override fun onStop() {
         if (::prefs.isInitialized) saveTabsImmediate(true)
         super.onStop()
     }''', '''    override fun onStop() {
-        if (::prefs.isInitialized) saveTabsImmediate(true)
+        if (::prefs.isInitialized) {
+            saveTabsImmediate(true)
+            if (browserLockManager.isEnabled(prefs) && !internalActivityLaunch) browserUnlockedThisSession = false
+        }
         super.onStop()
-    }
-
-    override fun onUserLeaveHint() {
-        if (::prefs.isInitialized && browserLockManager.isEnabled(prefs) && !browserLockManager.isPromptInProgress()) browserUnlockedThisSession = false
-        super.onUserLeaveHint()
     }''', 1)
 
 old = '''                MenuActivity.ACTION_BROWSER_LOCK -> {
@@ -199,7 +206,6 @@ s = re.sub(r'''    private fun showTabRetentionChooser\(\) \{.*?\n    \}\n\n    
     private fun showPullToRefreshChooser''', s, count=1, flags=re.S)
 
 main.write_text(s)
-
 layout=root/'app/src/main/res/layout/activity_main.xml'; xml=layout.read_text(); idx=xml.find('android:id="@+id/btn_go"')
 if idx>=0:
     t=xml.find('android:text="→"',idx)
@@ -207,6 +213,4 @@ if idx>=0:
 layout.write_text(xml)
 start_page=root/'app/src/main/res/layout/activity_start_page.xml'; start_xml=start_page.read_text().replace('Favorites and most-visited sites appear here automatically.','Pinned services and most-visited sites appear here automatically. Favorites stay in the current tab and Favorites menu.'); start_page.write_text(start_xml)
 
-# DownloadsActivity is maintained as a real source file; do not replace it with generated one-line Kotlin.
-# Its current implementation polls DownloadManager, reports bytes/percentage, and opens successful files.
-print('Applied menu, favorites, retention, browser-lock lifecycle, desktop, group return, and download-manager repairs')
+print('Applied menu, favorites, retention, browser-lock lifecycle, desktop, group return, and maintained download-manager repairs')
