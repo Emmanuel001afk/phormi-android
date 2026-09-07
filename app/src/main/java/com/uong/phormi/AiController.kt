@@ -114,8 +114,11 @@ class AiController(private val context: Context) {
         )
     }
 
-    suspend fun resolveProviderConfig(name: String, apiKey: String): ProviderConfig = withContext(Dispatchers.IO) {
-        val inferred = inferProviderConfig(name)
+    suspend fun resolveProviderConfig(name: String, apiKey: String): ProviderConfig =
+        resolveProviderConfig(name, apiKey, "", "")
+
+    suspend fun resolveProviderConfig(name: String, apiKey: String, endpoint: String, model: String): ProviderConfig = withContext(Dispatchers.IO) {
+        val inferred = inferProviderConfig(name, endpoint, model)
         if (inferred.endpoint.isBlank()) return@withContext inferred
         val modelsUrl = when {
             inferred.endpoint.contains("/chat/completions") -> inferred.endpoint.substringBefore("/chat/completions") + "/models"
@@ -125,7 +128,7 @@ class AiController(private val context: Context) {
         val request = Request.Builder().url(modelsUrl).get()
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Accept", "application/json").build()
-        val discoveredModels = runCatching {
+        val discoveredModels = if (inferred.model.isNotBlank()) emptyList() else runCatching {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use emptyList<String>()
                 val arr = JSONObject(response.body?.string().orEmpty()).optJSONArray("data") ?: return@use emptyList<String>()
@@ -142,8 +145,8 @@ class AiController(private val context: Context) {
         // Some providers do not expose /models even though their chat endpoint works.
         // In that case use a known provider default and verify it with a real request.
         val model = discoveredModels.maxByOrNull { modelScore(it) }
-            ?: inferProviderConfig(name).model.ifBlank {
-                throw IOException("${name.trim()} has no discoverable text model. Use a supported provider name.")
+            ?: inferred.model.ifBlank {
+                throw IOException("${name.trim()} has no discoverable text model. Enter a model ID for this provider.")
             }
         val resolved = ProviderConfig(inferred.endpoint, model)
         val verifyBody = JSONObject().put("model", resolved.model).put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Reply with OK.")))
