@@ -4,6 +4,8 @@ import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
@@ -12,22 +14,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
-/** In-app view of downloads created through Android DownloadManager. */
+/** In-app view of downloads created through Android DownloadManager, with live progress. */
 class DownloadsActivity : AppCompatActivity() {
-    data class DownloadItem(
-        val id: Long,
-        val title: String,
-        val status: Int,
-        val localUri: String?,
-        val sourceUrl: String?,
-        val size: Long,
-        val downloaded: Long,
-        val mimeType: String?
-    )
-
+    data class DownloadItem(val id: Long, val title: String, val status: Int, val localUri: String?, val sourceUrl: String?, val size: Long, val downloaded: Long, val mimeType: String?)
     private val items = mutableListOf<DownloadItem>()
     private lateinit var adapter: BaseAdapter
     private lateinit var empty: TextView
+    private val handler = Handler(Looper.getMainLooper())
+    private val poll = object : Runnable { override fun run() { if (!isFinishing && !isDestroyed) { loadDownloads(); handler.postDelayed(this, 700L) } } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,10 +47,8 @@ class DownloadsActivity : AppCompatActivity() {
         loadDownloads()
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (::adapter.isInitialized) loadDownloads()
-    }
+    override fun onResume() { super.onResume(); handler.removeCallbacks(poll); handler.post(poll) }
+    override fun onPause() { handler.removeCallbacks(poll); super.onPause() }
 
     private fun loadDownloads() {
         items.clear()
@@ -74,23 +66,19 @@ class DownloadsActivity : AppCompatActivity() {
                 while (cursor.moveToNext()) {
                     val local = if (uriCol >= 0) cursor.getString(uriCol) else null
                     val item = DownloadItem(
-                        id = cursor.getLong(idCol),
-                        title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
+                        cursor.getLong(idCol),
+                        cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
                             ?: local?.let { PhormiFileOpener.displayName(this, Uri.parse(it), "Download") }
                             ?: "Download",
-                        status = cursor.getInt(statusCol),
-                        localUri = local,
-                        sourceUrl = if (sourceCol >= 0) cursor.getString(sourceCol) else null,
-                        size = if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
-                        downloaded = if (doneCol >= 0) cursor.getLong(doneCol) else 0L,
-                        mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null
+                        cursor.getInt(statusCol), local,
+                        if (sourceCol >= 0) cursor.getString(sourceCol) else null,
+                        if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
+                        if (doneCol >= 0) cursor.getLong(doneCol) else 0L,
+                        if (mimeCol >= 0) cursor.getString(mimeCol) else null
                     )
                     items += item
-                    if (item.status == DownloadManager.STATUS_SUCCESSFUL) {
-                        PhormiNotificationCenter.postDownloadEvent(this, item.id, item.title, true)
-                    } else if (item.status == DownloadManager.STATUS_FAILED) {
-                        PhormiNotificationCenter.postDownloadEvent(this, item.id, item.title, false)
-                    }
+                    if (item.status == DownloadManager.STATUS_SUCCESSFUL) PhormiNotificationCenter.postDownloadEvent(this, item.id, item.title, true)
+                    else if (item.status == DownloadManager.STATUS_FAILED) PhormiNotificationCenter.postDownloadEvent(this, item.id, item.title, false)
                 }
             }
         } catch (e: Exception) {
@@ -101,51 +89,36 @@ class DownloadsActivity : AppCompatActivity() {
     }
 
     private fun statusText(item: DownloadItem): String {
-        val type = category(item)
-        val source = item.sourceUrl?.takeIf { it.startsWith("http", true) }?.let { " · $it" }.orEmpty()
+        val source = item.sourceUrl?.takeIf { it.startsWith("http", true) }?.let { "\n$it" }.orEmpty()
         return when (item.status) {
-            DownloadManager.STATUS_SUCCESSFUL -> "$type · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}$source"
-            DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)}$source"
-            DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)}$source"
+            DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)} · ${formatBytes(item.downloaded)} of ${if (item.size > 0) formatBytes(item.size) else "unknown size"}$source"
+            DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)} · ${formatBytes(item.downloaded)}$source"
             DownloadManager.STATUS_PENDING -> "Waiting to download$source"
+            DownloadManager.STATUS_SUCCESSFUL -> "${category(item)} · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}$source"
             DownloadManager.STATUS_FAILED -> "Download failed$source"
-            else -> "$type · Status unavailable"
+            else -> "${category(item)} · Status unavailable$source"
         }
     }
 
     private fun category(item: DownloadItem): String {
-        val mime = item.mimeType.orEmpty().lowercase()
-        val name = item.title.lowercase()
+        val mime = item.mimeType.orEmpty().lowercase(); val name = item.title.lowercase()
         return when {
             mime.startsWith("video/") || name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".mkv") -> "Video"
             mime.startsWith("image/") -> "Image"
             mime.startsWith("audio/") -> "Audio"
             mime == "application/pdf" || name.endsWith(".pdf") -> "PDF"
             name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || mime.contains("zip") -> "Archive"
-            mime.startsWith("text/") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".xls") || name.endsWith(".xlsx") || name.endsWith(".ppt") || name.endsWith(".pptx") -> "Document"
+            mime.startsWith("text/") || listOf(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx").any(name::endsWith) -> "Document"
             else -> "Other"
         }
     }
 
-    private fun formatProgress(item: DownloadItem): String =
-        if (item.size <= 0) formatBytes(item.downloaded)
-        else "${((item.downloaded * 100L) / item.size).coerceIn(0L, 100L)}%"
-
-    private fun formatBytes(value: Long): String = when {
-        value < 1024 -> "$value B"
-        value < 1024 * 1024 -> "${value / 1024} KB"
-        value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"
-        else -> "${value / (1024 * 1024 * 1024)} GB"
-    }
+    private fun formatProgress(item: DownloadItem): String = if (item.size <= 0) "Progress unavailable" else "${((item.downloaded * 100L) / item.size).coerceIn(0L, 100L)}%"
+    private fun formatBytes(value: Long): String = when { value < 1024 -> "$value B"; value < 1024 * 1024 -> "${value / 1024} KB"; value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"; else -> "${value / (1024 * 1024 * 1024)} GB" }
 
     private fun openDownload(item: DownloadItem) {
-        if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) {
-            Toast.makeText(this, statusText(item), Toast.LENGTH_SHORT).show(); return
-        }
-        val uri = Uri.parse(item.localUri)
-        if (!PhormiFileOpener.open(this, uri, item.mimeType)) {
-            Toast.makeText(this, "No installed app can open ${item.title}", Toast.LENGTH_SHORT).show()
-        }
+        if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) { Toast.makeText(this, statusText(item), Toast.LENGTH_SHORT).show(); return }
+        if (!PhormiFileOpener.open(this, Uri.parse(item.localUri), item.mimeType)) Toast.makeText(this, "No installed app can open ${item.title}", Toast.LENGTH_SHORT).show()
     }
 
     private fun cancelDownload(item: DownloadItem) {
