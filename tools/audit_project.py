@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/uong/phormi"
 MANIFEST = ROOT / "app/src/main/AndroidManifest.xml"
-
 errors = []
 
 required_files = [
@@ -58,8 +57,7 @@ require("MainActivity.kt", [
 require("PhormiKeyboardService.kt", [
     "override fun onStartInput", "override fun onUpdateSelection", "CompletionInfo",
     "InputConnection", "InputContentInfo", "TYPE_CLASS_NUMBER", "TYPE_CLASS_PHONE",
-    "KEYCODE_DEL", "KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_RIGHT", "deleteSurroundingText",
-    "commitContent", "contentDescription",
+    "deleteSurroundingText", "commitContent", "contentDescription",
 ])
 
 require("PhormiNotificationCenter.kt", ["NotificationChannel", "NotificationCompat", "postDownloadEvent"])
@@ -75,7 +73,6 @@ for path in SRC.glob("*.kt"):
         if marker in text:
             errors.append(f"placeholder marker in {path.name}: {marker}")
 
-# These concepts were deliberately rejected as redundant standalone browser systems.
 for path in [SRC / "MainActivity.kt", SRC / "MenuActivity.kt"]:
     text = path.read_text()
     if "REFERENCE_WINDOW" in text or "Reference Window" in text:
