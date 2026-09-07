@@ -187,6 +187,8 @@ class MainActivity : AppCompatActivity() {
     private val tabSaveHandler = Handler(Looper.getMainLooper())
     private var tabSaveRunnable: Runnable? = null
     private var twoFingerHoldActive = false
+    private var twoFingerStartX = 0f
+    private var twoFingerStartY = 0f
     private var threeFingerStartX = 0f
     private var threeFingerTracking = false
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
@@ -2431,7 +2433,7 @@ class MainActivity : AppCompatActivity() {
                 PhormiBrowserPerformance.clear(tabId)
                 createNewTab(oldUrl, profile, forceGhost = ghost, requestedId = tabId, requestedCreatedAt = created)
                 val replacement = tabs.lastOrNull { it.id == tabId }
-                if (replacement != null && index in 0 until tabs.size - 1) {
+                if (replacement != null) {
                     tabs.remove(replacement)
                     tabs.add(index.coerceIn(0, tabs.size), replacement)
                 }
@@ -2814,9 +2816,13 @@ class MainActivity : AppCompatActivity() {
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
                 if (ev.pointerCount == 2 && !twoFingerHoldActive && customView == null) {
                     twoFingerHoldActive = true
+                    twoFingerStartX = (ev.getX(0) + ev.getX(1)) / 2f
+                    twoFingerStartY = (ev.getY(0) + ev.getY(1)) / 2f
                     val r = Runnable {
-                        activeWebView()?.reload()
-                        Toast.makeText(this, "Reloading…", Toast.LENGTH_SHORT).show()
+                        if (twoFingerHoldActive) {
+                            activeWebView()?.reload()
+                            Toast.makeText(this, "Reloading…", Toast.LENGTH_SHORT).show()
+                        }
                     }
                     reloadRunnable = r
                     reloadHandler.postDelayed(r, 1000)
@@ -2829,6 +2835,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             android.view.MotionEvent.ACTION_MOVE -> {
+                if (twoFingerHoldActive && ev.pointerCount >= 2) {
+                    val cx = (ev.getX(0) + ev.getX(1)) / 2f
+                    val cy = (ev.getY(0) + ev.getY(1)) / 2f
+                    if (kotlin.math.hypot(cx - twoFingerStartX, cy - twoFingerStartY) > 36f) {
+                        twoFingerHoldActive = false
+                        reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
+                        reloadRunnable = null
+                    }
+                }
                 if (threeFingerTracking && ev.pointerCount >= 3) {
                     val dx = ev.getX(0) - threeFingerStartX
                     if (kotlin.math.abs(dx) >= 120f && customView == null) {
