@@ -19,6 +19,7 @@ class DownloadsActivity : AppCompatActivity() {
         val title: String,
         val status: Int,
         val localUri: String?,
+        val sourceUrl: String?,
         val size: Long,
         val downloaded: Long,
         val mimeType: String?
@@ -65,6 +66,7 @@ class DownloadsActivity : AppCompatActivity() {
                 val titleCol = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
                 val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                 val uriCol = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                val sourceCol = cursor.getColumnIndex(DownloadManager.COLUMN_URI)
                 val sizeCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
                 val doneCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
                 val mimeCol = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
@@ -77,6 +79,7 @@ class DownloadsActivity : AppCompatActivity() {
                             ?: "Download",
                         status = cursor.getInt(statusCol),
                         localUri = local,
+                        sourceUrl = if (sourceCol >= 0) cursor.getString(sourceCol) else null,
                         size = if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
                         downloaded = if (doneCol >= 0) cursor.getLong(doneCol) else 0L,
                         mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null
@@ -92,12 +95,13 @@ class DownloadsActivity : AppCompatActivity() {
 
     private fun statusText(item: DownloadItem): String {
         val type = category(item)
+        val source = item.sourceUrl?.takeIf { it.startsWith("http", true) }?.let { " · $it" }.orEmpty()
         return when (item.status) {
-        DownloadManager.STATUS_SUCCESSFUL -> "$type · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}"
-        DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)}"
-        DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)}"
-        DownloadManager.STATUS_PENDING -> "Waiting to download"
-        DownloadManager.STATUS_FAILED -> "Download failed"
+        DownloadManager.STATUS_SUCCESSFUL -> "$type · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}$source"
+        DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)}$source"
+        DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)}$source"
+        DownloadManager.STATUS_PENDING -> "Waiting to download$source"
+        DownloadManager.STATUS_FAILED -> "Download failed$source"
         else -> "$type · Status unavailable"
         }
     }
