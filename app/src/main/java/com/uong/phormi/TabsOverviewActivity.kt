@@ -15,7 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 
 /** Tab overview with a phone-first vertical default plus horizontal and grid alternatives. */
 class TabsOverviewActivity : AppCompatActivity() {
-    data class TabInfo(val index: Int, val title: String, val url: String, val profile: String)
+    data class TabInfo(val index: Int, val id: Int, val title: String, val url: String, val profile: String)
     private val allTabs = mutableListOf<TabInfo>()
     private lateinit var tabsVerticalScroll: View
     private lateinit var tabsHorizontalScroll: View
@@ -122,7 +122,9 @@ class TabsOverviewActivity : AppCompatActivity() {
             }
             body.setPadding(if(style=="vertical") 18.dp() else 12.dp(), 14.dp(), 42.dp(), 14.dp())
             title.gravity=Gravity.CENTER_VERTICAL
+            title.setTextColor(0xFF111827.toInt())
             url.gravity=Gravity.CENTER_VERTICAL
+            url.setTextColor(0xFF334155.toInt())
             title.textSize=if(style=="vertical") 15f else 13f
             url.textSize=if(style=="vertical") 10f else 9f
         }
@@ -145,7 +147,8 @@ class TabsOverviewActivity : AppCompatActivity() {
             val urls=org.json.JSONArray(prefs.getString("tab_urls","[]") ?: "[]")
             val titles=org.json.JSONArray(prefs.getString("tab_titles","[]") ?: "[]")
             val profiles=org.json.JSONArray(prefs.getString("tab_profiles","[]") ?: "[]")
-            for(i in 0 until urls.length()) allTabs.add(TabInfo(i,titles.optString(i,"Tab ${i+1}").ifBlank{"Tab ${i+1}"},urls.optString(i,"about:blank"),profiles.optString(i,"Default").ifBlank{"Default"}))
+            val ids=org.json.JSONArray(prefs.getString("tab_ids","[]") ?: "[]")
+            for(i in 0 until urls.length()) allTabs.add(TabInfo(i,ids.optInt(i,i+1),titles.optString(i,"Tab ${i+1}").ifBlank{"Tab ${i+1}"},urls.optString(i,"about:blank"),profiles.optString(i,"Default").ifBlank{"Default"}))
         }catch(_:Exception){}
     }
 
@@ -158,7 +161,7 @@ class TabsOverviewActivity : AppCompatActivity() {
     private fun showGroupChooser(item:TabInfo){
         val groups=TabGroupManager(this).list()
         if(groups.isEmpty()){startActivity(Intent(this,TabGroupsActivity::class.java));return}
-        AlertDialog.Builder(this).setTitle("Add tab to group").setItems(groups.map{it.name}.toTypedArray()){_,which->setResult(RESULT_OK,Intent().putExtra("action","assign_group").putExtra("group_id",groups[which].id).putExtra("url",item.url));finish()}.show()
+        AlertDialog.Builder(this).setTitle("Add tab to group").setItems(groups.map{it.name}.toTypedArray()){_,which->setResult(RESULT_OK,Intent().putExtra("action","assign_group").putExtra("group_id",groups[which].id).putExtra("url",item.url).putExtra("tab_id",item.id));finish()}.show()
     }
 
 }
