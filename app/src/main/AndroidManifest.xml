@@ -69,6 +69,7 @@
         <activity android:name=".BookmarksActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".HistoryActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".AccountsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".PhormiSecurityCenterActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
 
         <service android:name=".PhormiKeyboardService" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true">
             <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
