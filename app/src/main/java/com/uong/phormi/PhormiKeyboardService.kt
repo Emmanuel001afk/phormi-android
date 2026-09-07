@@ -17,6 +17,7 @@ import android.view.inputmethod.CompletionInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -180,6 +181,11 @@ class PhormiKeyboardService : InputMethodService() {
             setInputView(render())
         })
         key(bar, "⌨", action = { panel = Panel.KEYBOARD; setInputView(render()) })
+        key(bar, "⇄", action = {
+            runCatching { switchToNextInputMethod(false) }
+                .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }
+        })
+        key(bar, "↵", action = { sendEditorAction() })
         root.addView(bar, LinearLayout.LayoutParams(-1, 46))
         addCompletions(root)
     }
@@ -203,17 +209,38 @@ class PhormiKeyboardService : InputMethodService() {
         val clazz = type and InputType.TYPE_MASK_CLASS
         val variation = type and InputType.TYPE_MASK_VARIATION
         val numeric = clazz == InputType.TYPE_CLASS_NUMBER || clazz == InputType.TYPE_CLASS_PHONE
+        val datetime = clazz == InputType.TYPE_CLASS_DATETIME
+        val email = variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+        val uri = variation == InputType.TYPE_TEXT_VARIATION_URI ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
         val password = variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
             variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
             variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
 
+        // Password fields intentionally expose no completion/suggestion strip.
+        if (password) completions = emptyList()
+
         if (numeric) {
             listOf("123", "456", "789", "0.,+-").forEach { root.addView(charRow(it)) }
+        } else if (datetime) {
+            listOf("1234567890", ":-/", "AMPM").forEach { root.addView(charRow(it)) }
         } else if (symbols) {
             listOf("1234567890", "-=[]\\;',./", "!@#\$%^&*()", "_+{}|:\"<>?").forEach { root.addView(charRow(it)) }
         } else {
             listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").forEach { root.addView(charRow(it)) }
         }
+
+        val contextual = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        when {
+            email -> listOf("@", ".com", ".net").forEach { token -> key(contextual, token) { commitText(token) } }
+            uri -> listOf("/", ".com", "https://").forEach { token -> key(contextual, token) { commitText(token) } }
+            numeric || datetime -> listOf(".", ",", "-").forEach { token -> key(contextual, token) { commitText(token) } }
+        }
+        if (contextual.childCount > 0) root.addView(contextual, LinearLayout.LayoutParams(-1, 48))
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -518,7 +545,8 @@ class PhormiKeyboardService : InputMethodService() {
         }
         if (requested.isEmpty() || requested.any { ClipDescription.compareMimeTypes(mime, it) }) {
             val info = InputContentInfo(uri, ClipDescription("Phormi media", arrayOf(mime)), null)
-            if (runCatching { ic.commitContent(info, 0, Bundle()) }.getOrDefault(false)) return true
+            val flags = InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
+            if (runCatching { ic.commitContent(info, flags, Bundle()) }.getOrDefault(false)) return true
         }
         runCatching {
             (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
