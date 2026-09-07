@@ -21,6 +21,9 @@ jobs:
       - name: Apply compile repairs
         run: python3 tools/repair_compile.py
 
+      - name: Run Phormi foundation audit
+        run: python3 tools/audit_project.py
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -37,6 +40,32 @@ jobs:
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK output
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Package final source and APK
+        run: |
+          mkdir -p dist/phormi-android
+          cp -R app dist/phormi-android/
+          cp -R .github dist/phormi-android/
+          cp -R tools dist/phormi-android/
+          cp -R docs dist/phormi-android/ 2>/dev/null || true
+          cp -R shared dist/phormi-android/ 2>/dev/null || true
+          cp build.gradle.kts settings.gradle.kts gradle.properties dist/phormi-android/ 2>/dev/null || true
+          cp FINAL_FILE_MAP.txt dist/phormi-android/ 2>/dev/null || true
+          cp app/build/outputs/apk/debug/app-debug.apk dist/phormi-android/phormi-debug.apk
+          cd dist
+          zip -qr phormi-final-project.zip phormi-android
+          sha256sum phormi-final-project.zip > phormi-final-project.sha256
+
+      - name: Upload final project ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: phormi-final-project
+          path: |
+            dist/phormi-final-project.zip
+            dist/phormi-final-project.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
