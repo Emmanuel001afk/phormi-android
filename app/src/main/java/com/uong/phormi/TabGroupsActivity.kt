@@ -68,6 +68,7 @@ class TabGroupsActivity : AppCompatActivity() {
                         setOnClickListener {
                             val i = Intent(this@TabGroupsActivity, MainActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                                .putExtra("select_tab_id", tab.first)
                             startActivity(i)
                             finish()
                         }
