@@ -12,7 +12,6 @@ import androidx.appcompat.app.AppCompatActivity
 class PhormiSecurityCenterActivity : AppCompatActivity() {
     private lateinit var prefs: android.content.SharedPreferences
     private lateinit var browserLock: BrowserLockManager
-
     private val mainExecutor = java.util.concurrent.Executor { it.run() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,7 +42,8 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
             prefs.edit().putBoolean("security_javascript", checked).apply()
             Toast.makeText(this, "Applies to newly configured WebViews and reloads", Toast.LENGTH_SHORT).show()
         }
-        addSwitch(root, "Third-party cookies", prefs.getBoolean("security_third_party_cookies", false)) { checked ->
+        // Keep normal browser compatibility by default. Users can explicitly harden this.
+        addSwitch(root, "Third-party cookies", prefs.getBoolean("security_third_party_cookies", true)) { checked ->
             prefs.edit().putBoolean("security_third_party_cookies", checked).apply()
         }
         addSwitch(root, "Mixed HTTP content", prefs.getBoolean("security_mixed_content", false)) { checked ->
@@ -61,7 +61,7 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
                 .onFailure { Toast.makeText(this, "WebView settings are not available on this device", Toast.LENGTH_SHORT).show() }
         }
         root.addView(TextView(this).apply {
-            text = "Safe Browsing and TLS certificate verification remain enforced by the WebView. Mixed content is blocked by default. JavaScript and third-party cookies can be enabled when a site genuinely requires them."
+            text = "Safe Browsing and TLS certificate verification remain enforced by the WebView. Mixed content is blocked by default. JavaScript and third-party cookies remain compatible with normal websites unless you explicitly harden them."
             setTextColor(0xFF94A3B8.toInt())
             textSize = 13f
             setPadding(0, 18, 0, 0)
