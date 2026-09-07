@@ -1,4 +1,4 @@
-app/src/main/java/com/uong/phormi/TabGroupManager.ktpackage com.uong.phormi
+package com.uong.phormi
 
 import android.content.Context
 import org.json.JSONArray
@@ -49,7 +49,6 @@ class TabGroupManager(context: Context) {
     fun unassignTab(tabId: Int) { val groups = list(); groups.forEach { it.tabIds.remove(tabId) }; save(groups) }
     fun groupForTab(tabId: Int): Group? = list().firstOrNull { it.tabIds.contains(tabId) }
 
-    // Legacy URL API retained so older callers can migrate without breaking.
     fun assign(id: String, url: String) { val g = groupForId(id) ?: return; g.legacyUrls.remove(url); g.legacyUrls.add(url); save(list()) }
     fun move(oldUrl: String, newUrl: String) { val l = list(); l.forEach { if (it.legacyUrls.remove(oldUrl)) it.legacyUrls.add(newUrl) }; save(l) }
     fun unassign(url: String) { val l = list(); l.forEach { it.legacyUrls.remove(url) }; save(l) }
