@@ -34,6 +34,8 @@ jobs:
         run: python3 tools/repair_round8_comprehensive.py
       - name: Apply Round 8 media picker normalization
         run: python3 tools/repair_round8_fix.py
+      - name: Apply Round 9 comprehensive audit repair
+        run: python3 tools/repair_round9_comprehensive.py
       - name: Run Phormi foundation audit
         run: python3 tools/audit_project.py
       - name: Set up JDK 17
@@ -47,6 +49,8 @@ jobs:
           gradle-version: '8.7'
       - name: Show Gradle version
         run: gradle --version
+      - name: Android lint
+        run: gradle lintDebug --no-daemon --stacktrace
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Verify APK output
