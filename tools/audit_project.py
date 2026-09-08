@@ -21,7 +21,7 @@ req("MainActivity.kt",["canGoBack()","canGoForward()",".reload()","onShowFileCho
 req("MenuActivity.kt",["menu_new_tab","menu_ghost","menu_tabs","menu_groups","menu_downloads","menu_keyboard","menu_browser_lock","menu_security","menu_site_lock","menu_find","menu_share","menu_desktop_mode","menu_favorite","menu_theme","menu_settings","menu_save_pdf"])
 req("DownloadsActivity.kt",["STATUS_RUNNING","formatProgress(","COLUMN_BYTES_DOWNLOADED_SO_FAR","COLUMN_REASON","PhormiFileOpener.open","cancelDownload","PhormiLocalDownloadStore.list"])
 req("PhormiBlobDownloadBridge.kt",["@JavascriptInterface","fun begin(t:String)","fun write(t:String","fun finish(t:String)","MediaStore.Downloads"])
-req("PhormiSitePermissionStore.kt",["fun get(c:Context","fun set(c:Context","fun clear(c:Context)"])
+req("PhormiSitePermissionStore.kt",["fun get(context: Context","fun set(context: Context","fun clear(context: Context)"])
 req("PhormiLocalDownloadStore.kt",["fun add(c:Context","fun list(c:Context","fun remove(c:Context,id:String)"])
 req("PhormiDownloadSupport.kt",["contentDispositionFileName","filename","User-Agent","Referer","Cookie","Video"])
 req("GhostActivity.kt",["WebView.setDataDirectorySuffix","FLAG_SECURE","finishAndClear","onSaveInstanceState","SCREEN_ORIENTATION_SENSOR","MIXED_CONTENT_NEVER_ALLOW"])
