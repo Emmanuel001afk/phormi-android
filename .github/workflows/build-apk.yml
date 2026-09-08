@@ -34,12 +34,10 @@ jobs:
         run: python3 tools/repair_round8_comprehensive.py
       - name: Apply Round 8 media picker normalization
         run: python3 tools/repair_round8_fix.py
-      - name: Apply Round 9 comprehensive audit repair
-        run: python3 tools/repair_round9_comprehensive.py
-      - name: Run Phormi foundation audit
+      - name: Run Phormi foundation audit before Round 9
         run: python3 tools/audit_project.py
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -47,9 +45,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Create lint baseline from pre-Round-9 source
+        run: |
+          python3 tools/prepare_lint_baseline.py
+          gradle updateLintBaseline --no-daemon --stacktrace
+      - name: Apply Round 9 comprehensive audit repair
+        run: python3 tools/repair_round9_comprehensive.py
+      - name: Run Phormi foundation audit after Round 9
+        run: python3 tools/audit_project.py
       - name: Show Gradle version
         run: gradle --version
-      - name: Android lint
+      - name: Android lint - fail on new errors
         run: gradle lintDebug --no-daemon --stacktrace
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
