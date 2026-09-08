@@ -57,6 +57,7 @@ jobs:
           python3 tools/repair_round10_followup.py
           python3 tools/repair_round10_audit_fix.py
           python3 tools/repair_round10_compilefix.py
+          python3 tools/repair_round10_renderer_finalize.py
       - name: Run Phormi foundation audit after Round 10
         run: python3 tools/audit_project.py
       - name: Show Gradle version
