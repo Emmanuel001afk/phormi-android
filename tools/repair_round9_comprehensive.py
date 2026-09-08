@@ -7,6 +7,11 @@ def patch(rel, old, new, once=True):
         print('SKIP/MISS', rel, old[:70].replace('\n',' ')); return
     p.write_text(t.replace(old,new,1) if once else t.replace(old,new)); print('PATCH',rel)
 
+# Imports needed by the new Round 9 UI helpers.
+patch('app/src/main/java/com/uong/phormi/MainActivity.kt', 'import android.view.LayoutInflater\n', 'import android.view.LayoutInflater\nimport android.view.Gravity\n')
+patch('app/src/main/java/com/uong/phormi/PhormiKeyboardSettingsActivity.kt', 'import android.widget.CheckBox\n', 'import android.widget.CheckBox\nimport android.widget.EditText\n')
+patch('app/src/main/java/com/uong/phormi/TabGroupsActivity.kt', 'import android.widget.TextView\n', 'import android.widget.TextView\nimport android.widget.Toast\n')
+
 # Favorite indicator: color only the center, not the entire decagon.
 patch('app/src/main/java/com/uong/phormi/MainActivity.kt', '''        button.alpha = 1f
         val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)
