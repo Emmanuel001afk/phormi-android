@@ -10,10 +10,11 @@ class PhormiKeyboardMediaActivity : Activity() {
         const val EXTRA_MODE = "mode"
         private const val REQUEST_PICK = 4401
     }
+    private var mode = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val mode = intent?.getStringExtra(EXTRA_MODE).orEmpty().lowercase()
+        mode = intent?.getStringExtra(EXTRA_MODE).orEmpty().lowercase()
         val mime = if (mode == "gif") "image/gif" else "image/*"
         startActivityForResult(
             Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -30,7 +31,11 @@ class PhormiKeyboardMediaActivity : Activity() {
         if (requestCode == REQUEST_PICK && resultCode == RESULT_OK) {
             data?.data?.let { uri ->
                 runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-                PhormiKeyboardService.commitPickedContent(this, uri)
+                if (mode == "sticker") {
+                    PhormiKeyboardStickerStore.import(this, uri, "imported")?.let {
+                        PhormiKeyboardService.useSticker(this, PhormiKeyboardStickerStore.contentUri(this, it))
+                    }
+                } else PhormiKeyboardService.commitPickedContent(this, uri)
             }
         }
         finish()
