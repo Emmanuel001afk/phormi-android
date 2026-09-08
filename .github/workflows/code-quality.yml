@@ -49,6 +49,8 @@ jobs:
           python3 tools/repair_round10_runner.py
           python3 tools/repair_round10_followup.py
           python3 tools/repair_round10_audit_fix.py
+          python3 tools/repair_round10_compilefix.py
+          python3 tools/repair_round10_final_normalize.py
       - name: Build for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Analyze
