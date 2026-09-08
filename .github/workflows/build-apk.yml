@@ -51,7 +51,9 @@ jobs:
           gradle updateLintBaseline --no-daemon --stacktrace
       - name: Apply Round 9 comprehensive audit repair
         run: python3 tools/repair_round9_comprehensive.py
-      - name: Run Phormi foundation audit after Round 9
+      - name: Apply Round 10 keyboard-first browser foundation fixes
+        run: python3 tools/repair_round10_keyboard_browser.py
+      - name: Run Phormi foundation audit after Round 10
         run: python3 tools/audit_project.py
       - name: Show Gradle version
         run: gradle --version
