@@ -28,6 +28,8 @@ jobs:
         run: python3 tools/repair_round7_fix.py
       - name: Apply Round 7 site permission compile fix
         run: python3 tools/repair_round7_fix2.py
+      - name: Apply Round 7 keyboard settings and long-press repair
+        run: python3 tools/repair_round7_keyboard_ui.py
       - name: Run Phormi foundation audit
         run: python3 tools/audit_project.py
       - name: Set up JDK 17
