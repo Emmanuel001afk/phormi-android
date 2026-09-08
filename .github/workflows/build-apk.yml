@@ -26,6 +26,8 @@ jobs:
         run: python3 tools/repair_round7_final.py
       - name: Apply Round 7 compile fixes
         run: python3 tools/repair_round7_fix.py
+      - name: Apply Round 7 site permission compile fix
+        run: python3 tools/repair_round7_fix2.py
       - name: Run Phormi foundation audit
         run: python3 tools/audit_project.py
       - name: Set up JDK 17
