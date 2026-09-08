@@ -46,7 +46,7 @@ jobs:
           python3 tools/repair_round8_comprehensive.py
           python3 tools/repair_round8_fix.py
           python3 tools/repair_round9_comprehensive.py
-          python3 tools/repair_round10_keyboard_browser.py
+          python3 tools/repair_round10_runner.py
       - name: Build for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Analyze
