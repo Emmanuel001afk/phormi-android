@@ -10,23 +10,19 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Coordinates browser-AI work as durable lanes.
+ * Coordinates durable browser-AI work as isolated task lanes.
  *
- * A lane represents one browser task/tab target. Its checkpoint is persisted so
- * a provider failure does not erase the task's progress. Providers remain a
- * fallback chain inside AiController; this class is responsible for keeping
- * independent task memory separate and for coordinating multiple requested lanes.
- *
- * UI interaction is deliberately serialized through AiController's browser
- * surface because Android Accessibility exposes one foreground interaction
- * surface at a time. Multiple lanes may reason concurrently, but their physical
- * screen actions are not allowed to race each other.
+ * Each lane gets its own AiController so model history cannot leak between tasks.
+ * Physical browser interaction is serialized with one mutex because Android
+ * Accessibility exposes the foreground UI as a single interaction surface.
  */
 class PhormiAiTaskCoordinator(context: Context) {
     data class Lane(
@@ -43,7 +39,7 @@ class PhormiAiTaskCoordinator(context: Context) {
         appContext.getSharedPreferences("phormi_ai_task_memory", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val running = ConcurrentHashMap<String, Job>()
-    private val controller by lazy { AiController(appContext) }
+    private val browserActionMutex = Mutex()
 
     fun createLane(target: String, instruction: String, id: String = UUID.randomUUID().toString()): Lane {
         val lane = Lane(id, target.trim(), instruction.trim())
@@ -60,23 +56,27 @@ class PhormiAiTaskCoordinator(context: Context) {
         getLane(id)?.let { persist(it.copy(status = "cancelled", updatedAt = System.currentTimeMillis())) }
     }
 
-    /** Run one lane. The controller itself tries every configured provider in order. */
     fun runLane(laneId: String, onStatus: (String) -> Unit = {}): Job? {
         if (running.containsKey(laneId)) return running[laneId]
         val lane = getLane(laneId) ?: return null
         val job = scope.launch {
             val current = getLane(laneId) ?: return@launch
             persist(current.copy(status = "running", updatedAt = System.currentTimeMillis()))
+            val controller = AiController(appContext)
             try {
-                controller.runTask(
-                    instruction = buildInstruction(current),
-                    onStatus = { status ->
-                        val checkpoint = status.take(500)
-                        val latest = getLane(laneId) ?: return@runTask
-                        persist(latest.copy(lastCheckpoint = checkpoint, status = status.take(120), updatedAt = System.currentTimeMillis()))
-                        onStatus("[${latest.target}] $status")
-                    }
-                )
+                browserActionMutex.withLock {
+                    controller.runTask(
+                        instruction = buildInstruction(current),
+                        onStatus = { status ->
+                            val checkpoint = status.take(500)
+                            val latest = getLane(laneId)
+                            if (latest != null) {
+                                persist(latest.copy(lastCheckpoint = checkpoint, status = status.take(120), updatedAt = System.currentTimeMillis()))
+                                onStatus("[${latest.target}] $status")
+                            }
+                        }
+                    )
+                }
                 val finished = getLane(laneId)
                 if (finished != null) persist(finished.copy(status = "finished", updatedAt = System.currentTimeMillis()))
             } catch (t: Throwable) {
@@ -91,11 +91,7 @@ class PhormiAiTaskCoordinator(context: Context) {
         return job
     }
 
-    /**
-     * Start several lanes together. Their reasoning jobs can overlap, while
-     * actual browser interaction remains protected by the single foreground
-     * Accessibility surface used by AiController.
-     */
+    /** Start requested lanes concurrently; their browser interaction is safely serialized. */
     fun runLanes(laneIds: List<String>, onStatus: (String) -> Unit = {}): Job = scope.launch {
         coroutineScope {
             laneIds.distinct().mapNotNull { id ->
@@ -104,24 +100,23 @@ class PhormiAiTaskCoordinator(context: Context) {
         }
     }
 
-    private fun buildInstruction(lane: Lane): String {
-        val memory = lane.lastCheckpoint.takeIf { it.isNotBlank() }
-        return buildString {
-            append("Target browser tab/site: ").append(lane.target.ifBlank { "current tab" }).append(".\n")
-            append("Task: ").append(lane.instruction).append("\n")
-            if (memory != null) {
-                append("This task is being resumed. Last durable checkpoint: ").append(memory).append("\n")
-                append("Do not restart work that is already complete; inspect the current screen and continue from the checkpoint.\n")
-            }
-            append("Never request, reveal, copy, or transmit passwords, PINs, OTPs, CVVs, recovery codes, or other sensitive authentication secrets.")
+    private fun buildInstruction(lane: Lane): String = buildString {
+        if (lane.target.isNotBlank()) {
+            append("Target browser tab/site: ").append(lane.target).append(".\n")
+            append("Before acting, locate/select that tab. Never operate a different tab merely because it is currently foreground.\n")
         }
+        append("Task: ").append(lane.instruction).append("\n")
+        if (lane.lastCheckpoint.isNotBlank()) {
+            append("Resume checkpoint: ").append(lane.lastCheckpoint).append(". Inspect the current screen before continuing.\n")
+        }
+        append("Never request, reveal, copy, or transmit passwords, PINs, OTPs, CVVs, recovery codes, or other sensitive authentication secrets.")
     }
 
     private fun persist(lane: Lane) {
         val all = readAll().filterNot { it.id == lane.id }.toMutableList()
         all += lane
         val json = JSONArray()
-        all.takeLast(100).forEach {
+        all.sortedBy { it.updatedAt }.takeLast(100).forEach {
             json.put(JSONObject()
                 .put("id", it.id)
                 .put("target", it.target)
