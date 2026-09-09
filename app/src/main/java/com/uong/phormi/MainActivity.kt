@@ -2510,7 +2510,6 @@ class MainActivity : AppCompatActivity() {
                 callback: android.webkit.SafeBrowsingResponse?
             ) {
                 if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)
-                else callback?.showInterstitial(true)
                 runOnUiThread {
                     Toast.makeText(this@MainActivity, "Phormi blocked an unsafe page.", Toast.LENGTH_LONG).show()
                 }
@@ -2803,7 +2802,8 @@ class MainActivity : AppCompatActivity() {
             if (resultCode == Activity.RESULT_OK && data?.data != null) {
                 val uri = data.data!!
                 try {
-                    contentResolver.takePersistableUriPermission(uri, data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
+                    val takeFlags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    if (takeFlags != 0) contentResolver.takePersistableUriPermission(uri, takeFlags)
                 } catch (_: SecurityException) { }
                 prefs.edit().putString(KEY_WALLPAPER_URI, uri.toString()).apply()
                 applyStartPageAppearance()

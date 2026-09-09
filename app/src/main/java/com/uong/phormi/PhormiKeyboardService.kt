@@ -193,8 +193,12 @@ class PhormiKeyboardService : InputMethodService() {
         })
         key(bar, "⌨", action = { panel = Panel.KEYBOARD; setInputView(render()) })
         key(bar, "⇄", action = {
-            runCatching { switchToNextInputMethod(false) }
-                .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                runCatching { switchToNextInputMethod(false) }
+                    .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }
+            } else {
+                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()
+            }
         })
         key(bar, "↵", action = { sendEditorAction() })
         root.addView(bar, LinearLayout.LayoutParams(-1, 46))
