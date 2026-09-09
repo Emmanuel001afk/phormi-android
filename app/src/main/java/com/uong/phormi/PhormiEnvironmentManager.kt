@@ -37,7 +37,6 @@ object PhormiEnvironmentManager {
         if (!isSupported()) return false
         return runCatching {
             ProfileStore.getInstance().getOrCreateProfile(normalized)
-            touch(null, normalized)
             true
         }.getOrDefault(false)
     }
@@ -48,16 +47,15 @@ object PhormiEnvironmentManager {
         if (!ensure(normalized)) return false
         return runCatching {
             WebViewCompat.setProfile(webView, normalized)
-            touch(null, normalized)
+            touch(webView.context, normalized)
             true
         }.getOrDefault(false)
     }
 
     fun touch(context: Context?, name: String) {
         val normalized = normalize(name)
-        if (normalized == DEFAULT_ENVIRONMENT || normalized == GHOST_ENVIRONMENT) return
-        val prefs = context?.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE)
-            ?: return
+        if (context == null || normalized == DEFAULT_ENVIRONMENT || normalized == GHOST_ENVIRONMENT) return
+        val prefs = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(LAST_USED, "{}") ?: "{}"
         val obj = runCatching { org.json.JSONObject(raw) }.getOrElse { org.json.JSONObject() }
         obj.put(normalized, System.currentTimeMillis())
@@ -66,7 +64,7 @@ object PhormiEnvironmentManager {
 
     /**
      * Deletes named environments that have not been used for 30 days. Active profiles
-     * are protected because WebView requires living instances to be gone before deletion.
+     * are protected because WebView profile deletion must not race live WebViews.
      */
     fun cleanupExpired(context: Context, activeProfiles: Set<String> = emptySet()) {
         if (!isSupported()) return
@@ -82,9 +80,7 @@ object PhormiEnvironmentManager {
         val expired = list().filter { name ->
             !protectedNames.contains(name) && lastUsed.optLong(name, 0L) in 1 until cutoff
         }
-        expired.forEach { name ->
-            if (delete(name)) lastUsed.remove(name)
-        }
+        expired.forEach { name -> if (delete(name)) lastUsed.remove(name) }
         prefs.edit().putString(LAST_USED, lastUsed.toString()).apply()
     }
 
