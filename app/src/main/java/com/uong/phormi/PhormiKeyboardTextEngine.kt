@@ -106,6 +106,11 @@ object PhormiKeyboardTextEngine {
         return trimmed.isEmpty() || trimmed.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
     }
 
+    fun autoCapitalize(ic: InputConnection?): Boolean {
+        val before = ic?.getTextBeforeCursor(64, 0)?.toString().orEmpty().trimEnd()
+        return before.isEmpty() || before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
+    }
+
     fun contextBeforeCursor(ic: InputConnection?): String =
         ic?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
 
