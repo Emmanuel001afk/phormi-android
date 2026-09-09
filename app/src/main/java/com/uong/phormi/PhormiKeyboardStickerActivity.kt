@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -24,20 +25,14 @@ class PhormiKeyboardStickerActivity : Activity() {
     private fun render() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(24, 24, 24, 24) }
         root.addView(TextView(this).apply { text = "Phormi Local AI Sticker"; textSize = 22f })
-        root.addView(TextView(this).apply {
-            text = "Create an on-device emoji/sticker from a description. No external image API is used."
-            setPadding(0, 10, 0, 18)
-        })
+        root.addView(TextView(this).apply { text = "Create an on-device emoji/sticker from a description. No external image API is used."; setPadding(0, 10, 0, 18) })
         val prompt = EditText(this).apply { hint = "e.g. a funny robot laughing, sticker style"; minLines = 3; gravity = Gravity.TOP }
         root.addView(prompt, LinearLayout.LayoutParams(-1, 0, 1f))
         status = TextView(this).apply { setPadding(0, 14, 0, 14) }
         root.addView(status)
         root.addView(Button(this).apply {
             text = "Generate & use"
-            setOnClickListener {
-                val text = prompt.text.toString().trim()
-                if (text.isBlank()) status.text = "Enter a prompt first." else generate(text)
-            }
+            setOnClickListener { val text = prompt.text.toString().trim(); if (text.isBlank()) status.text = "Enter a prompt first." else generate(text) }
         }, LinearLayout.LayoutParams(-1, 54))
         root.addView(Button(this).apply {
             text = "Choose an existing sticker/image"
