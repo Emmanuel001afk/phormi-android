@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <files-path name="phormi_files" path="phormi_stickers/" />
     <external-path name="downloads" path="Download/" />
     <external-path name="external" path="." />
     <cache-path name="vpn_cache" path="vpn/" />

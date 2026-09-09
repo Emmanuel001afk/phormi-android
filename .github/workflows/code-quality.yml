@@ -17,7 +17,7 @@ jobs:
     name: CodeQL Java/Kotlin
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout committed source
         uses: actions/checkout@v4
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -33,25 +33,7 @@ jobs:
         with:
           languages: java-kotlin
           build-mode: manual
-      - name: Apply Phormi build repairs
-        run: |
-          python3 tools/apply_round5_state_restore.py
-          python3 tools/repair_compile.py
-          python3 tools/repair_menu_features.py
-          python3 tools/repair_round6_features.py
-          python3 tools/repair_round7_final.py
-          python3 tools/repair_round7_fix.py
-          python3 tools/repair_round7_fix2.py
-          python3 tools/repair_round7_keyboard_ui.py
-          python3 tools/repair_round8_comprehensive.py
-          python3 tools/repair_round8_fix.py
-          python3 tools/repair_round9_comprehensive.py
-          python3 tools/repair_round10_runner.py
-          python3 tools/repair_round10_followup.py
-          python3 tools/repair_round10_audit_fix.py
-          python3 tools/repair_round10_compilefix.py
-          python3 tools/repair_round10_final_normalize.py
-      - name: Build for CodeQL extraction
+      - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Analyze
         uses: github/codeql-action/analyze@v4
