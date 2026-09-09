@@ -3,7 +3,7 @@ package com.uong.phormi
 import android.widget.TextView
 
 /** Shared UI status helper for the disposable-email activity. */
-private fun PhormiDisposableEmailActivity.setBusy(text: String) {
+fun PhormiDisposableEmailActivity.setBusy(text: String) {
     val field = runCatching { javaClass.getDeclaredField("current") }.getOrNull() ?: return
     runCatching {
         field.isAccessible = true
