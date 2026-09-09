@@ -36,7 +36,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
     private fun updateStatus() {
         val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-        val serviceId = "$packageName/.PhormiKeyboardService"
+        val serviceId = "$packageName/.PhormiKeyboardServiceV2"
         val enabled = imm.enabledInputMethodList.any { it.id == serviceId }
         val selected = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD) == serviceId
         status.text = when {
