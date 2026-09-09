@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
-/** Local visit-frequency store used only for normal-tab Quick Access suggestions. */
+/** Compatibility visit-frequency store for Quick Access surfaces. */
 object PhormiVisitTracker {
     private const val PREFS = "phormi_most_visited"
     private const val KEY = "sites"
@@ -33,19 +33,16 @@ object PhormiVisitTracker {
     fun top(context: Context, limit: Int = 10): List<Site> =
         read(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)).values
             .filter { it.visits >= THRESHOLD }
+            .filterNot { PhormiQuickAccessState.isVisitedHidden(context, it.url) || PhormiQuickAccessState.isVisitedHidden(context, it.host) }
             .sortedWith(compareByDescending<Site> { it.visits }.thenBy { it.host })
             .take(limit)
 
-    /** Remove one site's Quick Access source record without touching unrelated history. */
+    /** Hide one site's Quick Access tile without touching visit history. */
     fun remove(context: Context, urlOrHost: String) {
-        val key = urlOrHost.trim().lowercase(Locale.US).let { value ->
-            runCatching { Uri.parse(value).host?.removePrefix("www.") }.getOrNull()?.takeIf { it.isNotBlank() } ?: value.removePrefix("www.")
-        }
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val remaining = read(prefs).filterKeys { it != key }
-        val arr = JSONArray()
-        remaining.values.forEach { arr.put(JSONObject().put("title", it.title).put("url", it.url).put("host", it.host).put("visits", it.visits)) }
-        prefs.edit().putString(KEY, arr.toString()).apply()
+        val value = urlOrHost.trim().lowercase(Locale.US)
+        val host = runCatching { Uri.parse(value).host?.removePrefix("www.") }.getOrNull()
+        PhormiQuickAccessState.hideVisited(context, value)
+        if (!host.isNullOrBlank()) PhormiQuickAccessState.hideVisited(context, host)
     }
 
     fun clear(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
