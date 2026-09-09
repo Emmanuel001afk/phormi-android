@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
-/** Phormi browser AI: configurable HTTPS providers with local fallback configuration. */
+/** Phormi browser AI: configurable HTTPS providers with foreground-browser execution. */
 class AiActivity : AppCompatActivity() {
     private lateinit var controller: AiController
     private lateinit var status: TextView
@@ -102,11 +102,13 @@ class AiActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
-        findViewById<Button>(R.id.btn_run).isEnabled = false
-        lifecycleScope.launch {
-            try { controller.runTask(text) { append(it) } }
-            finally { findViewById<Button>(R.id.btn_run).isEnabled = true }
-        }
+
+        // The AI screen must not remain foreground while the agent operates the browser.
+        // Persist the task, close this screen, and let PhormiRepairApplication start the
+        // controller after MainActivity is resumed so Accessibility observes the browser.
+        PhormiAiPendingTask.enqueue(applicationContext, "", text)
+        status.text = "Returning to the browser…"
+        finish()
     }
 
     private fun startVoiceInput() {
