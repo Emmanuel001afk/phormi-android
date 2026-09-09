@@ -48,7 +48,7 @@
         <activity android:name=".HelpActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".PhormiSecurityCenterActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".GhostActivity" android:exported="false" android:process=":ghost" android:theme="@style/Theme.Phormi" />
-        <service android:name=".PhormiKeyboardService" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod" /></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method_phormi_keyboard" /></service>
+        <service android:name=".PhormiKeyboardServiceV2" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod" /></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method_phormi_keyboard" /></service>
         <activity android:name=".PhormiKeyboardSettingsActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name=".PhormiKeyboardVoiceActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name=".PhormiKeyboardMediaActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
