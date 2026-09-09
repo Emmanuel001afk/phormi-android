@@ -12,9 +12,9 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * General sign-in hub. Third-party authentication is opened in an Android Custom Tab,
- * not an ordinary Phormi browsing tab, so providers such as Google do not receive an
- * embedded WebView sign-in flow that they may block or warn about.
+ * General third-party sign-in hub. Provider authentication is opened in a secure
+ * Custom Tab rather than an embedded WebView. Provider sessions remain controlled
+ * by the provider; Phormi does not copy cookies between browsers or environments.
  */
 class AccountsActivity : AppCompatActivity() {
     data class AccountProvider(val id: String, val label: String, val loginUrl: String, val switchUrl: String, val note: String)
@@ -22,7 +22,7 @@ class AccountsActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_OPEN_URL = "open_url"
         val PROVIDERS = listOf(
-            AccountProvider("google", "Google", "https://accounts.google.com/", "https://accounts.google.com/AccountChooser", "Secure browser sign-in. Google accounts are handled by Google's own authentication surface."),
+            AccountProvider("google", "Google", "https://accounts.google.com/", "https://accounts.google.com/AccountChooser", "Secure browser sign-in. Google authentication is handled by Google's own browser surface."),
             AccountProvider("microsoft", "Microsoft", "https://account.microsoft.com/", "https://account.microsoft.com/", "Use Microsoft's own account switcher after signing in."),
             AccountProvider("apple", "Apple", "https://appleid.apple.com/sign-in", "https://appleid.apple.com/", "Apple web session."),
             AccountProvider("github", "GitHub", "https://github.com/login", "https://github.com/login", "Developer account."),
@@ -32,13 +32,31 @@ class AccountsActivity : AppCompatActivity() {
         )
     }
 
+    private var pendingProvider: AccountProvider? = null
+    private var authTabWasPaused = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_accounts)
         findViewById<TextView>(R.id.accounts_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.accounts_help).text =
-            "Sign in or switch accounts without creating a normal Phormi tab. Third-party authentication opens in a secure Custom Tab; when you close it, you return to Phormi. Provider sessions remain controlled by the provider."
+            "Third-party sign-in opens in a secure Custom Tab and returns here instead of creating a normal Phormi tab. When you return, Phormi asks whether to remember that you trusted the provider on this device. Provider authentication itself is never copied or fabricated by Phormi."
         render()
+    }
+
+    override fun onPause() {
+        if (pendingProvider != null) authTabWasPaused = true
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (authTabWasPaused && pendingProvider != null) {
+            authTabWasPaused = false
+            val provider = pendingProvider ?: return
+            pendingProvider = null
+            confirmReturnedFromAuth(provider)
+        }
     }
 
     private fun render() {
@@ -46,13 +64,10 @@ class AccountsActivity : AppCompatActivity() {
         container.removeAllViews()
         val sessions = AccountSessionStore.list(this)
         if (sessions.isNotEmpty()) {
-            val heading = TextView(this).apply {
-                text = "Previously used accounts"
-                setTextColor(0xFF38BDF8.toInt())
-                textSize = 14f
-                setPadding(12, 16, 12, 8)
-            }
-            container.addView(heading)
+            container.addView(TextView(this).apply {
+                text = "Previously trusted providers"
+                setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(12, 16, 12, 8)
+            })
             sessions.forEach { session ->
                 val row = layoutInflater.inflate(R.layout.item_account, container, false)
                 row.findViewById<TextView>(R.id.account_label).text = session.label
@@ -60,10 +75,13 @@ class AccountsActivity : AppCompatActivity() {
                 row.setOnClickListener { PROVIDERS.firstOrNull { it.id == session.providerId }?.let { openProvider(it, true) } }
                 row.setOnLongClickListener {
                     androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("${session.label} account")
-                        .setItems(arrayOf("Switch account", "Sign out / clear saved session")) { _, which ->
+                        .setTitle("${session.label} provider")
+                        .setItems(arrayOf("Switch account", "Forget trusted provider")) { _, which ->
                             val provider = PROVIDERS.firstOrNull { it.id == session.providerId } ?: return@setItems
-                            if (which == 0) openProvider(provider, true) else clearProviderSession(provider)
+                            if (which == 0) openProvider(provider, true) else {
+                                AccountSessionStore.remove(this, provider.id)
+                                render()
+                            }
                         }.show()
                     true
                 }
@@ -72,9 +90,7 @@ class AccountsActivity : AppCompatActivity() {
         }
         container.addView(TextView(this).apply {
             text = "Sign in / switch account"
-            setTextColor(0xFF38BDF8.toInt())
-            textSize = 14f
-            setPadding(12, 18, 12, 8)
+            setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(12, 18, 12, 8)
         })
         PROVIDERS.forEach { provider ->
             val row = layoutInflater.inflate(R.layout.item_account, container, false)
@@ -83,6 +99,19 @@ class AccountsActivity : AppCompatActivity() {
             row.setOnClickListener { openProvider(provider, false) }
             container.addView(row)
         }
+    }
+
+    private fun confirmReturnedFromAuth(provider: AccountProvider) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Trust ${provider.label} on this device?")
+            .setMessage("Phormi cannot safely infer whether an arbitrary provider login succeeded. Confirm only if you completed the provider sign-in successfully.")
+            .setNegativeButton("Not yet", null)
+            .setPositiveButton("Trust this device") { _, _ ->
+                AccountSessionStore.touch(this, provider.id, provider.label)
+                Toast.makeText(this, "${provider.label} marked as trusted on this device", Toast.LENGTH_SHORT).show()
+                render()
+            }
+            .show()
     }
 
     private fun clearProviderSession(provider: AccountProvider) {
@@ -110,14 +139,21 @@ class AccountsActivity : AppCompatActivity() {
     }
 
     private fun openProvider(provider: AccountProvider, switch: Boolean) {
-        AccountSessionStore.touch(this, provider.id, provider.label)
+        pendingProvider = provider
+        authTabWasPaused = false
         val url = if (switch) provider.switchUrl else provider.loginUrl
         try {
-            CustomTabsIntent.Builder().setShowTitle(true).setUrlBarHidingEnabled(false).build().launchUrl(this, Uri.parse(url))
+            CustomTabsIntent.Builder()
+                .setShowTitle(true)
+                .setUrlBarHidingEnabled(false)
+                .build()
+                .launchUrl(this, Uri.parse(url))
         } catch (_: Exception) {
             runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                .onFailure { Toast.makeText(this, "No browser can open ${provider.label} sign-in", Toast.LENGTH_LONG).show() }
+                .onFailure {
+                    pendingProvider = null
+                    Toast.makeText(this, "No browser can open ${provider.label} sign-in", Toast.LENGTH_LONG).show()
+                }
         }
-        Toast.makeText(this, "${provider.label} sign-in opened separately from your Phormi tabs", Toast.LENGTH_SHORT).show()
     }
 }
