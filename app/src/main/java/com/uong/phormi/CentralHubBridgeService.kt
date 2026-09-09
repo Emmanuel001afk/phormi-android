@@ -8,11 +8,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.IBinder
+import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -28,11 +28,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.lang.ref.WeakReference
 
-/**
- * Local-only communication tunnel for the Central Hub website/AI.
- * Binds only to 127.0.0.1 and requires the shared bearer token.
- * The protocol is versioned and command names are extensible.
- */
+/** Local-only Central Hub communication tunnel. */
 class CentralHubBridgeService : Service() {
     companion object {
         const val PORT = 17841
@@ -41,20 +37,19 @@ class CentralHubBridgeService : Service() {
         private const val NOTIFICATION_ID = 17841
         private const val PREFS = "phormi_central_hub_bridge"
         private const val KEY_TOKEN = "bridge_token"
-        private const val DEFAULT_TOKEN = "l-amGaiCLGqHg8DK6EIcGlJte07Sa0whfBVSEQ3IXUw"
-
         @Volatile private var activityRef: WeakReference<MainActivity> = WeakReference(null)
 
         fun bindActivity(activity: MainActivity) { activityRef = WeakReference(activity) }
-        fun unbindActivity(activity: MainActivity) {
-            if (activityRef.get() === activity) activityRef.clear()
-        }
+        fun unbindActivity(activity: MainActivity) { if (activityRef.get() === activity) activityRef.clear() }
 
         fun token(context: Context): String {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            return prefs.getString(KEY_TOKEN, null) ?: DEFAULT_TOKEN.also {
-                prefs.edit().putString(KEY_TOKEN, it).apply()
-            }
+            prefs.getString(KEY_TOKEN, null)?.takeIf { it.length >= 32 }?.let { return it }
+            val bytes = ByteArray(32)
+            SecureRandom().nextBytes(bytes)
+            val generated = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+            prefs.edit().putString(KEY_TOKEN, generated).apply()
+            return generated
         }
     }
 
@@ -93,9 +88,7 @@ class CentralHubBridgeService : Service() {
                         if (running.get()) continue else break
                     }
                 }
-            } catch (_: Exception) {
-                running.set(false)
-            }
+            } catch (_: Exception) { running.set(false) }
         }.apply { name = "Phormi-CentralHub-Bridge"; isDaemon = true; start() }
     }
 
@@ -116,37 +109,31 @@ class CentralHubBridgeService : Service() {
             val method = parts[0].uppercase()
             val target = parts[1]
             if (method == "OPTIONS") { writeResponse(s, 204, ""); return }
-
-            val auth = headers["authorization"].orEmpty()
-            if (auth != "Bearer ${token(this)}") {
+            if (headers["authorization"].orEmpty() != "Bearer ${token(this)}") {
                 writeResponse(s, 401, JSONObject().put("ok", false).put("error", "unauthorized").toString())
                 return
             }
 
-            val bodyLength = headers["content-length"]?.toIntOrNull() ?: 0
+            val bodyLength = headers["content-length"]?.toIntOrNull()?.coerceAtMost(2_000_000) ?: 0
             val body = CharArray(bodyLength)
-            if (bodyLength > 0) reader.read(body)
+            var offset = 0
+            while (offset < bodyLength) {
+                val count = reader.read(body, offset, bodyLength - offset)
+                if (count < 0) break
+                offset += count
+            }
+            val bodyText = String(body, 0, offset)
 
             when {
-                method == "GET" && target.substringBefore('?') == "/v1/ping" -> {
-                    writeResponse(s, 200, JSONObject()
-                        .put("ok", true)
-                        .put("protocol", PROTOCOL)
-                        .put("service", "Phormi")
-                        .put("port", PORT)
-                        .toString())
-                }
-                method == "GET" && target.substringBefore('?') == "/v1/state" -> {
-                    writeResponse(s, 200, dispatchToActivity(JSONObject().put("command", "state")))
-                }
-                method == "GET" && (target.substringBefore('?') == "/v1/screenshot" || target.substringBefore('?') == "/v1/frame") -> {
-                    writeResponse(s, 200, dispatchToActivity(JSONObject().put("command", "screenshot")))
-                }
+                method == "GET" && target.substringBefore('?') == "/v1/ping" -> writeResponse(s, 200, JSONObject()
+                    .put("ok", true).put("protocol", PROTOCOL).put("service", "Phormi").put("port", PORT).toString())
+                method == "GET" && target.substringBefore('?') == "/v1/state" -> writeResponse(s, 200, dispatchToActivity(JSONObject().put("command", "state")))
+                method == "GET" && (target.substringBefore('?') == "/v1/screenshot" || target.substringBefore('?') == "/v1/frame") -> writeResponse(s, 200, dispatchToActivity(JSONObject().put("command", "screenshot")))
                 method == "POST" && target.substringBefore('?') == "/v1/command" -> {
-                    val command = runCatching { JSONObject(String(body)) }.getOrElse {
-                        JSONObject().put("ok", false).put("error", "invalid_json").toString()
+                    val command = runCatching { JSONObject(bodyText) }.getOrElse {
+                        JSONObject().put("ok", false).put("error", "invalid_json")
                     }
-                    if (command is JSONObject) writeResponse(s, 200, dispatchToActivity(command))
+                    writeResponse(s, 200, dispatchToActivity(command))
                 }
                 else -> writeResponse(s, 404, JSONObject().put("ok", false).put("error", "not_found").toString())
             }
@@ -154,8 +141,7 @@ class CentralHubBridgeService : Service() {
     }
 
     private fun dispatchToActivity(command: JSONObject): String {
-        val activity = activityRef.get()
-            ?: return JSONObject().put("ok", false).put("error", "browser_not_active").toString()
+        val activity = activityRef.get() ?: return JSONObject().put("ok", false).put("error", "browser_not_active").toString()
         val latch = CountDownLatch(1)
         var result = JSONObject().put("ok", false).put("error", "command_timeout")
         Handler(Looper.getMainLooper()).post {
@@ -182,8 +168,9 @@ class CentralHubBridgeService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Central Hub bridge", NotificationManager.IMPORTANCE_LOW))
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Central Hub bridge", NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
