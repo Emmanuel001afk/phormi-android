@@ -1,12 +1,13 @@
 package com.uong.phormi
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** System-clipboard history for the Phormi IME. Each clipboard entry remains one item, including newlines. */
+/** System-clipboard history for the Phormi IME. Sensitive clipboard entries are never persisted. */
 object PhormiKeyboardClipboardStore {
     data class Item(val text: String, val pinned: Boolean, val createdAt: Long)
 
@@ -52,9 +53,18 @@ object PhormiKeyboardClipboardStore {
     fun capturePrimaryClipboard(context: Context) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val clip = cm.primaryClip ?: return
-        if (clip.itemCount == 0) return
+        if (clip.itemCount == 0 || isSensitive(clip.description)) return
         val item = clip.getItemAt(0)
         item.coerceToText(context)?.let { record(context, it) }
+    }
+
+    private fun isSensitive(description: ClipDescription?): Boolean {
+        if (description == null) return false
+        if (android.os.Build.VERSION.SDK_INT >= 24) {
+            val extras = description.extras
+            if (extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false) == true) return true
+        }
+        return false
     }
 
     private fun save(context: Context, source: List<Item>) {
