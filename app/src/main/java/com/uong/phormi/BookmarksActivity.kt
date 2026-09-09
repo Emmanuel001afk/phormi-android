@@ -1,7 +1,6 @@
 package com.uong.phormi
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -12,10 +11,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import org.json.JSONArray
-import org.json.JSONObject
 
-/** Local bookmarks stored only on this phone. */
+/** Local Favorites/Bookmarks screen backed by the canonical PhormiFavorites store. */
 class BookmarksActivity : AppCompatActivity() {
 
     data class Bookmark(val title: String, val url: String, val addedAt: Long)
@@ -26,65 +23,36 @@ class BookmarksActivity : AppCompatActivity() {
     private lateinit var search: EditText
 
     companion object {
-        private const val PREFS = "phormi_bookmarks"
-        private const val KEY = "items"
+        /**
+         * Returns the canonical favorites. Quick Access gets a filtered view so a
+         * Quick Access hide never makes the Favorite disappear from the Favorites UI.
+         */
+        fun getAll(context: android.content.Context): List<Bookmark> {
+            val all = PhormiFavorites.getAll(context).map { Bookmark(it.title, it.url, it.addedAt) }
+            return if (calledFromQuickAccessRenderer()) {
+                all.filterNot { PhormiQuickAccessState.isFavoriteHidden(context, it.url) }
+            } else all
+        }
 
         fun add(context: android.content.Context, title: String, url: String) {
-            if (url.isBlank() || url == "about:blank") return
-            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-            val arr = runCatching {
-                JSONArray(prefs.getString(KEY, "[]"))
-            }.getOrElse { JSONArray() }
-
-            for (i in 0 until arr.length()) {
-                if (arr.optJSONObject(i)?.optString("url") == url) return
-            }
-
-            arr.put(
-                JSONObject()
-                    .put("title", title.ifBlank { url })
-                    .put("url", url)
-                    .put("addedAt", System.currentTimeMillis())
-            )
-            prefs.edit().putString(KEY, arr.toString()).apply()
+            PhormiFavorites.add(context, title, url)
         }
 
         /**
-         * Returns bookmarks newest-first for quick-access surfaces.
-         * This is intentionally read-only and does not alter the stored list.
+         * Existing MainActivity uses this for both real unfavorite and Quick Access
+         * removal. Distinguish the Quick Access action at the boundary so the latter
+         * only hides the tile; the actual Favorite remains intact.
          */
-        fun getAll(context: android.content.Context): List<Bookmark> {
-            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-            val arr = runCatching {
-                JSONArray(prefs.getString(KEY, "[]"))
-            }.getOrElse { JSONArray() }
-
-            val out = mutableListOf<Bookmark>()
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val url = o.optString("url", "").trim()
-                if (url.isBlank()) continue
-                out += Bookmark(
-                    title = o.optString("title", url).ifBlank { url },
-                    url = url,
-                    addedAt = o.optLong("addedAt", 0L)
-                )
-            }
-            return out.sortedByDescending { it.addedAt }
-        }
-
         fun remove(context: android.content.Context, url: String) {
-            if (url.isBlank()) return
-            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
-            val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
-            val kept = JSONArray()
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                if (o.optString("url") != url) kept.put(o)
+            if (calledFromQuickAccessRenderer()) {
+                PhormiQuickAccessState.hideFavorite(context, url)
+            } else {
+                PhormiFavorites.remove(context, url)
             }
-            prefs.edit().putString(KEY, kept.toString()).apply()
         }
 
+        private fun calledFromQuickAccessRenderer(): Boolean =
+            Throwable().stackTrace.any { it.className == MainActivity::class.java.name && it.methodName == "confirmQuickSiteRemoval" }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,16 +69,8 @@ class BookmarksActivity : AppCompatActivity() {
             override fun getItem(position: Int) = filtered()[position]
             override fun getItemId(position: Int) = position.toLong()
 
-            override fun getView(
-                position: Int,
-                convertView: View?,
-                parent: ViewGroup?
-            ): View {
-                val v = convertView ?: layoutInflater.inflate(
-                    R.layout.item_bookmark,
-                    parent,
-                    false
-                )
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val v = convertView ?: layoutInflater.inflate(R.layout.item_bookmark, parent, false)
                 val b = filtered()[position]
                 v.findViewById<TextView>(R.id.bookmark_title).text = b.title
                 v.findViewById<TextView>(R.id.bookmark_url).text = b.url
@@ -118,51 +78,29 @@ class BookmarksActivity : AppCompatActivity() {
                     setResult(RESULT_OK, Intent().putExtra("open_url", b.url))
                     finish()
                 }
-                v.setOnLongClickListener {
-                    confirmDelete(b)
-                    true
-                }
+                v.setOnLongClickListener { confirmDelete(b); true }
                 return v
             }
         }
 
         findViewById<ListView>(R.id.bookmarks_list).adapter = adapter
-
         search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(
-                s: CharSequence?,
-                start: Int,
-                count: Int,
-                after: Int
-            ) = Unit
-
-            override fun onTextChanged(
-                s: CharSequence?,
-                start: Int,
-                before: Int,
-                count: Int
-            ) {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 adapter.notifyDataSetChanged()
                 empty.visibility = if (filtered().isEmpty()) View.VISIBLE else View.GONE
             }
-
             override fun afterTextChanged(s: android.text.Editable?) = Unit
         })
-
         load()
     }
 
-    override fun onResume() {
-        super.onResume()
-        load()
-    }
+    override fun onResume() { super.onResume(); if (::empty.isInitialized) load() }
 
     private fun filtered(): List<Bookmark> {
         val q = search.text?.toString()?.trim()?.lowercase().orEmpty()
         if (q.isEmpty()) return items
-        return items.filter {
-            it.title.lowercase().contains(q) || it.url.lowercase().contains(q)
-        }
+        return items.filter { it.title.lowercase().contains(q) || it.url.lowercase().contains(q) }
     }
 
     private fun load() {
@@ -172,22 +110,6 @@ class BookmarksActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
     }
 
-    private fun persist() {
-        val arr = JSONArray()
-        items.asReversed().forEach { b ->
-            arr.put(
-                JSONObject()
-                    .put("title", b.title)
-                    .put("url", b.url)
-                    .put("addedAt", b.addedAt)
-            )
-        }
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-            .edit()
-            .putString(KEY, arr.toString())
-            .apply()
-    }
-
     private fun promptAdd() {
         val input = EditText(this).apply {
             hint = "https://example.com"
@@ -195,27 +117,16 @@ class BookmarksActivity : AppCompatActivity() {
             setHintTextColor(0xFF64748B.toInt())
             setSingleLine()
         }
-
         AlertDialog.Builder(this)
-            .setTitle("Add bookmark")
+            .setTitle("Add favorite")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
-                val url = input.text.toString().trim()
-                if (url.isBlank()) return@setPositiveButton
-                val normalized =
-                    if (url.startsWith("http")) url else "https://$url"
-                items.add(
-                    0,
-                    Bookmark(
-                        title = normalized,
-                        url = normalized,
-                        addedAt = System.currentTimeMillis()
-                    )
-                )
-                persist()
-                adapter.notifyDataSetChanged()
-                empty.visibility = View.GONE
-                Toast.makeText(this, "Bookmark saved", Toast.LENGTH_SHORT).show()
+                val raw = input.text.toString().trim()
+                if (raw.isBlank()) return@setPositiveButton
+                val normalized = if (raw.startsWith("http")) raw else "https://$raw"
+                PhormiFavorites.add(this, normalized, normalized)
+                load()
+                Toast.makeText(this, "Favorite saved", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -223,15 +134,11 @@ class BookmarksActivity : AppCompatActivity() {
 
     private fun confirmDelete(b: Bookmark) {
         AlertDialog.Builder(this)
-            .setTitle("Remove bookmark?")
+            .setTitle("Remove favorite?")
             .setMessage(b.url)
             .setPositiveButton("Remove") { _, _ ->
-                items.removeAll {
-                    it.url == b.url && it.addedAt == b.addedAt
-                }
-                persist()
-                adapter.notifyDataSetChanged()
-                empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                PhormiFavorites.remove(this, b.url)
+                load()
             }
             .setNegativeButton("Cancel", null)
             .show()
