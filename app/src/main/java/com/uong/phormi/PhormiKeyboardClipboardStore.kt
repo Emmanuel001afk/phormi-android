@@ -1,6 +1,5 @@
 package com.uong.phormi
 
-import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
@@ -23,7 +22,7 @@ object PhormiKeyboardClipboardStore {
                 for (i in 0 until a.length()) {
                     val o = a.optJSONObject(i) ?: continue
                     val text = o.optString("text", "")
-                    if (text.isNotEmpty()) add(Item(text, o.optBoolean("pinned", false), o.optLong("createdAt", 0L)))
+                    if (text.isNotEmpty() && !looksSensitive(text)) add(Item(text, o.optBoolean("pinned", false), o.optLong("createdAt", 0L)))
                 }
             }
         }.getOrDefault(emptyList())
@@ -31,7 +30,7 @@ object PhormiKeyboardClipboardStore {
 
     @Synchronized fun record(context: Context, value: CharSequence?) {
         val text = value?.toString().orEmpty()
-        if (text.isEmpty()) return
+        if (text.isEmpty() || looksSensitive(text)) return
         val existing = list(context)
         val old = existing.firstOrNull { it.text == text }
         val next = mutableListOf(Item(text, old?.pinned == true, System.currentTimeMillis()))
@@ -40,6 +39,7 @@ object PhormiKeyboardClipboardStore {
     }
 
     @Synchronized fun togglePinned(context: Context, text: String) {
+        if (looksSensitive(text)) return
         val next = list(context).map { if (it.text == text) it.copy(pinned = !it.pinned) else it }
         save(context, next)
     }
@@ -54,22 +54,32 @@ object PhormiKeyboardClipboardStore {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0 || isSensitive(clip.description)) return
-        val item = clip.getItemAt(0)
-        item.coerceToText(context)?.let { record(context, it) }
+        clip.getItemAt(0).coerceToText(context)?.let { record(context, it) }
     }
 
     private fun isSensitive(description: ClipDescription?): Boolean {
         if (description == null) return false
         if (android.os.Build.VERSION.SDK_INT >= 24) {
-            val extras = description.extras
-            if (extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false) == true) return true
+            if (description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false) == true) return true
         }
         return false
     }
 
+    /** Conservative local filters for common secrets when the source app omitted Android's sensitive flag. */
+    private fun looksSensitive(text: String): Boolean {
+        val compact = text.replace(Regex("\\s+"), "")
+        if (compact.length in 12..19 && compact.all(Char::isDigit)) return true
+        if (text.trim().matches(Regex("\\d{4,8}"))) return true
+        if (text.contains("BEGIN PRIVATE KEY") || text.contains("BEGIN RSA PRIVATE KEY") || text.contains("BEGIN OPENSSH PRIVATE KEY")) return true
+        if (Regex("(?i)\\b(bearer|authorization)\\s+[A-Za-z0-9._~+/=-]{12,}").containsMatchIn(text)) return true
+        if (Regex("(?i)\\b(api[_-]?key|secret|access[_-]?token|refresh[_-]?token)\\s*[:=]\\s*\\S+").containsMatchIn(text)) return true
+        return false
+    }
+
     private fun save(context: Context, source: List<Item>) {
-        val pinned = source.filter { it.pinned }
-        val unpinned = source.filterNot { it.pinned }.take(MAX_ITEMS - pinned.size.coerceAtMost(MAX_ITEMS))
+        val safe = source.filterNot { looksSensitive(it.text) }
+        val pinned = safe.filter { it.pinned }
+        val unpinned = safe.filterNot { it.pinned }.take(MAX_ITEMS - pinned.size.coerceAtMost(MAX_ITEMS))
         val a = JSONArray()
         (pinned + unpinned).take(MAX_ITEMS).forEach { a.put(JSONObject().put("text", it.text).put("pinned", it.pinned).put("createdAt", it.createdAt)) }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_ITEMS, a.toString()).apply()
