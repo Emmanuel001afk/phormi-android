@@ -1,14 +1,19 @@
 package com.uong.phormi
 
+import android.content.Context
 import android.webkit.WebView
 import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
-/** Owns named browser environments; groups never become account/session containers. */
+/** Owns named browser environments; each is an isolated WebView browsing session. */
 object PhormiEnvironmentManager {
     const val DEFAULT_ENVIRONMENT = "Default"
     const val GHOST_ENVIRONMENT = "Ghost"
+    private const val META_PREFS = "phormi_environment_meta"
+    private const val LAST_USED = "last_used"
+    private const val CLEANUP_CHECKED = "cleanup_checked"
+    private const val EXPIRY_DAYS = 30L
 
     fun isSupported(): Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
 
@@ -32,6 +37,7 @@ object PhormiEnvironmentManager {
         if (!isSupported()) return false
         return runCatching {
             ProfileStore.getInstance().getOrCreateProfile(normalized)
+            touch(null, normalized)
             true
         }.getOrDefault(false)
     }
@@ -42,8 +48,44 @@ object PhormiEnvironmentManager {
         if (!ensure(normalized)) return false
         return runCatching {
             WebViewCompat.setProfile(webView, normalized)
+            touch(null, normalized)
             true
         }.getOrDefault(false)
+    }
+
+    fun touch(context: Context?, name: String) {
+        val normalized = normalize(name)
+        if (normalized == DEFAULT_ENVIRONMENT || normalized == GHOST_ENVIRONMENT) return
+        val prefs = context?.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE)
+            ?: return
+        val raw = prefs.getString(LAST_USED, "{}") ?: "{}"
+        val obj = runCatching { org.json.JSONObject(raw) }.getOrElse { org.json.JSONObject() }
+        obj.put(normalized, System.currentTimeMillis())
+        prefs.edit().putString(LAST_USED, obj.toString()).apply()
+    }
+
+    /**
+     * Deletes named environments that have not been used for 30 days. Active profiles
+     * are protected because WebView requires living instances to be gone before deletion.
+     */
+    fun cleanupExpired(context: Context, activeProfiles: Set<String> = emptySet()) {
+        if (!isSupported()) return
+        val prefs = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val lastCheck = prefs.getLong(CLEANUP_CHECKED, 0L)
+        if (now - lastCheck < 60_000L) return
+        prefs.edit().putLong(CLEANUP_CHECKED, now).apply()
+
+        val cutoff = now - EXPIRY_DAYS * 24L * 60L * 60L * 1000L
+        val lastUsed = runCatching { org.json.JSONObject(prefs.getString(LAST_USED, "{}") ?: "{}") }.getOrElse { org.json.JSONObject() }
+        val protectedNames = activeProfiles.map(::normalize).toSet() + DEFAULT_ENVIRONMENT + GHOST_ENVIRONMENT
+        val expired = list().filter { name ->
+            !protectedNames.contains(name) && lastUsed.optLong(name, 0L) in 1 until cutoff
+        }
+        expired.forEach { name ->
+            if (delete(name)) lastUsed.remove(name)
+        }
+        prefs.edit().putString(LAST_USED, lastUsed.toString()).apply()
     }
 
     fun delete(name: String): Boolean {
