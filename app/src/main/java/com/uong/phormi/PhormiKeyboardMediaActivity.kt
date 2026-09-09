@@ -28,7 +28,7 @@ class PhormiKeyboardMediaActivity : Activity() {
                         val pack = packs[which - 2]
                         val files = PhormiKeyboardStickerPackStore.files(this, pack)
                         if (files.isEmpty()) Toast.makeText(this, "This pack is empty", Toast.LENGTH_SHORT).show()
-                        else PhormiKeyboardService.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, files.first()))
+                        else PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, files.first()))
                         finish()
                     }
                 }
@@ -54,9 +54,9 @@ class PhormiKeyboardMediaActivity : Activity() {
             if (mode == "sticker") {
                 PhormiKeyboardStickerStore.import(this, uri, "imported")?.let { file ->
                     PhormiKeyboardStickerPackStore.add(this, "Imported", file)
-                    PhormiKeyboardService.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                    PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
                 }
-            } else PhormiKeyboardService.commitPickedContent(this, uri)
+            } else PhormiKeyboardServiceV2.commitPickedContent(this, uri)
         }
         finish()
     }
