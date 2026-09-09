@@ -48,6 +48,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_ghost) { finishWith(ACTION_GHOST) }
         wire(R.id.menu_tabs) { startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS) }
         wire(R.id.menu_groups) { startActivity(Intent(this, TabGroupsActivity::class.java)) }
+        wire(R.id.menu_tab_environment) { startActivity(Intent(this, TabEnvironmentActivity::class.java)) }
         wire(R.id.menu_downloads) { startActivity(Intent(this, DownloadsActivity::class.java)) }
         wire(R.id.menu_bookmarks) { startActivityForResult(Intent(this, BookmarksActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
