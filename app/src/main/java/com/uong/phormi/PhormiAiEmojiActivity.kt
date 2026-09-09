@@ -2,7 +2,6 @@ package com.uong.phormi
 
 import android.app.Activity
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.GridLayout
@@ -67,7 +66,7 @@ class PhormiAiEmojiActivity : Activity() {
     }
 
     private fun insert(file: java.io.File) {
-        runCatching { PhormiKeyboardService.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file)) }
+        runCatching { PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file)) }
             .onFailure { Toast.makeText(this, "This editor does not accept image content", Toast.LENGTH_SHORT).show() }
     }
 
