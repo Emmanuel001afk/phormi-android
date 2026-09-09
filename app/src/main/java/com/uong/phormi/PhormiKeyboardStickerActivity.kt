@@ -44,7 +44,7 @@ class PhormiKeyboardStickerActivity : Activity() {
     private fun importShared(uri: Uri) {
         val file = PhormiKeyboardStickerStore.import(this, uri, "shared")
         if (file != null) {
-            PhormiKeyboardService.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+            PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
             Toast.makeText(this, "Sticker saved to Phormi Keyboard", Toast.LENGTH_SHORT).show()
         } else Toast.makeText(this, "Could not import that image", Toast.LENGTH_SHORT).show()
         finish()
@@ -55,7 +55,7 @@ class PhormiKeyboardStickerActivity : Activity() {
         if (requestCode == 4402 && resultCode == RESULT_OK) data?.data?.let { uri ->
             val file = PhormiKeyboardStickerStore.import(this, uri, "imported")
             if (file != null) {
-                PhormiKeyboardService.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
                 Toast.makeText(this, "Sticker saved to Phormi Keyboard", Toast.LENGTH_SHORT).show()
             }
         }
@@ -67,7 +67,7 @@ class PhormiKeyboardStickerActivity : Activity() {
         runCatching {
             val file = PhormiAiEmojiEngine.generate(this, prompt, (System.currentTimeMillis() % 4).toInt())
             PhormiKeyboardStickerPackStore.add(this, "My AI Stickers", file)
-            PhormiKeyboardService.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+            PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
             status.text = "Saved to My AI Stickers."
             Toast.makeText(this, "Local AI sticker created", Toast.LENGTH_SHORT).show()
             finish()
