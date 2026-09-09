@@ -47,16 +47,16 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_new_tab) { finishWith(ACTION_NEW_TAB) }
         wire(R.id.menu_ghost) { finishWith(ACTION_GHOST) }
         wire(R.id.menu_tabs) { startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS) }
-        wire(R.id.menu_groups) { finishWith(ACTION_TAB_GROUPS) }
+        wire(R.id.menu_groups) { startActivity(Intent(this, TabGroupsActivity::class.java)) }
         wire(R.id.menu_downloads) { startActivity(Intent(this, DownloadsActivity::class.java)) }
         wire(R.id.menu_bookmarks) { startActivityForResult(Intent(this, BookmarksActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
         wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
-        wire(R.id.menu_keyboard) { finishWith(ACTION_KEYBOARD) }
+        wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }
         wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
-        wire(R.id.menu_security) { finishWith(ACTION_SECURITY) }
+        wire(R.id.menu_security) { startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }
         wire(R.id.menu_site_lock) { finishWith(ACTION_SITE_LOCK) }
         wire(R.id.menu_notifications) {
             val i = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
@@ -68,7 +68,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_object_anchors) { finishWith(ACTION_OBJECT_ANCHORS) }
         wire(R.id.menu_same_page_split) { finishWith(ACTION_SAME_PAGE_SPLIT) }
         wire(R.id.menu_desktop_mode) { finishWith(ACTION_DESKTOP_MODE) }
-        wire(R.id.menu_favorite) { finishWith(ACTION_FAVORITE) }
+        wire(R.id.menu_favorite) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
         wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
         wire(R.id.menu_pull_to_refresh) { finishWith(ACTION_PULL_TO_REFRESH) }
