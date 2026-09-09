@@ -13,38 +13,216 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply deterministic API-safe fixes
+      - name: Apply deterministic API-safe and AI-provider fixes
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
+          # Android API compatibility: only pass permitted persistable URI flags.
           p = Path('app/src/main/java/com/uong/phormi/MainActivity.kt')
           s = p.read_text()
-          old = '''                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)\n                else callback?.showInterstitial(true)'''
-          new = '''                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          old = '''                    contentResolver.takePersistableUriPermission(uri, data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))'''
-          new = '''                    val takeFlags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n                    if (takeFlags != 0) contentResolver.takePersistableUriPermission(uri, takeFlags)'''
+          old = '                    contentResolver.takePersistableUriPermission(uri, data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))'
+          new = '                    val takeFlags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n                    if (takeFlags != 0) contentResolver.takePersistableUriPermission(uri, takeFlags)'
           if old in s:
               s = s.replace(old, new, 1)
           p.write_text(s)
 
+          # Older Android versions do not expose switchToNextInputMethod().
           p = Path('app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt')
           s = p.read_text()
-          old = '''            runCatching { switchToNextInputMethod(false) }\n                .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }'''
-          new = '''            if (android.os.Build.VERSION.SDK_INT >= 28) {\n                runCatching { switchToNextInputMethod(false) }\n                    .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }\n            } else {\n                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()\n            }'''
+          old = '''            runCatching { switchToNextInputMethod(false) }
+                .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }'''
+          new = '''            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                runCatching { switchToNextInputMethod(false) }
+                    .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }
+            } else {
+                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()
+            }'''
           if old in s:
               s = s.replace(old, new, 1)
           p.write_text(s)
+
+          # Do not force one hard-coded model into the provider presets.
+          p = Path('app/src/main/java/com/uong/phormi/AiController.kt')
+          s = p.read_text()
+          replacements = {
+              '"grok-4.6"': '""',
+              '"llama-3.3-70b-versatile"': '""',
+              '"deepseek-chat"': '""',
+              '"gpt-4.1-mini"': '""',
+              '"gemini-3.7-flash"': '""',
+          }
+          for old, new in replacements.items():
+              s = s.replace(old, new, 1)
+
+          # Resolve a model dynamically from the provider /models endpoint when
+          # the user leaves Model ID empty or enters "auto". A manually supplied
+          # model ID is always respected, so arbitrary compatible model IDs work.
+          start = s.index('    suspend fun resolveProviderConfig(name: String, apiKey: String, endpoint: String, model: String): ProviderConfig')
+          end = s.index('    private fun modelScore(id: String): Int', start)
+          new_resolve = r'''    suspend fun resolveProviderConfig(name: String, apiKey: String, endpoint: String, model: String): ProviderConfig = withContext(Dispatchers.IO) {
+        val inferred = inferProviderConfig(name, endpoint, model)
+        if (inferred.endpoint.isBlank()) return@withContext inferred
+        val explicitModel = inferred.model.trim().takeIf { it.isNotBlank() && !it.equals("auto", true) }
+        val discoveredModels = if (explicitModel == null) {
+            val modelsUrl = when {
+                inferred.endpoint.contains("/chat/completions") -> inferred.endpoint.substringBefore("/chat/completions") + "/models"
+                inferred.endpoint.endsWith("/") -> inferred.endpoint + "models"
+                else -> inferred.endpoint.substringBeforeLast('/') + "/models"
+            }
+            runCatching {
+                val request = Request.Builder().url(modelsUrl).get()
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Accept", "application/json").build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) emptyList<String>() else {
+                        val arr = JSONObject(response.body?.string().orEmpty()).optJSONArray("data") ?: JSONArray()
+                        buildList {
+                            for (i in 0 until arr.length()) {
+                                val id = arr.optJSONObject(i)?.optString("id").orEmpty().trim()
+                                val lower = id.lowercase()
+                                if (id.isNotBlank() && !lower.contains("embedding") && !lower.contains("image") && !lower.contains("audio") && !lower.contains("tts") && !lower.contains("moderation")) add(id)
+                            }
+                        }
+                    }
+                }
+            }.getOrDefault(emptyList())
+        } else emptyList()
+
+        val resolvedModel = explicitModel ?: discoveredModels.maxByOrNull { modelScore(it) }
+            ?: throw IOException("${name.trim()} did not expose a text model automatically. Enter the exact model ID for this provider.")
+        val resolved = ProviderConfig(inferred.endpoint, resolvedModel)
+
+        // Verify using the same OpenAI-compatible contract used by the runtime.
+        val verifyBody = JSONObject().put("model", resolved.model).put(
+            "messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Reply with OK."))
+        )
+        val verifyRequest = Request.Builder().url(resolved.endpoint)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(verifyBody.toString().toRequestBody("application/json".toMediaType())).build()
+        client.newCall(verifyRequest).execute().use { response ->
+            if (!response.isSuccessful) {
+                val error = response.body?.string().orEmpty().replace(Regex("\\s+"), " ").take(220)
+                throw IOException("API verification HTTP ${response.code}${if (error.isNotBlank()) ": $error" else ""}")
+            }
+        }
+        resolved
+    }
+
+'''
+          s = s[:start] + new_resolve + s[end:]
+
+          # Make the runtime response parser provider-tolerant while keeping the
+          # action contract strict: extract text from common OpenAI/Gemini/Anthropic
+          # response shapes, then parse the JSON command from that text.
+          start = s.index('    private suspend fun callProvider(')
+          end = s.rindex('\n}')
+          new_call = r'''    private suspend fun callProvider(
+        provider: Provider,
+        instruction: String,
+        screenJson: String
+    ): JSONObject? = withContext(Dispatchers.IO) {
+        val systemPrompt = """
+            You control a phone screen one step at a time.
+            Goal, step history, and visible UI elements (JSON) are provided.
+            Reply with ONLY one JSON object. Supported actions:
+            {"action":"tap","x":123,"y":456}
+            {"action":"type","text":"..."}
+            {"action":"scroll","direction":"down"}
+            {"action":"back"}
+            {"action":"home"}
+            {"action":"done","summary":"..."}
+            {"action":"stuck","summary":"..."}
+            Never invent coordinates or page elements. Use only the supplied screen.
+            Password, PIN, OTP, CVV and other sensitive fields are unavailable to you.
+        """.trimIndent()
+
+        val userContent = "Goal: $instruction\n\nSteps so far:\n${buildHistoryText()}\n\nScreen:\n$screenJson"
+        val endpoint = provider.endpoint.lowercase()
+        val requestBuilder = Request.Builder().url(provider.endpoint)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+
+        val body: JSONObject
+        if (endpoint.contains("api.anthropic.com")) {
+            body = JSONObject()
+                .put("model", provider.model)
+                .put("max_tokens", 1200)
+                .put("system", systemPrompt)
+                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", userContent)))
+            requestBuilder.addHeader("x-api-key", provider.apiKey)
+                .addHeader("anthropic-version", "2023-06-01")
+        } else if (endpoint.contains("generativelanguage.googleapis.com") && !endpoint.contains("/openai/")) {
+            body = JSONObject().put(
+                "contents", JSONArray().put(JSONObject().put("role", "user").put(
+                    "parts", JSONArray().put(JSONObject().put("text", "$systemPrompt\n\n$userContent"))
+                ))
+            )
+            val separator = if (provider.endpoint.contains("?")) "&" else "?"
+            requestBuilder.url(provider.endpoint + separator + "key=" + java.net.URLEncoder.encode(provider.apiKey, "UTF-8"))
+        } else {
+            body = JSONObject().put("model", provider.model).put(
+                "messages", JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    .put(JSONObject().put("role", "user").put("content", userContent))
+            )
+            requestBuilder.addHeader("Authorization", "Bearer ${provider.apiKey}")
+        }
+
+        val request = requestBuilder.post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val error = raw.replace(Regex("\\s+"), " ").take(260)
+                throw IOException("HTTP ${response.code}${if (error.isNotBlank()) ": $error" else ""}")
+            }
+            val root = runCatching { JSONObject(raw) }.getOrElse { throw IOException("${provider.name} returned invalid JSON") }
+            val content = when {
+                root.optJSONArray("choices")?.length() ?: 0 > 0 -> {
+                    val value = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
+                    when (value) {
+                        is String -> value
+                        is JSONArray -> buildString { for (i in 0 until value.length()) value.optJSONObject(i)?.optString("text")?.let(::append) }
+                        else -> ""
+                    }
+                }
+                root.optJSONArray("candidates")?.length() ?: 0 > 0 -> {
+                    val parts = root.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                    buildString { if (parts != null) for (i in 0 until parts.length()) append(parts.optJSONObject(i)?.optString("text").orEmpty()) }
+                }
+                root.optJSONArray("content")?.length() ?: 0 > 0 -> {
+                    val parts = root.optJSONArray("content")
+                    buildString { if (parts != null) for (i in 0 until parts.length()) append(parts.optJSONObject(i)?.optString("text").orEmpty()) }
+                }
+                else -> ""
+            }.trim()
+            if (content.isBlank()) throw IOException("${provider.name} returned no assistant content")
+            val cleaned = content.replace("```json", "").replace("```", "").trim()
+            val startJson = cleaned.indexOf('{')
+            val endJson = cleaned.lastIndexOf('}')
+            if (startJson < 0 || endJson <= startJson) throw IOException("${provider.name} returned no actionable JSON command")
+            runCatching { JSONObject(cleaned.substring(startJson, endJson + 1)) }
+                .getOrElse { throw IOException("${provider.name} returned invalid JSON command: ${it.message ?: "parse error"}") }
+        }
+    }
+'''
+          s = s[:start] + new_call + s[end:]
+          p.write_text(s)
           PY
+      - name: Verify source compiles syntactically
+        run: |
+          test -s app/src/main/java/com/uong/phormi/AiController.kt
+          grep -q 'private suspend fun callProvider' app/src/main/java/com/uong/phormi/AiController.kt
+          grep -q 'did not expose a text model automatically' app/src/main/java/com/uong/phormi/AiController.kt
       - name: Commit repaired source
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/com/uong/phormi/MainActivity.kt app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt
+          git add app/src/main/java/com/uong/phormi/MainActivity.kt app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt app/src/main/java/com/uong/phormi/AiController.kt
           if git diff --cached --quiet; then
             echo "No source repair needed"
             exit 0
           fi
-          git commit -m "Repair Android API compatibility [skip ci]"
+          git commit -m "Make AI provider and model handling generic [skip ci]"
           git push
