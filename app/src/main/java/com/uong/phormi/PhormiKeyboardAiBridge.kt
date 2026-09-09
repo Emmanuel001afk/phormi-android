@@ -14,7 +14,7 @@ import android.view.inputmethod.CompletionInfo
 import java.lang.ref.WeakReference
 import kotlin.math.sqrt
 
-/** Local keyboard enhancement bridge: semantic emoji suggestions, autocorrect, haptics/sound and glide typing. */
+/** Local keyboard enhancement bridge: predictions, semantic emoji, autocorrect, haptics/sound and glide typing. */
 object PhormiKeyboardAiBridge {
     private const val TAG_GLIDE = 0x50484731
     private const val TAG_FEEDBACK = 0x50484631
@@ -38,32 +38,51 @@ object PhormiKeyboardAiBridge {
         val service = currentService() ?: return
         val info = service.currentInputEditorInfo ?: return
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
-        if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) return
+        if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) return
+
         val text = service.currentInputConnection?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service, text)
         installViewEnhancements(service)
         if (text == lastText) return
         lastText = text
-        val suggestions = if (PhormiKeyboardPreferences.suggestions(service)) PhormiEmojiSuggester.suggest(text) else emptyList()
+
+        val suggestions = if (PhormiKeyboardPreferences.suggestions(service)) {
+            val emoji = PhormiEmojiSuggester.suggest(text)
+            val words = PhormiLocalPredictionEngine.suggest(text)
+            (emoji + words).distinct().take(8)
+        } else emptyList()
         if (suggestions == lastSuggestions) return
         lastSuggestions = suggestions
-        val panelField = findField(service.javaClass, "panel") ?: return
-        panelField.isAccessible = true
-        if (panelField.get(service)?.toString()?.contains("KEYBOARD") != true) return
+
         val completionField = findField(service.javaClass, "completions") ?: return
         completionField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val old = (completionField.get(service) as? List<CompletionInfo>).orEmpty().filterNot { it.id <= -9000 }
-        completionField.set(service, (old + suggestions.mapIndexed { index, emoji -> CompletionInfo(-9000 - index, index, emoji) }).take(8))
+        val old = (completionField.get(service) as? List<CompletionInfo>).orEmpty()
+            .filterNot { it.id <= -9000 }
+        completionField.set(
+            service,
+            (old + suggestions.mapIndexed { index, value -> CompletionInfo(-9000 - index, index, value) }).take(8)
+        )
         rerender(service)
     }
 
     private fun applyAutocorrect(service: PhormiKeyboardService, text: String) {
         if (!PhormiKeyboardPreferences.autocorrect(service) || !text.endsWith(" ")) return
-        val corrections = mapOf("teh" to "the", "adn" to "and", "dont" to "don't", "cant" to "can't", "wont" to "won't", "im" to "I'm", "ive" to "I've", "id" to "I'd", "recieve" to "receive", "becuase" to "because", "seperate" to "separate", "definately" to "definitely", "occured" to "occurred", "alot" to "a lot")
-        corrections.entries.firstOrNull { text.removeSuffix(" ").substringAfterLast(" ").equals(it.key, true) }?.let { (wrong, right) ->
-            service.currentInputConnection?.let { ic -> ic.deleteSurroundingText(wrong.length + 1, 0); ic.commitText("$right ", 1) }
+        val corrections = mapOf(
+            "teh" to "the", "adn" to "and", "dont" to "don't", "cant" to "can't", "wont" to "won't",
+            "im" to "I'm", "ive" to "I've", "id" to "I'd", "recieve" to "receive", "becuase" to "because",
+            "seperate" to "separate", "definately" to "definitely", "occured" to "occurred", "alot" to "a lot"
+        )
+        corrections.entries.firstOrNull {
+            text.removeSuffix(" ").substringAfterLast(" ").equals(it.key, true)
+        }?.let { (wrong, right) ->
+            service.currentInputConnection?.let { ic ->
+                ic.deleteSurroundingText(wrong.length + 1, 0)
+                ic.commitText("$right ", 1)
+            }
         }
     }
 
@@ -92,10 +111,19 @@ object PhormiKeyboardAiBridge {
             button.setOnTouchListener { view, event ->
                 feedback(view, event.actionMasked)
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { state.active = true; state.sequence.clear(); state.sequence.add(button.text.toString().lowercase()); state.last = button; true }
+                    MotionEvent.ACTION_DOWN -> {
+                        state.active = true
+                        state.sequence.clear()
+                        state.sequence.add(button.text.toString().lowercase())
+                        state.last = button
+                        true
+                    }
                     MotionEvent.ACTION_MOVE -> {
                         val hit = nearestLetter(letterButtons, event.rawX, event.rawY)
-                        if (state.active && hit != null && hit !== state.last) { state.sequence.add(hit.text.toString().lowercase()); state.last = hit }
+                        if (state.active && hit != null && hit !== state.last) {
+                            state.sequence.add(hit.text.toString().lowercase())
+                            state.last = hit
+                        }
                         true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -106,7 +134,8 @@ object PhormiKeyboardAiBridge {
                                 service.currentInputConnection?.commitText(output, 1)
                             } else view.performClick()
                         }
-                        state.active = false; true
+                        state.active = false
+                        true
                     }
                     else -> true
                 }
@@ -129,11 +158,15 @@ object PhormiKeyboardAiBridge {
     private class GlideState { var active = false; var last: Button? = null; val sequence = mutableListOf<String>() }
 
     private fun nearestLetter(buttons: List<Button>, x: Float, y: Float): Button? {
-        var best: Button? = null; var bestDistance = Float.MAX_VALUE
+        var best: Button? = null
+        var bestDistance = Float.MAX_VALUE
         buttons.forEach { button ->
-            val loc = IntArray(2); button.getLocationOnScreen(loc)
-            val cx = loc[0] + button.width / 2f; val cy = loc[1] + button.height / 2f
-            val dx = x - cx; val dy = y - cy; val d = sqrt(dx * dx + dy * dy)
+            val loc = IntArray(2)
+            button.getLocationOnScreen(loc)
+            val cx = loc[0] + button.width / 2f
+            val cy = loc[1] + button.height / 2f
+            val dx = x - cx; val dy = y - cy
+            val d = sqrt(dx * dx + dy * dy)
             val radius = maxOf(button.width, button.height).toFloat() * 1.15f
             if (d < radius && d < bestDistance) { best = button; bestDistance = d }
         }
@@ -146,7 +179,9 @@ object PhormiKeyboardAiBridge {
     }
 
     private fun rerender(service: PhormiKeyboardService) {
-        findMethod(service.javaClass, "render")?.let { method -> runCatching { method.isAccessible = true; service.setInputView(method.invoke(service) as View) } }
+        findMethod(service.javaClass, "render")?.let { method ->
+            runCatching { method.isAccessible = true; service.setInputView(method.invoke(service) as View) }
+        }
     }
 
     private fun currentService(): PhormiKeyboardService? {
@@ -157,8 +192,10 @@ object PhormiKeyboardAiBridge {
         return field.get(companion) as? PhormiKeyboardService
     }
 
-    private fun findField(type: Class<*>, name: String) = generateSequence(type) { it.superclass }.flatMap { it.declaredFields.asSequence() }.firstOrNull { it.name == name }
-    private fun findMethod(type: Class<*>, name: String) = generateSequence(type) { it.superclass }.flatMap { it.declaredMethods.asSequence() }.firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
+    private fun findField(type: Class<*>, name: String) =
+        generateSequence(type) { it.superclass }.flatMap { it.declaredFields.asSequence() }.firstOrNull { it.name == name }
+    private fun findMethod(type: Class<*>, name: String) =
+        generateSequence(type) { it.superclass }.flatMap { it.declaredMethods.asSequence() }.firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
 }
 
 object PhormiEmojiSuggester {
@@ -177,7 +214,27 @@ object PhormiEmojiSuggester {
     fun suggest(text: String): List<String> {
         val lower = text.lowercase()
         val matched = rules.firstOrNull { (words, _) -> words.any { lower.contains(it) } }?.second
-        return matched ?: when { lower.endsWith("!") -> listOf("😊", "😄", "🔥", "✨"); lower.endsWith("?") -> listOf("🤔", "❓", "😅", "👀"); else -> emptyList() }
+        return matched ?: when {
+            lower.endsWith("!") -> listOf("😊", "😄", "🔥", "✨")
+            lower.endsWith("?") -> listOf("🤔", "❓", "😅", "👀")
+            else -> emptyList()
+        }
+    }
+}
+
+object PhormiLocalPredictionEngine {
+    private val words = listOf(
+        "the", "and", "you", "your", "that", "this", "with", "have", "for", "are", "was", "what", "when", "where", "why",
+        "how", "can", "will", "would", "could", "should", "please", "thanks", "thank", "hello", "hey", "good", "great",
+        "today", "tomorrow", "now", "later", "because", "about", "from", "just", "really", "very", "love", "like", "want",
+        "need", "know", "think", "make", "going", "come", "home", "work", "friend", "family", "message", "send", "open", "close",
+        "search", "download", "share", "favorite", "bookmark", "history", "keyboard", "browser", "testing", "test", "project"
+    )
+
+    fun suggest(text: String): List<String> {
+        val token = text.substringAfterLast(Regex("\\s")).lowercase().filter { it.isLetter() }
+        if (token.length < 2) return emptyList()
+        return words.filter { it.startsWith(token) && it != token }.take(4)
     }
 }
 
@@ -187,7 +244,9 @@ object PhormiGlideEngine {
     fun resolve(path: String): String {
         val clean = path.lowercase().filter { it in 'a'..'z' }
         if (clean.isBlank()) return clean
-        dictionary.minByOrNull { distance(clean, it) }?.let { best -> if (distance(clean, best) <= maxOf(1, clean.length / 3)) return best }
+        dictionary.minByOrNull { distance(clean, it) }?.let { best ->
+            if (distance(clean, best) <= maxOf(1, clean.length / 3)) return best
+        }
         return clean
     }
 
@@ -195,7 +254,9 @@ object PhormiGlideEngine {
         val dp = Array(a.length + 1) { IntArray(b.length + 1) }
         for (i in 0..a.length) dp[i][0] = i
         for (j in 0..b.length) dp[0][j] = j
-        for (i in 1..a.length) for (j in 1..b.length) dp[i][j] = minOf(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+        for (i in 1..a.length) for (j in 1..b.length) {
+            dp[i][j] = minOf(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+        }
         return dp[a.length][b.length]
     }
 }
