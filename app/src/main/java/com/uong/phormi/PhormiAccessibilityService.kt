@@ -21,12 +21,9 @@ import org.json.JSONObject
  * those sensitive fields manually.
  */
 class PhormiAccessibilityService : AccessibilityService() {
-
     companion object {
         private const val TAG = "PhormiAccessibility"
-
-        @Volatile
-        var instance: PhormiAccessibilityService? = null
+        @Volatile var instance: PhormiAccessibilityService? = null
             private set
     }
 
@@ -41,13 +38,8 @@ class PhormiAccessibilityService : AccessibilityService() {
         if (instance === this) instance = null
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Screen data is read on demand by the AI controller.
-    }
-
-    override fun onInterrupt() {
-        Log.w(TAG, "Accessibility service interrupted")
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onInterrupt() { Log.w(TAG, "Accessibility service interrupted") }
 
     fun readScreen(): String {
         val root = rootInActiveWindow ?: return "[]"
@@ -70,6 +62,7 @@ class PhormiAccessibilityService : AccessibilityService() {
                     hasText -> node.text?.toString().orEmpty()
                     else -> node.contentDescription?.toString().orEmpty()
                 })
+                obj.put("contentDescription", if (sensitive) "[SENSITIVE INPUT REDACTED]" else node.contentDescription?.toString().orEmpty())
                 obj.put("className", node.className?.toString() ?: "")
                 obj.put("clickable", node.isClickable)
                 obj.put("editable", node.isEditable)
@@ -81,56 +74,63 @@ class PhormiAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.w(TAG, "Error reading node: ${e.message}")
         }
-
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { collectNodes(it, out) }
-        }
+        for (i in 0 until node.childCount) node.getChild(i)?.let { collectNodes(it, out) }
     }
 
     private fun isSensitiveInput(node: AccessibilityNodeInfo): Boolean {
         if (!node.isEditable) return false
         val type = node.inputType
-        val passwordMask = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        val visiblePasswordMask = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-        val webPasswordMask = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-        if ((type and passwordMask) == passwordMask ||
-            (type and visiblePasswordMask) == visiblePasswordMask ||
-            (type and webPasswordMask) == webPasswordMask) return true
-
-        val clue = listOfNotNull(
-            node.hintText?.toString(),
-            node.contentDescription?.toString(),
-            node.viewIdResourceName
-        ).joinToString(" ").lowercase()
+        val masks = intArrayOf(
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+        )
+        if (masks.any { (type and it) == it }) return true
+        val clue = listOfNotNull(node.hintText?.toString(), node.contentDescription?.toString(), node.viewIdResourceName)
+            .joinToString(" ").lowercase()
         return listOf("password", "passcode", "pin", "security code", "otp", "one-time code", "cvv", "cvc", "secret").any(clue::contains)
     }
 
-    /** Types only into a non-sensitive focused editable field. */
     fun typeIntoFocusedField(text: String): Boolean {
         val root = rootInActiveWindow ?: return false
         val focused = findFocusedEditable(root) ?: return false
         if (isSensitiveInput(focused)) return false
-        val arguments = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        }
+        val arguments = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
         return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
     private fun findFocusedEditable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isEditable && node.isFocused) return node
+        for (i in 0 until node.childCount) node.getChild(i)?.let { child ->
+            findFocusedEditable(child)?.let { return it }
+        }
+        return null
+    }
+
+    /** Prefer semantic node activation over coordinates whenever the AI has a label. */
+    fun clickNode(label: String): Boolean {
+        val query = label.trim().lowercase()
+        if (query.isBlank()) return false
+        val root = rootInActiveWindow ?: return false
+        val node = findBestClickable(root, query) ?: return false
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    private fun findBestClickable(node: AccessibilityNodeInfo, query: String): AccessibilityNodeInfo? {
+        val text = node.text?.toString()?.trim()?.lowercase().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
+        if (!isSensitiveInput(node) && node.isClickable && (text == query || desc == query)) return node
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = findFocusedEditable(child)
-            if (found != null) return found
+            findBestClickable(child, query)?.let { return it }
         }
+        if (!isSensitiveInput(node) && node.isClickable && (text.contains(query) || desc.contains(query) || query.contains(text).takeIf { text.isNotBlank() } == true || query.contains(desc).takeIf { desc.isNotBlank() } == true)) return node
         return null
     }
 
     fun tapAt(x: Int, y: Int, onDone: ((Boolean) -> Unit)? = null) {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
-            .build()
+        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 80)).build()
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) { onDone?.invoke(true) }
             override fun onCancelled(gestureDescription: GestureDescription?) { onDone?.invoke(false) }
@@ -139,12 +139,8 @@ class PhormiAccessibilityService : AccessibilityService() {
 
     fun scroll(direction: String): Boolean {
         val root = rootInActiveWindow ?: return false
-        val action = when (direction.lowercase()) {
-            "up", "left" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-            else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-        }
+        val action = when (direction.lowercase()) { "up", "left" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD; else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD }
         if (performScrollOn(root, action)) return true
-
         val metrics = resources.displayMetrics
         val cx = metrics.widthPixels / 2f
         val cy = metrics.heightPixels / 2f
@@ -155,18 +151,12 @@ class PhormiAccessibilityService : AccessibilityService() {
             "right" -> { path.moveTo(cx * 1.2f, cy); path.lineTo(cx * 0.3f, cy) }
             else -> { path.moveTo(cx, cy * 1.15f); path.lineTo(cx, cy * 0.35f) }
         }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
-            .build()
-        return dispatchGesture(gesture, null, null)
+        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 300)).build(), null, null)
     }
 
     private fun performScrollOn(node: AccessibilityNodeInfo, action: Int): Boolean {
         if (node.isScrollable && node.performAction(action)) return true
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            if (performScrollOn(child, action)) return true
-        }
+        for (i in 0 until node.childCount) node.getChild(i)?.let { if (performScrollOn(it, action)) return true }
         return false
     }
 
