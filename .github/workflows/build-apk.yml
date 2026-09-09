@@ -12,68 +12,31 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout committed source
         uses: actions/checkout@v4
-      - name: Apply Round 5 WebView state restoration
-        run: python3 tools/apply_round5_state_restore.py
-      - name: Apply compile repairs
-        run: python3 tools/repair_compile.py
-      - name: Apply menu integration repairs
-        run: python3 tools/repair_menu_features.py
-      - name: Apply Round 6 browser foundation repairs
-        run: python3 tools/repair_round6_features.py
-      - name: Apply Round 7 whole-browser and keyboard foundation repairs
-        run: python3 tools/repair_round7_final.py
-      - name: Apply Round 7 compile fixes
-        run: python3 tools/repair_round7_fix.py
-      - name: Apply Round 7 site permission compile fix
-        run: python3 tools/repair_round7_fix2.py
-      - name: Apply Round 7 keyboard settings and long-press repair
-        run: python3 tools/repair_round7_keyboard_ui.py
-      - name: Apply Round 8 comprehensive browser and keyboard repair
-        run: python3 tools/repair_round8_comprehensive.py
-      - name: Apply Round 8 media picker normalization
-        run: python3 tools/repair_round8_fix.py
-      - name: Run Phormi foundation audit before Round 9
-        run: python3 tools/audit_project.py
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Gradle
+      - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Create lint baseline from pre-Round-9 source
-        run: |
-          python3 tools/prepare_lint_baseline.py
-          gradle updateLintBaseline --no-daemon --stacktrace
-      - name: Apply Round 9 comprehensive audit repair
-        run: python3 tools/repair_round9_comprehensive.py
-      - name: Apply Round 10 keyboard-first browser foundation fixes
-        run: |
-          python3 tools/repair_round10_runner.py
-          python3 tools/repair_round10_followup.py
-          python3 tools/repair_round10_audit_fix.py
-          python3 tools/repair_round10_compilefix.py
-          python3 tools/repair_round10_renderer_finalize.py
-      - name: Run Phormi foundation audit after Round 10
-        run: python3 tools/audit_project.py
       - name: Show Gradle version
         run: gradle --version
-      - name: Android lint - fail on new errors
+      - name: Android lint
         run: gradle lintDebug --no-daemon --stacktrace
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Verify APK output
         run: test -s app/build/outputs/apk/debug/app-debug.apk
-      - name: Package final source and APK
+      - name: Package committed source and APK
         run: |
           mkdir -p dist/phormi-android
           cp -R app dist/phormi-android/
           cp -R .github dist/phormi-android/
-          cp -R tools dist/phormi-android/
+          cp -R tools dist/phormi-android/ 2>/dev/null || true
           cp -R docs dist/phormi-android/ 2>/dev/null || true
           cp -R shared dist/phormi-android/ 2>/dev/null || true
           cp build.gradle.kts settings.gradle.kts gradle.properties dist/phormi-android/ 2>/dev/null || true
