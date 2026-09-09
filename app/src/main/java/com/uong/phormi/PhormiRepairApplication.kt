@@ -7,17 +7,10 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.View
 import android.webkit.WebView
-import android.widget.EditText
-import androidx.appcompat.app.AlertDialog
-import org.json.JSONArray
 import java.lang.reflect.Method
 
-/**
- * Runtime bridge for nested browser surfaces. MainActivity is still the source of
- * truth for tab state; this bridge only forwards queued actions to its real methods.
- */
+/** Runtime bridge for nested browser surfaces and safe environment lifecycle work. */
 class PhormiRepairApplication : Application() {
     private val handler = Handler(Looper.getMainLooper())
     private var resumedMain: MainActivity? = null
@@ -31,6 +24,9 @@ class PhormiRepairApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Do this before MainActivity creates any WebViews. ProfileStore refuses to delete
+        // profiles that are already loaded in memory, so startup is the reliable cleanup point.
+        runCatching { PhormiEnvironmentManager.cleanupExpired(this, emptySet()) }
         PhormiKeyboardAiBridge.start(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
@@ -77,40 +73,21 @@ class PhormiRepairApplication : Application() {
                 prefs.edit().putBoolean("keep_screen_on", enabled).apply()
                 invoke(activity, "applyKeepScreenOn", enabled)
             }
-            "desktop_mode" -> toggleDesktop(activity)
-            "find" -> findInPage(activity)
-            "share" -> shareCurrentPage(activity)
-            "select" -> selectTab(activity, extras["tab_id"]?.toIntOrNull())
-            "close" -> closeTab(activity, extras["tab_id"]?.toIntOrNull())
+            "desktop_mode" -> invoke(activity, "toggleDesktopMode")
+            "find" -> invoke(activity, "showFindInPage")
+            "share" -> invoke(activity, "shareCurrentPage")
+            "select" -> extras["tab_id"]?.toIntOrNull()?.let { invoke(activity, "switchToTab", it) }
+            "close" -> extras["tab_id"]?.toIntOrNull()?.let { invoke(activity, "closeTab", it) }
             "assign_group" -> TabGroupManager(activity).assignTab(extras["group_id"].orEmpty(), extras["tab_id"]?.toIntOrNull() ?: 0, extras["url"].orEmpty())
             "reassign_env" -> reassignEnvironment(activity, extras)
             "toggle_split", "split_screen", "same_page_split" -> invoke(activity, "setSplitMode", !(getField(activity, "splitMode") as? Boolean ?: false))
-            "navigation_lens" -> activity.startActivity(Intent(activity, AiActivity::class.java).putExtra("mode", "navigation_lens"))
-            "object_anchors" -> activity.startActivity(Intent(activity, AiActivity::class.java).putExtra("mode", "object_anchors"))
+            "navigation_lens" -> invoke(activity, "showNavigationLens")
+            "object_anchors" -> invoke(activity, "showObjectAnchors")
             "security" -> activity.startActivity(Intent(activity, PhormiSecurityCenterActivity::class.java))
             "keyboard" -> activity.startActivity(Intent(activity, PhormiKeyboardSettingsActivity::class.java))
             "tab_groups" -> activity.startActivity(Intent(activity, TabGroupsActivity::class.java))
             "open_url" -> extras["open_url"]?.takeIf { it.isNotBlank() }?.let { invoke(activity, "createNewTab", it) }
-            "site_lock" -> invoke(activity, "showBrowserLockOverlay")
         }
-    }
-
-    private fun activeWebView(activity: Activity): WebView? = invokeResult(activity, "activeWebView") as? WebView
-
-    private fun toggleDesktop(activity: MainActivity) {
-        invoke(activity, "toggleDesktopMode")
-    }
-
-    private fun findInPage(activity: MainActivity) { invoke(activity, "showFindInPage") }
-
-    private fun shareCurrentPage(activity: MainActivity) { invoke(activity, "shareCurrentPage") }
-
-    private fun selectTab(activity: MainActivity, tabId: Int?) {
-        tabId?.let { invoke(activity, "switchToTab", it) }
-    }
-
-    private fun closeTab(activity: MainActivity, tabId: Int?) {
-        tabId?.let { invoke(activity, "closeTab", it) }
     }
 
     private fun reassignEnvironment(activity: MainActivity, extras: Map<String, String>) {
@@ -124,10 +101,9 @@ class PhormiRepairApplication : Application() {
     }
 
     private fun invoke(target: Any, name: String, vararg args: Any?) = invokeResultOrNull(target, name, *args)
-    private fun invokeResult(target: Any, name: String, vararg args: Any?): Any? = invokeResultOrNull(target, name, *args).let { if (it === NO_RESULT) null else it }
     private fun invokeResultOrNull(target: Any, name: String, vararg args: Any?): Any? {
-        val method = findMethod(target.javaClass, name, args) ?: return NO_RESULT
-        return runCatching { method.isAccessible = true; method.invoke(target, *args) }.getOrElse { NO_RESULT }
+        val method = findMethod(target.javaClass, name, args) ?: return null
+        return runCatching { method.isAccessible = true; method.invoke(target, *args) }.getOrNull()
     }
     private fun findMethod(type: Class<*>, name: String, args: Array<out Any?>): Method? =
         generateSequence(type) { it.superclass }.flatMap { it.declaredMethods.asSequence() }.firstOrNull {
@@ -155,5 +131,4 @@ class PhormiRepairApplication : Application() {
         }
         return null
     }
-    private object NO_RESULT
 }
