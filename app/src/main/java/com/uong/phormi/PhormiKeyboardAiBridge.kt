@@ -49,13 +49,13 @@ object PhormiKeyboardAiBridge {
         rerender(service)
     }
 
-    private fun applyAutocorrect(service: PhormiKeyboardService, text: String) {
+    private fun applyAutocorrect(service: PhormiKeyboardServiceV2, text: String) {
         if (!PhormiKeyboardPreferences.autocorrect(service) || !text.endsWith(" ")) return
         val corrections = mapOf("teh" to "the", "adn" to "and", "dont" to "don't", "cant" to "can't", "wont" to "won't", "im" to "I'm", "ive" to "I've", "recieve" to "receive", "becuase" to "because", "seperate" to "separate", "definately" to "definitely", "alot" to "a lot")
         corrections.entries.firstOrNull { text.removeSuffix(" ").substringAfterLast(" ").equals(it.key, true) }?.let { (wrong, right) -> service.currentInputConnection?.let { ic -> ic.deleteSurroundingText(wrong.length + 1, 0); ic.commitText("$right ", 1) } }
     }
 
-    private fun applyAutoCaps(service: PhormiKeyboardService, text: String) {
+    private fun applyAutoCaps(service: PhormiKeyboardServiceV2, text: String) {
         if (!PhormiKeyboardPreferences.autoCaps(service)) return
         val shouldCap = text.isBlank() || text.endsWith(". ") || text.endsWith("! ") || text.endsWith("? ") || text.endsWith("\n")
         if (!shouldCap) return
@@ -65,7 +65,7 @@ object PhormiKeyboardAiBridge {
         if (!(caps.get(service) as? Boolean ?: false) && !(shift.get(service) as? Boolean ?: false)) { shift.set(service, true); rerender(service) }
     }
 
-    private fun installViewEnhancements(service: PhormiKeyboardService) {
+    private fun installViewEnhancements(service: PhormiKeyboardServiceV2) {
         val root = service.getInputView() ?: return
         val buttons = mutableListOf<Button>(); collectButtons(root, buttons)
         val letterButtons = buttons.filter { it.text.toString().matches(Regex("[A-Za-z]")) }
@@ -93,8 +93,8 @@ object PhormiKeyboardAiBridge {
     private class GlideState { var active = false; var last: Button? = null; val sequence = mutableListOf<String>() }
     private fun nearestLetter(buttons: List<Button>, x: Float, y: Float): Button? { var best: Button? = null; var bestDistance = Float.MAX_VALUE; buttons.forEach { b -> val loc = IntArray(2); b.getLocationOnScreen(loc); val dx = x - (loc[0] + b.width / 2f); val dy = y - (loc[1] + b.height / 2f); val d = sqrt(dx * dx + dy * dy); if (d < maxOf(b.width, b.height) * 1.15f && d < bestDistance) { best = b; bestDistance = d } }; return best }
     private fun collectButtons(view: View, out: MutableList<Button>) { if (view is Button) out += view; if (view is android.view.ViewGroup) for (i in 0 until view.childCount) collectButtons(view.getChildAt(i), out) }
-    private fun rerender(service: PhormiKeyboardService) { findMethod(service.javaClass, "render")?.let { m -> runCatching { m.isAccessible = true; service.setInputView(m.invoke(service) as View) } } }
-    private fun currentService(): PhormiKeyboardService? { val outer = PhormiKeyboardService::class.java; val companion = runCatching { outer.getDeclaredField("Companion").apply { isAccessible = true }.get(null) }.getOrNull() ?: return null; val field = findField(companion.javaClass, "instance") ?: return null; field.isAccessible = true; return field.get(companion) as? PhormiKeyboardService }
+    private fun rerender(service: PhormiKeyboardServiceV2) { findMethod(service.javaClass, "render")?.let { m -> runCatching { m.isAccessible = true; service.setInputView(m.invoke(service) as View) } } }
+    private fun currentService(): PhormiKeyboardServiceV2? { val outer = PhormiKeyboardServiceV2::class.java; val companion = runCatching { outer.getDeclaredField("Companion").apply { isAccessible = true }.get(null) }.getOrNull() ?: return null; val field = findField(companion.javaClass, "instance") ?: return null; field.isAccessible = true; return field.get(companion) as? PhormiKeyboardServiceV2 }
     private fun findField(type: Class<*>, name: String) = generateSequence(type) { it.superclass }.flatMap { it.declaredFields.asSequence() }.firstOrNull { it.name == name }
     private fun findMethod(type: Class<*>, name: String) = generateSequence(type) { it.superclass }.flatMap { it.declaredMethods.asSequence() }.firstOrNull { it.name == name && it.parameterTypes.isEmpty() }
 }
