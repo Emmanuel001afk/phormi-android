@@ -95,11 +95,15 @@ object PhormiKeyboardTextEngine {
         saveLearned(context, words.take(MAX_LEARNED))
     }
 
-    fun autoCapitalize(ic: InputConnection?): Boolean {
-        if (ic == null) return false
-        val caps = ic.getCursorCapsMode(InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS)
-        return caps and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 ||
-            caps and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0
+    fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
+        if (ic == null || info == null) return false
+        val flags = info.inputType
+        if (flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0) return true
+        if (flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
+        if (flags and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0) return false
+        val before = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty()
+        val trimmed = before.trimEnd()
+        return trimmed.isEmpty() || trimmed.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
     }
 
     fun contextBeforeCursor(ic: InputConnection?): String =
