@@ -9,15 +9,28 @@ object PhormiKeyboardExternalBridge {
         return runCatching {
             val serviceClass = PhormiKeyboardServiceV2::class.java
             val companion = serviceClass.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
-            val instanceField = generateSequence(companion.javaClass) { it.superclass }
-                .flatMap { it.declaredFields.asSequence() }
-                .first { it.name == "instance" }
-                .apply { isAccessible = true }
-            val service = instanceField.get(companion) ?: return false
-            val method = generateSequence(serviceClass) { it.superclass }
-                .flatMap { it.declaredMethods.asSequence() }
-                .first { it.name == "commitText" && it.parameterTypes.size == 1 }
-                .apply { isAccessible = true }
+                ?: return false
+
+            var instanceField: java.lang.reflect.Field? = null
+            var companionClass: Class<*>? = companion.javaClass
+            while (companionClass != null && instanceField == null) {
+                instanceField = companionClass.declaredFields.firstOrNull { it.name == "instance" }
+                companionClass = companionClass.superclass
+            }
+            val field = instanceField ?: return false
+            field.isAccessible = true
+            val service = field.get(companion) ?: return false
+
+            var commitMethod: java.lang.reflect.Method? = null
+            var serviceClassCursor: Class<*>? = serviceClass
+            while (serviceClassCursor != null && commitMethod == null) {
+                commitMethod = serviceClassCursor.declaredMethods.firstOrNull {
+                    it.name == "commitText" && it.parameterTypes.size == 1
+                }
+                serviceClassCursor = serviceClassCursor.superclass
+            }
+            val method = commitMethod ?: return false
+            method.isAccessible = true
             (method.invoke(service, text) as? Boolean) ?: true
         }.getOrDefault(false)
     }
