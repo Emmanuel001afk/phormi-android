@@ -1,0 +1,50 @@
+name: Repair API compatibility
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply deterministic API-safe fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/uong/phormi/MainActivity.kt')
+          s = p.read_text()
+          old = '''                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)\n                else callback?.showInterstitial(true)'''
+          new = '''                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)'''
+          if old in s:
+              s = s.replace(old, new, 1)
+          old = '''                    contentResolver.takePersistableUriPermission(uri, data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))'''
+          new = '''                    val takeFlags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n                    if (takeFlags != 0) contentResolver.takePersistableUriPermission(uri, takeFlags)'''
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt')
+          s = p.read_text()
+          old = '''            runCatching { switchToNextInputMethod(false) }\n                .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }'''
+          new = '''            if (android.os.Build.VERSION.SDK_INT >= 28) {\n                runCatching { switchToNextInputMethod(false) }\n                    .onFailure { Toast.makeText(this, "No alternate keyboard available", Toast.LENGTH_SHORT).show() }\n            } else {\n                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()\n            }'''
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Commit repaired source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/uong/phormi/MainActivity.kt app/src/main/java/com/uong/phormi/PhormiKeyboardService.kt
+          if git diff --cached --quiet; then
+            echo "No source repair needed"
+            exit 0
+          fi
+          git commit -m "Repair Android API compatibility [skip ci]"
+          git push
