@@ -21,21 +21,32 @@ object PhormiKeyboardTextEngine {
         "teh" to "the", "taht" to "that", "adn" to "and", "hte" to "the", "recieve" to "receive", "seperate" to "separate", "definately" to "definitely", "occured" to "occurred", "becuase" to "because", "adress" to "address", "thier" to "their", "wierd" to "weird", "untill" to "until", "tomorow" to "tomorrow", "dont" to "don't", "cant" to "can't", "wont" to "won't", "isnt" to "isn't", "didnt" to "didn't", "doesnt" to "doesn't", "wasnt" to "wasn't", "couldnt" to "couldn't", "wouldnt" to "wouldn't"
     )
 
-    fun isPassword(info: EditorInfo?): Boolean = variation(info) in setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
+    fun isPassword(info: EditorInfo?): Boolean = variation(info) in setOf(
+        InputType.TYPE_TEXT_VARIATION_PASSWORD,
+        InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+        InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+    )
 
     fun isUriLike(info: EditorInfo?): Boolean {
         val variation = (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
-        return variation == InputType.TYPE_TEXT_VARIATION_URI || variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS || variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+        return variation == InputType.TYPE_TEXT_VARIATION_URI ||
+            variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
     }
 
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
         if (info == null || isPassword(info) || isUriLike(info)) return false
-        return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+        return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
+            (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
     }
 
     fun currentWord(ic: InputConnection?): String {
         val before = ic?.getTextBeforeCursor(64, 0)?.toString().orEmpty()
-        return before.split(Regex("[\\s\\n\\r\\t]+"), limit = 0).lastOrNull().orEmpty().takeLastWhile { it.isLetter() || it == '\'' }
+        return before.split(Regex("[\\s\\n\\r\\t]+"), limit = 0)
+            .lastOrNull()
+            .orEmpty()
+            .takeLastWhile { it.isLetter() || it == '\'' }
     }
 
     fun suggestions(context: Context, prefix: String): List<String> {
@@ -45,7 +56,11 @@ object PhormiKeyboardTextEngine {
         corrections[p]?.let(pool::add)
         loadLearned(context).filter { it.startsWith(p) }.sortedBy { it.length }.forEach(pool::add)
         commonWords.filter { it.startsWith(p) }.forEach(pool::add)
-        if (pool.isEmpty()) commonWords.filter { editDistance(it, p) <= 2 }.sortedBy { editDistance(it, p) }.forEach(pool::add)
+        if (pool.isEmpty()) {
+            commonWords.filter { editDistance(it, p) <= 2 }
+                .sortedBy { editDistance(it, p) }
+                .forEach(pool::add)
+        }
         return pool.take(5)
     }
 
@@ -56,12 +71,13 @@ object PhormiKeyboardTextEngine {
         if (normalized.length < 2 || normalized.length > 32 || !normalized.all { it.isLetter() || it == '\'' }) return
         if (normalized in commonWords || normalized in corrections.keys) return
         val words = loadLearned(context).toMutableList()
-        words.remove(normalized); words.add(0, normalized)
+        words.remove(normalized)
+        words.add(0, normalized)
         saveLearned(context, words.take(MAX_LEARNED))
     }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
-        if (ic == null || info == null) return false
+        if (ic == null || info == null || isPassword(info) || isUriLike(info)) return false
         val flags = info.inputType
         if (flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0) return true
         if (flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
@@ -70,23 +86,42 @@ object PhormiKeyboardTextEngine {
         return trimmed.isEmpty() || trimmed.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
     }
 
+    /**
+     * Fallback used by older callers that do not have EditorInfo. Do not capitalize an
+     * empty field here: without EditorInfo we cannot distinguish a normal sentence from
+     * a URI, email, search, or other field where leading capitalization is undesirable.
+     */
     fun autoCapitalize(ic: InputConnection?): Boolean {
         val before = ic?.getTextBeforeCursor(64, 0)?.toString().orEmpty().trimEnd()
-        return before.isEmpty() || before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
+        return before.isNotEmpty() && before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
     }
 
-    fun contextBeforeCursor(ic: InputConnection?): String = ic?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
+    fun contextBeforeCursor(ic: InputConnection?): String =
+        ic?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
 
-    private fun variation(info: EditorInfo?): Int = (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
+    private fun variation(info: EditorInfo?): Int =
+        (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
 
     private fun loadLearned(context: Context): List<String> {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LEARNED, "[]") ?: "[]"
-        return runCatching { val array = JSONArray(raw); buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add) } }.getOrDefault(emptyList())
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_LEARNED, "[]") ?: "[]"
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    array.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun saveLearned(context: Context, words: List<String>) {
-        val array = JSONArray(); words.take(MAX_LEARNED).forEach(array::put)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_LEARNED, array.toString()).apply()
+        val array = JSONArray()
+        words.take(MAX_LEARNED).forEach(array::put)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LEARNED, array.toString())
+            .apply()
     }
 
     private fun editDistance(a: String, b: String): Int {
@@ -95,8 +130,15 @@ object PhormiKeyboardTextEngine {
         if (b.isEmpty()) return a.length
         var previous = IntArray(b.length + 1) { it }
         for (i in a.indices) {
-            val current = IntArray(b.length + 1); current[0] = i + 1
-            for (j in b.indices) current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + if (a[i] == b[j]) 0 else 1)
+            val current = IntArray(b.length + 1)
+            current[0] = i + 1
+            for (j in b.indices) {
+                current[j + 1] = minOf(
+                    current[j] + 1,
+                    previous[j + 1] + 1,
+                    previous[j] + if (a[i] == b[j]) 0 else 1
+                )
+            }
             previous = current
         }
         return previous[b.length]
