@@ -54,6 +54,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
         wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
+        wire(R.id.menu_disposable_email) { startActivity(Intent(this, PhormiDisposableEmailActivity::class.java)) }
         wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }
         wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
