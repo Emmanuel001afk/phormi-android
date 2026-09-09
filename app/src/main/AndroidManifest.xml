@@ -44,6 +44,7 @@
         <activity android:name=".HistoryActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".AccountsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".TabEnvironmentActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".PhormiDisposableEmailActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".HelpActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".PhormiSecurityCenterActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".GhostActivity" android:exported="false" android:process=":ghost" android:theme="@style/Theme.Phormi" />
