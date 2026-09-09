@@ -26,7 +26,14 @@ jobs:
       - name: Show Gradle version
         run: gradle --version
       - name: Android lint
-        run: gradle lintDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle lintDebug --no-daemon --stacktrace
+          status=$?
+          echo "===== FULL LINT TEXT REPORT ====="
+          cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt 2>/dev/null || true
+          echo "===== END FULL LINT TEXT REPORT ====="
+          exit $status
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Verify APK output
