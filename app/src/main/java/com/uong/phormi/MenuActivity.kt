@@ -6,7 +6,7 @@ import android.provider.Settings
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
-/** Browser menu. Nested browser surfaces return their action to MainActivity when necessary. */
+/** Browser menu. Every action is also placed on the central command bus for MainActivity. */
 class MenuActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_ACTION = "menu_action"
@@ -47,16 +47,16 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_new_tab) { finishWith(ACTION_NEW_TAB) }
         wire(R.id.menu_ghost) { finishWith(ACTION_GHOST) }
         wire(R.id.menu_tabs) { startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS) }
-        wire(R.id.menu_groups) { startActivity(Intent(this, TabGroupsActivity::class.java)) }
+        wire(R.id.menu_groups) { finishWith(ACTION_TAB_GROUPS) }
         wire(R.id.menu_downloads) { startActivity(Intent(this, DownloadsActivity::class.java)) }
         wire(R.id.menu_bookmarks) { startActivityForResult(Intent(this, BookmarksActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
         wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
-        wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
+        wire(R.id.menu_keyboard) { finishWith(ACTION_KEYBOARD) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }
         wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
-        wire(R.id.menu_security) { startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }
+        wire(R.id.menu_security) { finishWith(ACTION_SECURITY) }
         wire(R.id.menu_site_lock) { finishWith(ACTION_SITE_LOCK) }
         wire(R.id.menu_notifications) {
             val i = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
@@ -68,14 +68,13 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_object_anchors) { finishWith(ACTION_OBJECT_ANCHORS) }
         wire(R.id.menu_same_page_split) { finishWith(ACTION_SAME_PAGE_SPLIT) }
         wire(R.id.menu_desktop_mode) { finishWith(ACTION_DESKTOP_MODE) }
-        wire(R.id.menu_favorite) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
+        wire(R.id.menu_favorite) { finishWith(ACTION_FAVORITE) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
         wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
         wire(R.id.menu_pull_to_refresh) { finishWith(ACTION_PULL_TO_REFRESH) }
         wire(R.id.menu_split_screen) { finishWith(ACTION_SPLIT_SCREEN) }
         wire(R.id.menu_tab_retention) { finishWith(ACTION_TAB_RETENTION) }
         wire(R.id.menu_theme) { finishWith(ACTION_THEME) }
-        // Accounts are a separate authentication surface, not a normal browser tab.
         wire(R.id.menu_settings) { startActivity(Intent(this, AccountsActivity::class.java)) }
         wire(R.id.menu_close) { finish() }
     }
@@ -84,20 +83,33 @@ class MenuActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK || data == null) return
         if (requestCode == REQ_TABS) {
+            enqueueIntent(data)
             setResult(RESULT_OK, data)
             finish()
             return
         }
         val openUrl = data.getStringExtra("open_url") ?: data.getStringExtra(AccountsActivity.EXTRA_OPEN_URL)
         if (!openUrl.isNullOrBlank()) {
+            PhormiCommandBus.enqueue(this, "open_url", mapOf("open_url" to openUrl))
             setResult(RESULT_OK, Intent().putExtra("open_url", openUrl))
             finish()
         }
     }
 
     private fun finishWith(action: String) {
+        PhormiCommandBus.enqueue(this, action)
         setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, action))
         finish()
+    }
+
+    private fun enqueueIntent(data: Intent) {
+        val action = data.getStringExtra("action") ?: data.getStringExtra(EXTRA_ACTION) ?: return
+        val extras = buildMap {
+            data.extras?.keySet()?.forEach { key ->
+                if (key != "action" && key != EXTRA_ACTION) data.getStringExtra(key)?.let { put(key, it) }
+            }
+        }
+        PhormiCommandBus.enqueue(this, action, extras)
     }
 
     private fun wire(id: Int, action: () -> Unit) {
