@@ -19,8 +19,16 @@ object PhormiKeyboardTextEngine {
         "about","after","again","all","also","always","and","another","any","are","around","because","been","before","being","best","better","but","can","come","could","day","did","different","do","does","done","down","each","even","every","feel","find","first","for","from","get","give","good","great","had","has","have","help","here","how","just","know","like","little","look","love","make","many","more","most","much","myself","need","never","new","next","not","now","only","other","our","out","over","people","please","really","right","same","see","should","some","something","still","take","than","that","their","them","then","there","these","they","thing","think","this","time","today","together","too","try","use","very","want","way","well","were","what","when","where","which","who","why","will","with","without","would","yes","you","your","hello","thanks","thank","sorry","happy","sad","excited","angry","amazing","awesome","beautiful","friend","friends","family","home","work","phone","message","morning","night","welcome","okay","ok","sure","tomorrow"
     )
 
+    private val frenchWords = listOf(
+        "à","ai","aime","alors","après","avec","beaucoup","bien","bonjour","bonne","bonsoir","ça","ce","cela","cette","comme","comment","dans","de","demain","des","du","elle","elles","en","encore","est","et","être","fait","faire","famille","faut","fois","fort","grand","grande","heureux","ici","ils","je","j'aime","jour","la","le","les","leur","lui","mais","maintenant","merci","mes","moi","mon","matin","ne","nous","nouveau","nuit","où","parce","pas","petit","peut","plus","pour","pourquoi","quand","que","quel","quelle","qui","quoi","rien","sais","sans","se","ses","si","sont","sur","ta","te","tes","toi","ton","toujours","tous","tout","très","tu","un","une","vais","veut","vous","votre","vraiment","avec","voilà","oui","non","désolé","heureux","triste","excité","amour","amis"
+    )
+
     private val corrections = mapOf(
         "teh" to "the","taht" to "that","adn" to "and","hte" to "the","recieve" to "receive","seperate" to "separate","definately" to "definitely","occured" to "occurred","becuase" to "because","adress" to "address","thier" to "their","wierd" to "weird","untill" to "until","tomorow" to "tomorrow","tommorow" to "tomorrow","remeber" to "remember","alot" to "a lot","writting" to "writing","begining" to "beginning","enviroment" to "environment","goverment" to "government","reciever" to "receiver","dont" to "don't","cant" to "can't","wont" to "won't","isnt" to "isn't","didnt" to "didn't","doesnt" to "doesn't","wasnt" to "wasn't","couldnt" to "couldn't","wouldnt" to "wouldn't","shouldnt" to "shouldn't","im" to "I'm","ive" to "I've","ill" to "I'll","id" to "I'd","youre" to "you're","youve" to "you've","theyre" to "they're","thats" to "that's","whats" to "what's","lets" to "let's","hes" to "he's","shes" to "she's","weve" to "we've"
+    )
+
+    private val frenchCorrections = mapOf(
+        "bonjou" to "bonjour","merc" to "merci","commen" to "comment","beaucou" to "beaucoup","parceque" to "parce que","vraimen" to "vraiment","maintenan" to "maintenant","demai" to "demain","excite" to "excité","desole" to "désolé"
     )
 
     private val nextWordSeed = mapOf(
@@ -35,6 +43,19 @@ object PhormiKeyboardTextEngine {
         "looking" to listOf("for","forward","good"),
         "love" to listOf("you","this","that","it"),
         "very" to listOf("good","happy","excited","important","much")
+    )
+
+    private val frenchNextWordSeed = mapOf(
+        "bonjour" to listOf("à","tout","comment","monsieur","madame"),
+        "merci" to listOf("beaucoup","pour","à","encore"),
+        "comment" to listOf("ça","allez","vas","faire"),
+        "je" to listOf("suis","vais","peux","veux","pense","aime"),
+        "nous" to listOf("sommes","allons","pouvons","devons","avons"),
+        "vous" to listOf("êtes","allez","pouvez","avez","voulez"),
+        "très" to listOf("bien","heureux","triste","excité","important"),
+        "bonne" to listOf("journée","chance","nuit","soirée"),
+        "à" to listOf("demain","bientôt","plus","tard"),
+        "pour" to listOf("vous","moi","ça","faire","que")
     )
 
     fun isPassword(info: EditorInfo?): Boolean = variation(info) in setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
@@ -61,49 +82,31 @@ object PhormiKeyboardTextEngine {
         return parts.dropLast(1).lastOrNull().orEmpty().trim(' ', '\'', '"', '.', ',', '!', '?', ':', ';').lowercase(Locale.US)
     }
 
-    fun suggestions(context: Context, prefix: String): List<String> {
-        val p = prefix.lowercase(Locale.US)
+    fun suggestions(context: Context, prefix: String, locale: Locale = Locale.getDefault()): List<String> {
+        val p = prefix.lowercase(locale)
         if (p.isBlank()) return emptyList()
+        val french = locale.language == Locale.FRENCH
         val pool = LinkedHashSet<String>()
-        corrections[p]?.let(pool::add)
+        if (french) frenchCorrections[p]?.let(pool::add) else corrections[p]?.let(pool::add)
         loadLearned(context).filter { it.startsWith(p) }.forEach(pool::add)
-        commonWords.filter { it.startsWith(p) }.forEach(pool::add)
-        if (pool.isEmpty()) commonWords.filter { editDistance(it, p) <= 2 }.sortedBy { editDistance(it, p) }.forEach(pool::add)
+        (if (french) frenchWords else commonWords).filter { it.startsWith(p) }.forEach(pool::add)
+        if (pool.isEmpty()) {
+            (if (french) frenchWords else commonWords).filter { editDistance(it.lowercase(locale), p) <= 2 }
+                .sortedBy { editDistance(it.lowercase(locale), p) }.forEach(pool::add)
+        }
         return pool.take(5)
     }
 
-    fun nextWordSuggestions(context: Context, previous: String): List<String> {
-        val key = previous.lowercase(Locale.US).trim()
+    fun nextWordSuggestions(context: Context, previous: String, locale: Locale = Locale.getDefault()): List<String> {
+        val key = previous.lowercase(locale).trim()
         if (key.isBlank()) return emptyList()
         val pool = LinkedHashSet<String>()
-        nextWordSeed[key].orEmpty().forEach(pool::add)
+        (if (locale.language == Locale.FRENCH) frenchNextWordSeed[key] else nextWordSeed[key]).orEmpty().forEach(pool::add)
         loadNextWords(context, key).forEach(pool::add)
         return pool.take(4)
     }
 
     fun correctionFor(word: String): String? = corrections[word.lowercase(Locale.US)]
-
-    fun learn(context: Context, word: String, info: EditorInfo? = null) {
-        if (isPrivateEditor(info)) return
-        val n = word.lowercase(Locale.US).trim()
-        if (n.length < 2 || n.length > 32 || !n.all { it.isLetter() || it == '\'' }) return
-        if (n in commonWords || n in corrections.keys) return
-        val words = loadLearned(context).toMutableList()
-        words.remove(n)
-        words.add(0, n)
-        saveLearned(context, words.take(MAX_LEARNED))
-    }
-
-    fun learnPair(context: Context, previous: String, next: String, info: EditorInfo? = null) {
-        if (isPrivateEditor(info)) return
-        val a = previous.lowercase(Locale.US).trim().takeIf { it.length in 1..32 && it.all { c -> c.isLetter() || c == '\'' } } ?: return
-        val b = next.lowercase(Locale.US).trim().takeIf { it.length in 1..32 && it.all { c -> c.isLetter() || c == '\'' } } ?: return
-        if (a == b) return
-        val pairs = loadAllNextWords(context).toMutableMap()
-        val list = pairs[a].orEmpty().toMutableList().apply { remove(b); add(0, b) }
-        pairs[a] = list.take(8)
-        saveAllNextWords(context, pairs)
-    }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
         if (ic == null || info == null || isPrivateEditor(info)) return false
@@ -152,6 +155,8 @@ object PhormiKeyboardTextEngine {
         val obj = org.json.JSONObject(); pairs.entries.take(MAX_BIGRAMS).forEach { (key, values) -> obj.put(key, JSONArray(values.take(8))) }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS, obj.toString()).apply()
     }
+
+    fun languageTag(locale: Locale = Locale.getDefault()): String = locale.toLanguageTag()
 
     private fun editDistance(a: String, b: String): Int {
         if (a == b) return 0
