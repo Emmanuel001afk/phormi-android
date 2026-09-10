@@ -40,14 +40,17 @@ object PhormiKeyboardAiBridge {
     }
 
     private fun update() {
-        val service = currentService() ?: return
-        val info = service.currentInputEditorInfo ?: return
+        val service = currentService()
+        val info = service?.currentInputEditorInfo
+        if (service == null || info == null) {
+            stop()
+            return
+        }
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass != InputType.TYPE_CLASS_TEXT ||
-            PhormiKeyboardTextEngine.isPassword(info) ||
-            PhormiKeyboardTextEngine.isUriLike(info) ||
-            PhormiKeyboardTextEngine.isNoPersonalizedLearning(info)
-        ) return
+        if (inputClass != InputType.TYPE_CLASS_TEXT || PhormiKeyboardTextEngine.isPrivateEditor(info)) {
+            stop()
+            return
+        }
         val text = service.currentInputConnection?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service)
