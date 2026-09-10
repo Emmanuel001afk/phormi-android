@@ -35,5 +35,12 @@ jobs:
           build-mode: manual
       - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Publish debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: phormi-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
       - name: Analyze
         uses: github/codeql-action/analyze@v4
