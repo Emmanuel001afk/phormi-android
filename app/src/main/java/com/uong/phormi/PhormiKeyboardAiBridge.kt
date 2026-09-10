@@ -11,7 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import kotlin.math.sqrt
 
-/** Optional enhancement layer for the Phormi system IME. All processing stays local. */
+/** Local enhancement layer for the Phormi system IME. */
 object PhormiKeyboardAiBridge {
     private const val TAG_GLIDE = 0x50484731
     private const val TAG_FEEDBACK = 0x50484631
@@ -20,7 +20,6 @@ object PhormiKeyboardAiBridge {
     private var lastText = ""
     private var lastSuggestions = emptyList<String>()
 
-    /** Starts the local enhancement loop without requiring a network service or API. */
     fun start() {
         if (started) return
         started = true
@@ -29,7 +28,6 @@ object PhormiKeyboardAiBridge {
         })
     }
 
-    /** Compatibility overload for older callers. The context is intentionally unused. */
     fun start(@Suppress("UNUSED_PARAMETER") context: android.content.Context) = start()
 
     fun stop() {
@@ -42,27 +40,19 @@ object PhormiKeyboardAiBridge {
     private fun update() {
         val service = currentService()
         val info = service?.currentInputEditorInfo
-        if (service == null || info == null) {
-            stop()
-            return
-        }
+        if (service == null || info == null) { stop(); return }
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
         if (inputClass != InputType.TYPE_CLASS_TEXT ||
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
-            PhormiKeyboardTextEngine.isPrivateEditor(info)
-        ) {
-            stop()
-            return
-        }
-        val text = service.currentInputConnection?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
+            PhormiKeyboardTextEngine.isPrivateEditor(info) ||
+            !PhormiKeyboardPreferences.suggestions(service)) { stop(); return }
+        val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service)
         installViewEnhancements(service)
         if (text == lastText) return
         lastText = text
-        val suggestions = if (PhormiKeyboardPreferences.suggestions(service)) {
-            (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text)).distinct().take(8)
-        } else emptyList()
+        val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text)).distinct().take(8)
         if (suggestions == lastSuggestions) return
         lastSuggestions = suggestions
         val completionField = findField(service.javaClass, "completions") ?: return
