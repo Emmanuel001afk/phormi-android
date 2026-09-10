@@ -5,10 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import java.io.File
 
-/**
- * Keeps AI Emoji generation off the IME main thread and preserves emoji order.
- * The IME can treat generated files exactly like ordinary emoji/media results.
- */
+/** Off-main-thread AI emoji generation with cancellation and progressive results. */
 class PhormiKeyboardAiEmojiController(
     private val context: Context,
     private val onChanged: (List<File>, Boolean) -> Unit
@@ -20,23 +17,17 @@ class PhormiKeyboardAiEmojiController(
 
     fun generate(prompt: String) {
         generationId++
-        val id = generationId
-        results.fill(null)
-        pending = 4
-        main.post { onChanged(emptyList(), true) }
-        for (variant in 0 until 4) {
-            PhormiPollinationsAiEmojiEngine.generateAsync(context, prompt, variant) { file ->
-                if (id != generationId) return@generateAsync
-                results[variant] = file
-                pending--
-                if (pending == 0) onChanged(results.filterNotNull(), false)
+        val id=generationId
+        results.fill(null); pending=4
+        main.post{onChanged(emptyList(),true)}
+        for(variant in 0 until 4){
+            PhormiPollinationsAiEmojiEngine.generateAsync(context,prompt,variant){file->
+                if(id!=generationId)return@generateAsync
+                results[variant]=file; pending=(pending-1).coerceAtLeast(0)
+                onChanged(results.filterNotNull(),pending>0)
             }
         }
     }
 
-    fun cancel() {
-        generationId++
-        pending = 0
-        results.fill(null)
-    }
+    fun cancel(){generationId++;pending=0;results.fill(null)}
 }
