@@ -7,12 +7,14 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
 /** Dedicated keyboard settings surface with an explicit enable/select flow. */
 class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var heightValue: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); render() }
     override fun onResume() { super.onResume(); if (::status.isInitialized) updateStatus() }
@@ -25,6 +27,23 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         root.addView(Button(this).apply { text = "Enable Phormi Keyboard"; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }.onFailure { ToastCompat.show(this@PhormiKeyboardSettingsActivity, "Keyboard settings are unavailable") } } })
         root.addView(Button(this).apply { text = "Choose Phormi Keyboard"; setOnClickListener { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker() } })
         root.addView(Button(this).apply { text = "Language & subtype settings"; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS)) }.onFailure { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) } } })
+        root.addView(TextView(this).apply { text = "Keyboard size"; gravity = Gravity.CENTER_VERTICAL; setTextColor(android.graphics.Color.rgb(56, 189, 248)); textSize = 16f; setPadding(0, 22, 0, 4) })
+        heightValue = TextView(this).apply { setTextColor(android.graphics.Color.rgb(203, 213, 225)); textSize = 13f; setPadding(0, 0, 0, 4) }
+        root.addView(heightValue)
+        val heightSeek = SeekBar(this).apply {
+            max = 6
+            progress = PhormiKeyboardPreferences.height(this@PhormiKeyboardSettingsActivity)
+            contentDescription = "Keyboard height"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { updateHeightLabel(progress) }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardSettingsActivity, seekBar?.progress ?: 3) }
+            })
+        }
+        root.addView(heightSeek, LinearLayout.LayoutParams(-1, 52))
+        root.addView(TextView(this).apply { text = "Extra short  •  Short  •  Compact  •  Normal  •  Tall  •  Extra tall  •  Maximum"; setTextColor(android.graphics.Color.rgb(148, 163, 184)); textSize = 11f; setPadding(0, 0, 0, 10) })
+        updateHeightLabel(heightSeek.progress)
+
         root.addView(TextView(this).apply { text = "Keyboard behavior"; gravity = Gravity.CENTER_VERTICAL; setTextColor(android.graphics.Color.rgb(56, 189, 248)); textSize = 16f; setPadding(0, 22, 0, 8) })
         option(root, "Suggestions", "Show word suggestions when the editor does not provide its own completions.", PhormiKeyboardPreferences.suggestions(this), PhormiKeyboardPreferences.KEY_SUGGESTIONS)
         option(root, "Autocorrect", "Apply conservative local corrections for common typing mistakes.", PhormiKeyboardPreferences.autocorrect(this), PhormiKeyboardPreferences.KEY_AUTOCORRECT)
@@ -32,6 +51,12 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         option(root, "Key vibration", "Use the device haptic feedback setting for key presses.", PhormiKeyboardPreferences.haptic(this), PhormiKeyboardPreferences.KEY_HAPTIC)
         option(root, "Key sounds", "Play a short key sound where the device allows it.", PhormiKeyboardPreferences.sound(this), PhormiKeyboardPreferences.KEY_SOUND)
         setContentView(root); updateStatus()
+    }
+
+    private fun updateHeightLabel(progress: Int) {
+        if (!::heightValue.isInitialized) return
+        val labels = arrayOf("Extra short", "Short", "Compact", "Normal", "Tall", "Extra tall", "Maximum")
+        heightValue.text = "${labels[progress.coerceIn(0, 6)]} keyboard height"
     }
 
     private fun updateStatus() {
