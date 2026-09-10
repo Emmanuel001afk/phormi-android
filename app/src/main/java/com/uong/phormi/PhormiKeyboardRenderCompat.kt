@@ -28,12 +28,15 @@ internal fun PhormiKeyboardServiceV2.render(): View {
         panel == "CLIPBOARD" -> "buildClipboard"
         else -> "buildKeyboard"
     }
-    val method = generateSequence(PhormiKeyboardServiceV2::class.java) { it.superclass }
-        .flatMap { it.declaredMethods.asSequence() }
-        .firstOrNull { it.name == methodName && it.parameterTypes.isEmpty() }
-        ?: error("Missing Phormi keyboard panel builder: $methodName")
-    method.isAccessible = true
-    val view = method.invoke(this) as View
+    var type: Class<*>? = PhormiKeyboardServiceV2::class.java
+    var method: java.lang.reflect.Method? = null
+    while (type != null && method == null) {
+        method = type.declaredMethods.firstOrNull { it.name == methodName && it.parameterTypes.isEmpty() }
+        type = type.superclass
+    }
+    val builder = method ?: error("Missing Phormi keyboard panel builder: $methodName")
+    builder.isAccessible = true
+    val view = builder.invoke(this) as View
     return if (panel.endsWith("EMOJI") && panel != "AI_EMOJI") decorateEmojiGrid(view) else view
 }
 
