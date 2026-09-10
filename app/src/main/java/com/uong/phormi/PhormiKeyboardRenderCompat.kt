@@ -132,7 +132,7 @@ private fun PhormiKeyboardServiceV2.decorateContextRail(view: View): View {
         setPadding(dpCompat(2), 0, dpCompat(2), 0)
     }
     val label = android.widget.TextView(this).apply {
-        text = "React"
+        setText("React")
         textSize = 11f
         setTextColor(Color.rgb(148, 163, 184))
         gravity = Gravity.CENTER
@@ -141,7 +141,7 @@ private fun PhormiKeyboardServiceV2.decorateContextRail(view: View): View {
     rail.addView(label, LinearLayout.LayoutParams(dpCompat(46), dpCompat(36)))
     moods.forEach { mood ->
         val button = android.widget.Button(this).apply {
-            text = mood.emoji
+            setText(mood.emoji)
             textSize = 20f
             isAllCaps = false
             setMinWidth(0)
