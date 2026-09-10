@@ -41,6 +41,7 @@ object PhormiKeyboardTextEngine {
 
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
         if (info == null || isPassword(info) || isUriLike(info)) return false
+        PhormiKeyboardAiBridge.start()
         return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
     }
