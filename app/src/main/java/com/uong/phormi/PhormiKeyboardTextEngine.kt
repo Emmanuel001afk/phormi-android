@@ -19,7 +19,13 @@ object PhormiKeyboardTextEngine {
     fun isUriLike(info: EditorInfo?): Boolean { val v=variation(info); return v==InputType.TYPE_TEXT_VARIATION_URI||v==InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS||v==InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS }
     fun isNoPersonalizedLearning(info: EditorInfo?): Boolean = info?.imeOptions?.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING)!=0
     fun isPrivateEditor(info: EditorInfo?): Boolean = isPassword(info)||isUriLike(info)||isNoPersonalizedLearning(info)
-    fun shouldUsePredictions(info: EditorInfo?): Boolean { if(info==null||isPrivateEditor(info))return false; if((info.inputType and InputType.TYPE_MASK_CLASS)!=InputType.TYPE_CLASS_TEXT)return false; if((info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)!=0)return false; PhormiKeyboardAiBridge.start(); return true }
+    fun shouldUsePredictions(info: EditorInfo?): Boolean {
+        if (info == null || isPrivateEditor(info)) return false
+        if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        if ((info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) return false
+        PhormiKeyboardAiBridge.start()
+        return true
+    }
     fun currentWord(ic:InputConnection?):String { val before=ic?.getTextBeforeCursor(64,0)?.toString().orEmpty(); return before.split(Regex("[\\s\\n\\r\\t]+"),limit=0).lastOrNull().orEmpty().takeLastWhile{it.isLetter()||it=='\''} }
     fun suggestions(context:Context,prefix:String):List<String>{ val p=prefix.lowercase(Locale.US);if(p.isBlank())return emptyList();val pool=LinkedHashSet<String>();corrections[p]?.let(pool::add);loadLearned(context).filter{it.startsWith(p)}.sortedBy{it.length}.forEach(pool::add);commonWords.filter{it.startsWith(p)}.forEach(pool::add);if(pool.isEmpty())commonWords.filter{editDistance(it,p)<=2}.sortedBy{editDistance(it,p)}.forEach(pool::add);return pool.take(5)}
     fun correctionFor(word:String):String?=corrections[word.lowercase(Locale.US)]
