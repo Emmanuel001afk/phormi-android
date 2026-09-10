@@ -1,44 +1,46 @@
 package com.uong.phormi
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.util.concurrent.Executors
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 /**
- * Pollinations-backed AI Emoji image generation.
- *
- * No API key is embedded in Phormi. We use Pollinations' public image URL form and
- * keep the existing local renderer as a fallback when anonymous generation is
- * unavailable, rate-limited, or offline.
+ * Anonymous Pollinations-backed image generation for Phormi AI Emoji.
+ * No API key is embedded. The local renderer remains the offline fallback.
  */
 object PhormiPollinationsAiEmojiEngine {
     private const val LEGACY_IMAGE_ENDPOINT = "https://image.pollinations.ai/prompt/"
-    private val executor = Executors.newCachedThreadPool()
-    private val client = OkHttpClient.Builder().retryOnConnectionFailure(true).build()
+    private val executor = Executors.newSingleThreadExecutor()
+    private val client = OkHttpClient.Builder()
+        .retryOnConnectionFailure(true)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .writeTimeout(12, TimeUnit.SECONDS)
+        .callTimeout(30, TimeUnit.SECONDS)
+        .build()
+    private val main = Handler(Looper.getMainLooper())
 
-    fun generateAsync(
-        context: Context,
-        prompt: String,
-        variant: Int,
-        onComplete: (File?) -> Unit
-    ) {
-        val safePrompt = prompt.trim().ifBlank { "expressive emoji sticker" }
+    fun generateAsync(context: Context, prompt: String, variant: Int, onComplete: (File?) -> Unit) {
+        val safePrompt = prompt.trim().ifBlank { "expressive emoji, simple emoji icon, transparent-looking clean background" }
         executor.execute {
             val result = runCatching { download(safePrompt, variant, context) }.getOrNull()
                 ?: runCatching { PhormiAiEmojiEngine.generate(context, safePrompt, variant) }.getOrNull()
-            android.os.Handler(android.os.Looper.getMainLooper()).post { onComplete(result) }
+            main.post { onComplete(result) }
         }
     }
 
     private fun download(prompt: String, variant: Int, context: Context): File {
         val encoded = URLEncoder.encode(prompt, Charsets.UTF_8.name()).replace("+", "%20")
-        val url = "$LEGACY_IMAGE_ENDPOINT$encoded?model=flux&width=512&height=512&nologo=true&safe=true&seed=${variant + (prompt.hashCode() and 0x7fffffff)}"
+        val seed = (prompt.hashCode() and 0x7fffffff) + variant
+        val url = "$LEGACY_IMAGE_ENDPOINT$encoded?model=flux&width=512&height=512&safe=true&seed=$seed"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "image/*")
@@ -51,7 +53,7 @@ object PhormiPollinationsAiEmojiEngine {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid generated image")
             val dir = File(context.filesDir, "phormi_stickers").apply { mkdirs() }
             val file = File(dir, "pollinations_aiemoji_${System.currentTimeMillis()}_$variant.png")
-            FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
+            FileOutputStream(file).use { out -> bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out) }
             bitmap.recycle()
             return file
         }
