@@ -39,8 +39,12 @@ object PhormiKeyboardTextEngine {
     fun isNoPersonalizedLearning(info: EditorInfo?): Boolean =
         info?.imeOptions?.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
 
+    /** True when predictions, learning, or contextual AI must not inspect the editor. */
+    fun isPrivateEditor(info: EditorInfo?): Boolean =
+        isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)
+
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
-        if (info == null || isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)) return false
+        if (info == null || isPrivateEditor(info)) return false
         PhormiKeyboardAiBridge.start()
         return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
@@ -71,7 +75,8 @@ object PhormiKeyboardTextEngine {
 
     fun correctionFor(word: String): String? = corrections[word.lowercase(Locale.US)]
 
-    fun learn(context: Context, word: String) {
+    fun learn(context: Context, word: String, info: EditorInfo? = null) {
+        if (isPrivateEditor(info)) return
         val normalized = word.lowercase(Locale.US).trim()
         if (normalized.length < 2 || normalized.length > 32 || !normalized.all { it.isLetter() || it == '\'' }) return
         if (normalized in commonWords || normalized in corrections.keys) return
@@ -82,7 +87,7 @@ object PhormiKeyboardTextEngine {
     }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
-        if (ic == null || info == null || isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)) return false
+        if (ic == null || info == null || isPrivateEditor(info)) return false
         val flags = info.inputType
         if (flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0) return true
         if (flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
@@ -108,7 +113,7 @@ object PhormiKeyboardTextEngine {
             val field = PhormiKeyboardServiceV2::class.java.getDeclaredField("instance").apply { isAccessible = true }
             (field.get(null) as? PhormiKeyboardServiceV2)?.currentInputEditorInfo
         }.getOrNull()
-        if (isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)) return ""
+        if (isPrivateEditor(info)) return ""
         return ic.getTextBeforeCursor(160, 0)?.toString().orEmpty()
     }
 
