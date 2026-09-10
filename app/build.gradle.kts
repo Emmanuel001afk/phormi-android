@@ -42,4 +42,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-process:2.8.4")
     implementation("androidx.webkit:webkit:1.17.0")
     implementation("androidx.browser:browser:1.8.0")
+    // Optional on-device LLM runtime: no cloud endpoint, no API key, no per-token billing.
+    // Model weights remain user-managed and are not bundled into the APK.
+    implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
 }
