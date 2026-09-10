@@ -16,11 +16,11 @@ object PhormiKeyboardTextEngine {
     private const val MAX_BIGRAMS = 3000
 
     private val commonWords = listOf(
-        "about","after","again","all","also","always","and","another","any","are","around","because","been","before","being","best","better","but","can","come","could","day","did","different","do","does","done","down","each","even","every","feel","find","first","for","from","get","give","good","great","had","has","have","help","here","how","just","know","like","little","look","love","make","many","more","most","much","myself","need","never","new","next","not","now","only","other","our","out","over","people","please","really","right","same","see","should","some","something","still","take","than","that","their","them","then","there","these","they","thing","think","this","time","today","together","too","try","use","very","want","way","well","were","what","when","where","which","who","why","will","with","without","would","yes","you","your","hello","thanks","thank","sorry","happy","sad","excited","angry","amazing","awesome","beautiful","friend","friends","family","home","work","phone","message","morning","night","welcome","okay","ok","sure","please","really","just","maybe","because","today","tomorrow"
+        "about","after","again","all","also","always","and","another","any","are","around","because","been","before","being","best","better","but","can","come","could","day","did","different","do","does","done","down","each","even","every","feel","find","first","for","from","get","give","good","great","had","has","have","help","here","how","just","know","like","little","look","love","make","many","more","most","much","myself","need","never","new","next","not","now","only","other","our","out","over","people","please","really","right","same","see","should","some","something","still","take","than","that","their","them","then","there","these","they","thing","think","this","time","today","together","too","try","use","very","want","way","well","were","what","when","where","which","who","why","will","with","without","would","yes","you","your","hello","thanks","thank","sorry","happy","sad","excited","angry","amazing","awesome","beautiful","friend","friends","family","home","work","phone","message","morning","night","welcome","okay","ok","sure","tomorrow"
     )
 
     private val corrections = mapOf(
-        "teh" to "the","taht" to "that","adn" to "and","hte" to "the","recieve" to "receive","seperate" to "separate","definately" to "definitely","occured" to "occurred","becuase" to "because","adress" to "address","thier" to "their","wierd" to "weird","untill" to "until","tomorow" to "tomorrow","tommorow" to "tomorrow","remeber" to "remember","alot" to "a lot","writting" to "writing","begining" to "beginning","enviroment" to "environment","goverment" to "government","reciever" to "receiver","untill" to "until","dont" to "don't","cant" to "can't","wont" to "won't","isnt" to "isn't","didnt" to "didn't","doesnt" to "doesn't","wasnt" to "wasn't","couldnt" to "couldn't","wouldnt" to "wouldn't","shouldnt" to "shouldn't","im" to "I'm","ive" to "I've","ill" to "I'll","id" to "I'd","youre" to "you're","youve" to "you've","theyre" to "they're","thats" to "that's","whats" to "what's","lets" to "let's","hes" to "he's","shes" to "she's","weve" to "we've"
+        "teh" to "the","taht" to "that","adn" to "and","hte" to "the","recieve" to "receive","seperate" to "separate","definately" to "definitely","occured" to "occurred","becuase" to "because","adress" to "address","thier" to "their","wierd" to "weird","untill" to "until","tomorow" to "tomorrow","tommorow" to "tomorrow","remeber" to "remember","alot" to "a lot","writting" to "writing","begining" to "beginning","enviroment" to "environment","goverment" to "government","reciever" to "receiver","dont" to "don't","cant" to "can't","wont" to "won't","isnt" to "isn't","didnt" to "didn't","doesnt" to "doesn't","wasnt" to "wasn't","couldnt" to "couldn't","wouldnt" to "wouldn't","shouldnt" to "shouldn't","im" to "I'm","ive" to "I've","ill" to "I'll","id" to "I'd","youre" to "you're","youve" to "you've","theyre" to "they're","thats" to "that's","whats" to "what's","lets" to "let's","hes" to "he's","shes" to "she's","weve" to "we've"
     )
 
     private val nextWordSeed = mapOf(
@@ -47,9 +47,7 @@ object PhormiKeyboardTextEngine {
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
         if (info == null || isPrivateEditor(info)) return false
         if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
-        if ((info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) return false
-        PhormiKeyboardAiBridge.start()
-        return true
+        return (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
     }
 
     fun currentWord(ic: InputConnection?): String {
@@ -74,7 +72,6 @@ object PhormiKeyboardTextEngine {
         return pool.take(5)
     }
 
-    /** Suggestions for the word after the current word, learned locally and seeded offline. */
     fun nextWordSuggestions(context: Context, previous: String): List<String> {
         val key = previous.lowercase(Locale.US).trim()
         if (key.isBlank()) return emptyList()
@@ -97,11 +94,11 @@ object PhormiKeyboardTextEngine {
         saveLearned(context, words.take(MAX_LEARNED))
     }
 
-    /** Record an accepted word pair so future next-word prediction improves locally. */
     fun learnPair(context: Context, previous: String, next: String, info: EditorInfo? = null) {
         if (isPrivateEditor(info)) return
         val a = previous.lowercase(Locale.US).trim().takeIf { it.length in 1..32 && it.all { c -> c.isLetter() || c == '\'' } } ?: return
         val b = next.lowercase(Locale.US).trim().takeIf { it.length in 1..32 && it.all { c -> c.isLetter() || c == '\'' } } ?: return
+        if (a == b) return
         val pairs = loadAllNextWords(context).toMutableMap()
         val list = pairs[a].orEmpty().toMutableList().apply { remove(b); add(0, b) }
         pairs[a] = list.take(8)
