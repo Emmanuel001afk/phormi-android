@@ -1,6 +1,5 @@
 package com.uong.phormi
 
-import android.content.Context
 import android.text.InputType
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -21,13 +20,17 @@ object PhormiKeyboardAiBridge {
     private var lastText = ""
     private var lastSuggestions = emptyList<String>()
 
-    fun start(context: Context) {
+    /** Starts the local enhancement loop without requiring a network service or API. */
+    fun start() {
         if (started) return
         started = true
         handler.post(object : Runnable {
-            override fun run() { runCatching { update() }; handler.postDelayed(this, 650L) }
+            override fun run() { runCatching { update() }; if (started) handler.postDelayed(this, 650L) }
         })
     }
+
+    /** Compatibility overload for older callers. The context is intentionally unused. */
+    fun start(@Suppress("UNUSED_PARAMETER") context: android.content.Context) = start()
 
     fun stop() {
         started = false
@@ -42,7 +45,7 @@ object PhormiKeyboardAiBridge {
         if (PhormiKeyboardTextEngine.isPassword(info) || PhormiKeyboardTextEngine.isUriLike(info)) return
         val text = service.currentInputConnection?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
         applyAutocorrect(service, text)
-        applyAutoCaps(service, text)
+        applyAutoCaps(service)
         installViewEnhancements(service)
         if (text == lastText) return
         lastText = text
@@ -70,7 +73,7 @@ object PhormiKeyboardAiBridge {
         }
     }
 
-    private fun applyAutoCaps(service: PhormiKeyboardServiceV2, text: String) {
+    private fun applyAutoCaps(service: PhormiKeyboardServiceV2) {
         if (!PhormiKeyboardPreferences.autoCaps(service)) return
         val shouldCap = PhormiKeyboardTextEngine.autoCapitalize(service.currentInputConnection, service.currentInputEditorInfo)
         if (!shouldCap) return
