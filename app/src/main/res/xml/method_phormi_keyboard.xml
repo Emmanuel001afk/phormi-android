@@ -17,4 +17,9 @@
         android:imeSubtypeLocale="en_NG"
         android:imeSubtypeMode="keyboard"
         android:isAsciiCapable="true" />
+    <subtype
+        android:label="Phormi Keyboard — Français"
+        android:imeSubtypeLocale="fr_FR"
+        android:imeSubtypeMode="keyboard"
+        android:isAsciiCapable="false" />
 </input-method>
