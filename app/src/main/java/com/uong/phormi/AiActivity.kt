@@ -9,20 +9,34 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Switch
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
-/** Phormi browser AI: configurable HTTPS providers with foreground-browser execution. */
+/** Phormi browser AI: external providers plus optional private on-device text generation. */
 class AiActivity : AppCompatActivity() {
     private lateinit var controller: AiController
     private lateinit var status: TextView
     private lateinit var keyStatus: TextView
+    private lateinit var localStatus: TextView
     private lateinit var instruction: EditText
     private lateinit var active: Switch
     private val voiceRequest = 6201
+
+    private val localModelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            localStatus.text = "Importing local GGUF model…"
+            val result = PhormiLocalTextAi.installFromUri(this@AiActivity, uri)
+            localStatus.text = result.fold(
+                { "Local model ready · ${it.length() / (1024 * 1024)} MB · on-device only" },
+                { "Model import failed: ${it.message ?: "unknown error"}" }
+            )
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,10 +44,21 @@ class AiActivity : AppCompatActivity() {
         controller = AiController(applicationContext)
         status = findViewById(R.id.status_log)
         keyStatus = findViewById(R.id.key_status)
+        localStatus = findViewById(R.id.local_model_status)
         instruction = findViewById(R.id.input_instruction)
         active = findViewById(R.id.switch_ai_active)
         active.isChecked = controller.isActive()
         refresh()
+
+        findViewById<Button>(R.id.btn_local_model).setOnClickListener {
+            localModelPicker.launch(arrayOf("application/octet-stream", "application/octetstream", "*/*"))
+        }
+        findViewById<Button>(R.id.btn_local_remove).setOnClickListener {
+            PhormiLocalTextAi.removeModel(this)
+            refreshLocalModel()
+            status.text = "Local model removed from Phormi."
+        }
+        findViewById<Button>(R.id.btn_local_run).setOnClickListener { runLocalAssistant() }
 
         val name = findViewById<EditText>(R.id.input_provider_name)
         val key = findViewById<EditText>(R.id.input_api_key)
@@ -56,15 +81,9 @@ class AiActivity : AppCompatActivity() {
             val k = key.text.toString().trim()
             val e = endpoint.text.toString().trim()
             val m = model.text.toString().trim()
-            if (k.isBlank()) {
-                status.text = "Paste the API key first."
-                return@setOnClickListener
-            }
+            if (k.isBlank()) { status.text = "Paste the API key first."; return@setOnClickListener }
             val inferred = controller.inferProviderConfig(n, e, m)
-            if (inferred.endpoint.isBlank()) {
-                status.text = "Endpoint is required for a custom provider name. Choose a template or enter the provider endpoint."
-                return@setOnClickListener
-            }
+            if (inferred.endpoint.isBlank()) { status.text = "Endpoint is required for a custom provider name. Choose a template or enter the provider endpoint."; return@setOnClickListener }
             val button = findViewById<Button>(R.id.btn_save_keys)
             button.isEnabled = false
             status.text = "Testing HTTPS AI connection…"
@@ -72,16 +91,9 @@ class AiActivity : AppCompatActivity() {
                 try {
                     val cfg = controller.resolveProviderConfig(n, k, inferred.endpoint, inferred.model)
                     controller.upsertProvider(AiController.Provider(UUID.randomUUID().toString().take(12), n, cfg.endpoint, cfg.model, k))
-                    controller.setActive(true)
-                    active.isChecked = true
-                    key.text.clear()
-                    refresh()
-                    status.text = "Connected: $n · ${cfg.model}"
-                } catch (t: Throwable) {
-                    status.text = "Connection failed: ${t.message ?: "unknown error"}"
-                } finally {
-                    button.isEnabled = true
-                }
+                    controller.setActive(true); active.isChecked = true; key.text.clear(); refresh(); status.text = "Connected: $n · ${cfg.model}"
+                } catch (t: Throwable) { status.text = "Connection failed: ${t.message ?: "unknown error"}" }
+                finally { button.isEnabled = true }
             }
         }
         active.setOnCheckedChangeListener { _, checked -> controller.setActive(checked); refresh() }
@@ -90,25 +102,29 @@ class AiActivity : AppCompatActivity() {
         if (intent.getBooleanExtra("auto_voice", false)) window.decorView.postDelayed({ startVoiceInput() }, 350)
     }
 
+    private fun runLocalAssistant() {
+        val text = instruction.text.toString().trim()
+        if (text.isBlank()) { status.text = "Enter a prompt for the local model first."; return }
+        if (!PhormiLocalTextAi.hasModel(this)) { status.text = "Import a GGUF model first. No API key is required."; return }
+        val button = findViewById<Button>(R.id.btn_local_run)
+        button.isEnabled = false; status.text = "Running locally on this phone…"
+        lifecycleScope.launch {
+            val result = PhormiLocalTextAi.generate(this@AiActivity, text)
+            status.text = result.fold({ "Local AI:\n$it" }, { "Local AI failed: ${it.message ?: "unknown error"}" })
+            button.isEnabled = true
+        }
+    }
+
     private fun runAssistant() {
         val text = instruction.text.toString().trim()
         if (text.isBlank()) return startVoiceInput()
-        if (!controller.hasAnyKey()) {
-            status.text = "Save an external AI connection first."
-            return
-        }
+        if (!controller.hasAnyKey()) { status.text = "Save an external AI connection first."; return }
         if (PhormiAccessibilityService.instance == null) {
             status.text = getString(R.string.accessibility_reminder)
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            return
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
         }
-
-        // The AI screen must not remain foreground while the agent operates the browser.
-        // Persist the task, close this screen, and let PhormiRepairApplication start the
-        // controller after MainActivity is resumed so Accessibility observes the browser.
         PhormiAiPendingTask.enqueue(applicationContext, "", text)
-        status.text = "Returning to the browser…"
-        finish()
+        status.text = "Returning to the browser…"; finish()
     }
 
     private fun startVoiceInput() {
@@ -122,13 +138,9 @@ class AiActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == voiceRequest && resultCode == Activity.RESULT_OK) {
-            data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let {
-                instruction.setText(it); instruction.setSelection(it.length)
-            }
-        }
+        if (requestCode == voiceRequest && resultCode == Activity.RESULT_OK) data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { instruction.setText(it); instruction.setSelection(it.length) }
     }
 
-    private fun refresh() { keyStatus.text = controller.keyStatusSummary() }
-    private fun append(line: String) { runOnUiThread { status.text = if (status.text.isBlank()) line else "${status.text}\n$line" } }
+    private fun refresh() { keyStatus.text = controller.keyStatusSummary(); refreshLocalModel() }
+    private fun refreshLocalModel() { localStatus.text = if (PhormiLocalTextAi.hasModel(this)) "Local GGUF model installed · inference stays on-device" else "No local model installed · import a GGUF file to enable keyless text AI" }
 }
