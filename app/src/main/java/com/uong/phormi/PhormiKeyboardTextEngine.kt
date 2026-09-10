@@ -27,13 +27,17 @@ object PhormiKeyboardTextEngine {
         InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
     )
 
+    /** URI/email fields should stay literal; browser web-edit fields are normal text fields. */
     fun isUriLike(info: EditorInfo?): Boolean {
-        val variation = (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
+        val variation = variation(info)
         return variation == InputType.TYPE_TEXT_VARIATION_URI ||
             variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
-            variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
-            variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
     }
+
+    /** True when the target explicitly asks the IME not to personalize or learn input. */
+    fun isNoPersonalizedLearning(info: EditorInfo?): Boolean =
+        info?.imeOptions?.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
 
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
         if (info == null || isPassword(info) || isUriLike(info)) return false
@@ -86,11 +90,7 @@ object PhormiKeyboardTextEngine {
         return trimmed.isEmpty() || trimmed.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
     }
 
-    /**
-     * Fallback used by older callers that do not have EditorInfo. Do not capitalize an
-     * empty field here: without EditorInfo we cannot distinguish a normal sentence from
-     * a URI, email, search, or other field where leading capitalization is undesirable.
-     */
+    /** Fallback used when EditorInfo is unavailable. It deliberately avoids leading capitalization. */
     fun autoCapitalize(ic: InputConnection?): Boolean {
         val before = ic?.getTextBeforeCursor(64, 0)?.toString().orEmpty().trimEnd()
         return before.isNotEmpty() && before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
