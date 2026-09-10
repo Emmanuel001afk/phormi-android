@@ -40,7 +40,7 @@ object PhormiKeyboardTextEngine {
         info?.imeOptions?.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
 
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
-        if (info == null || isPassword(info) || isUriLike(info)) return false
+        if (info == null || isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)) return false
         PhormiKeyboardAiBridge.start()
         return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
@@ -82,7 +82,7 @@ object PhormiKeyboardTextEngine {
     }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
-        if (ic == null || info == null || isPassword(info) || isUriLike(info)) return false
+        if (ic == null || info == null || isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)) return false
         val flags = info.inputType
         if (flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0) return true
         if (flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
@@ -97,8 +97,20 @@ object PhormiKeyboardTextEngine {
         return before.isNotEmpty() && before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
     }
 
-    fun contextBeforeCursor(ic: InputConnection?): String =
-        ic?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
+    /**
+     * Returns text for contextual features only when the active editor is safe for it.
+     * The service lookup is intentionally reflective so the browser/editor integration
+     * does not need to expose private IME state just for privacy gating.
+     */
+    fun contextBeforeCursor(ic: InputConnection?): String {
+        if (ic == null) return ""
+        val info = runCatching {
+            val field = PhormiKeyboardServiceV2::class.java.getDeclaredField("instance").apply { isAccessible = true }
+            (field.get(null) as? PhormiKeyboardServiceV2)?.currentInputEditorInfo
+        }.getOrNull()
+        if (isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)) return ""
+        return ic.getTextBeforeCursor(160, 0)?.toString().orEmpty()
+    }
 
     private fun variation(info: EditorInfo?): Int =
         (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
