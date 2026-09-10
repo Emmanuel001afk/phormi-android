@@ -42,7 +42,12 @@ object PhormiKeyboardAiBridge {
     private fun update() {
         val service = currentService() ?: return
         val info = service.currentInputEditorInfo ?: return
-        if (PhormiKeyboardTextEngine.isPassword(info) || PhormiKeyboardTextEngine.isUriLike(info)) return
+        val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
+        if (inputClass != InputType.TYPE_CLASS_TEXT ||
+            PhormiKeyboardTextEngine.isPassword(info) ||
+            PhormiKeyboardTextEngine.isUriLike(info) ||
+            PhormiKeyboardTextEngine.isNoPersonalizedLearning(info)
+        ) return
         val text = service.currentInputConnection?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service)
