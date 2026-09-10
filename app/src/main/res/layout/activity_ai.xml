@@ -2,8 +2,15 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#0B1220">
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Phormi AI" android:textColor="#F8FAFC" android:textSize="24sp" android:textStyle="bold"/>
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Connect Phormi to an external AI service over HTTPS. Local models are managed by Central Hub." android:textColor="#94A3B8" android:textSize="13sp"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Use a private on-device model with no API key, or connect an external AI service." android:textColor="#94A3B8" android:textSize="13sp"/>
 <Switch android:id="@+id/switch_ai_active" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Browser AI active" android:textColor="#E2E8F0"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="Private on-device text AI" android:textColor="#F8FAFC" android:textSize="18sp" android:textStyle="bold"/>
+<TextView android:id="@+id/local_model_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="No local model installed" android:textColor="#94A3B8" android:textSize="13sp"/>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+<Button android:id="@+id/btn_local_model" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Import GGUF model"/>
+<Button android:id="@+id/btn_local_remove" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Remove model"/>
+</LinearLayout>
+<Button android:id="@+id/btn_local_run" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Run local AI (no API key)"/>
 <EditText android:id="@+id/input_provider_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Provider name (e.g. OpenAI)" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <EditText android:id="@+id/input_api_key" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API key" android:inputType="textPassword" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <EditText android:id="@+id/input_endpoint" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="HTTPS chat endpoint" android:inputType="textUri" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
@@ -11,8 +18,8 @@
 <Button android:id="@+id/btn_template" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Choose provider preset"/>
 <Button android:id="@+id/btn_save_keys" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Test &amp; save connection"/>
 <TextView android:id="@+id/key_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:textColor="#CBD5E1"/>
-<EditText android:id="@+id/input_instruction" android:layout_width="match_parent" android:layout_height="110dp" android:layout_marginTop="16dp" android:gravity="top" android:hint="Ask Phormi to do something on the current page" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"><Button android:id="@+id/btn_voice" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Voice"/><Button android:id="@+id/btn_run" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Run"/></LinearLayout>
+<EditText android:id="@+id/input_instruction" android:layout_width="match_parent" android:layout_height="110dp" android:layout_marginTop="16dp" android:gravity="top" android:hint="Ask Phormi to do something or ask the local model a question" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"><Button android:id="@+id/btn_voice" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Voice"/><Button android:id="@+id/btn_run" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Run browser AI"/></LinearLayout>
 <TextView android:id="@+id/status_log" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="#CBD5E1" android:textSize="13sp"/>
 </LinearLayout>
 </ScrollView>
