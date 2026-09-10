@@ -36,8 +36,35 @@ internal fun PhormiKeyboardServiceV2.render(): View {
     }
     val builder = method ?: error("Missing Phormi keyboard panel builder: $methodName")
     builder.isAccessible = true
-    val view = builder.invoke(this) as View
-    return if (panel.endsWith("EMOJI") && panel != "AI_EMOJI") decorateEmojiGrid(view) else view
+    val built = builder.invoke(this) as View
+    val decorated = if (panel.endsWith("EMOJI") && panel != "AI_EMOJI") decorateEmojiGrid(built) else built
+    return wrapWithKeyboardHeight(decorated)
+}
+
+/** Applies the user's keyboard-height preference to the entire IME surface. */
+private fun PhormiKeyboardServiceV2.wrapWithKeyboardHeight(view: View): View {
+    val scale = PhormiKeyboardPreferences.heightScale(this)
+    if (scale == 1f) return view
+
+    val wrapper = FrameLayout(this).apply {
+        clipChildren = true
+        clipToPadding = true
+        contentDescription = "Phormi Keyboard"
+    }
+    wrapper.addView(view, FrameLayout.LayoutParams(-1, -1))
+    view.pivotX = 0f
+    view.pivotY = 0f
+    view.scaleY = scale
+    wrapper.post {
+        val measured = view.measuredHeight
+        if (measured > 0) {
+            wrapper.layoutParams = wrapper.layoutParams?.apply {
+                height = (measured * scale).toInt()
+            }
+            wrapper.requestLayout()
+        }
+    }
+    return wrapper
 }
 
 private fun PhormiKeyboardServiceV2.decorateEmojiGrid(view: View): View {
