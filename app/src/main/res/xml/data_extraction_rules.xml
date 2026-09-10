@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
+    </device-transfer>
+</data-extraction-rules>
