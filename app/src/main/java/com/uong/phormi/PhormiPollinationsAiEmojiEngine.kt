@@ -39,8 +39,9 @@ object PhormiPollinationsAiEmojiEngine {
      * visually fused into one icon (for example a joyful face with integrated fire/spark
      * energy), not returned as two unrelated emoji sitting beside each other.
      */
-    private fun buildPrompt(context: String): String =
-        "one original custom emoji-style reaction fused from the whole context: ${context.trim().take(360)}; " +
+    private fun buildPrompt(context: String): String {
+        val sanitized = sanitizeContext(context)
+        return "one original custom emoji-style reaction fused from the whole context: ${sanitized.take(360)}; " +
             "infer the strongest emotion plus important situational symbols (such as love, money, sun, " +
             "fire, celebration, sadness, surprise or excitement) and combine the relevant concepts into " +
             "ONE coherent expressive icon, with the secondary concept visibly integrated into the face or " +
@@ -49,6 +50,16 @@ object PhormiPollinationsAiEmojiEngine {
             "high-quality emoji aesthetic, clean uncluttered background, square composition, no text, no " +
             "letters, no words, no captions, no UI, no border, no watermark, one unified reaction, high " +
             "readability at tiny size"
+    }
+
+    /** Remove common directly identifying/secrets-like material before context leaves the device. */
+    private fun sanitizeContext(value: String): String = value
+        .replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), " [link] ")
+        .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), " [email] ")
+        .replace(Regex("\\b(?:\\d[ -]?){7,18}\\b"), " [number] ")
+        .replace(Regex("(?i)\\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|bearer|password|secret)\\s*[:=]?\\s*\\S+"), " [private-value] ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
     private fun download(prompt: String, variant: Int, context: Context): File {
         val encoded = URLEncoder.encode(prompt, Charsets.UTF_8.name()).replace("+", "%20")
