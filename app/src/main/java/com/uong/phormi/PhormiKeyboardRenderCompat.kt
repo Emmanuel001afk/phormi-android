@@ -74,8 +74,8 @@ private fun PhormiKeyboardServiceV2.decorateDraftRescue(view: View): View {
         textSize = 12f
         setTextColor(Color.rgb(229, 231, 235))
         isAllCaps = false
-        minWidth = 0
-        minHeight = 0
+        setMinWidth(0)
+        setMinHeight(0)
         stateListAnimator = null
         setPadding(dpCompat(7), 0, dpCompat(7), 0)
         background = GradientDrawable().apply {
@@ -144,8 +144,8 @@ private fun PhormiKeyboardServiceV2.decorateContextRail(view: View): View {
             text = mood.emoji
             textSize = 20f
             isAllCaps = false
-            minWidth = 0
-            minHeight = 0
+            setMinWidth(0)
+            setMinHeight(0)
             stateListAnimator = null
             contentDescription = "${mood.label} reaction"
             background = GradientDrawable().apply {
