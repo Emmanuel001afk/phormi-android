@@ -6,10 +6,12 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Toast
 import java.io.File
 
 /**
@@ -41,11 +43,68 @@ internal fun PhormiKeyboardServiceV2.render(): View {
     val built = builder.invoke(this) as View
     val decorated = when {
         panel.endsWith("EMOJI") && panel != "AI_EMOJI" -> decorateEmojiGrid(built)
-        panel == "KEYBOARD" -> decorateContextRail(built)
+        panel == "KEYBOARD" -> decorateContextRail(decorateDraftRescue(built))
         else -> built
     }
     applyKeyboardHeight(decorated)
     return decorated
+}
+
+/**
+ * Phormi Draft Rescue is a keyboard-only recovery action: the user explicitly
+ * saves the current text, and Phormi keeps a short-lived local draft per app.
+ * The action is unavailable for passwords, URI/email fields, and fields that
+ * opt out of personalized learning.
+ */
+private fun PhormiKeyboardServiceV2.decorateDraftRescue(view: View): View {
+    if (view !is LinearLayout) return view
+    val info = runCatching {
+        PhormiKeyboardServiceV2::class.java.getDeclaredField("editorInfo").apply { isAccessible = true }
+            .get(this) as? android.view.inputmethod.EditorInfo
+    }.getOrNull()
+    if (!PhormiKeyboardDraftRescue.canUse(info)) return view
+
+    val toolbar = view.getChildAt(0) as? android.widget.HorizontalScrollView ?: return view
+    val row = toolbar.getChildAt(0) as? LinearLayout ?: return view
+    val currentText = PhormiKeyboardDraftRescue.snapshot(currentInputConnection, info)
+    val draft = PhormiKeyboardDraftRescue.find(this, info)
+    val action = if (currentText.isNotBlank()) "Save" else if (draft != null) "Restore" else "Save"
+    val button = Button(this).apply {
+        text = "🛟 $action"
+        textSize = 12f
+        setTextColor(Color.rgb(229, 231, 235))
+        isAllCaps = false
+        minWidth = 0
+        minHeight = 0
+        stateListAnimator = null
+        setPadding(dpCompat(7), 0, dpCompat(7), 0)
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(31, 41, 55))
+            cornerRadius = dpCompat(13).toFloat()
+        }
+        contentDescription = "Phormi Draft Rescue: $action"
+        setOnClickListener {
+            performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            val latestInfo = runCatching {
+                PhormiKeyboardServiceV2::class.java.getDeclaredField("editorInfo").apply { isAccessible = true }
+                    .get(this@decorateDraftRescue) as? android.view.inputmethod.EditorInfo
+            }.getOrNull()
+            if (latestInfo == null) return@setOnClickListener
+            val latestText = PhormiKeyboardDraftRescue.snapshot(currentInputConnection, latestInfo)
+            if (latestText.isNotBlank()) {
+                val saved = PhormiKeyboardDraftRescue.save(this@decorateDraftRescue, latestInfo, latestText)
+                Toast.makeText(this@decorateDraftRescue, if (saved) "Draft rescued for this app" else "Draft could not be saved", Toast.LENGTH_SHORT).show()
+            } else {
+                val restored = PhormiKeyboardDraftRescue.restore(this@decorateDraftRescue, currentInputConnection, latestInfo)
+                Toast.makeText(this@decorateDraftRescue, if (restored) "Draft restored" else "No rescued draft", Toast.LENGTH_SHORT).show()
+            }
+            setInputView(render())
+        }
+    }
+    row.addView(button, LinearLayout.LayoutParams(dpCompat(88), dpCompat(38)).apply {
+        setMargins(dpCompat(2), 0, dpCompat(2), 0)
+    })
+    return view
 }
 
 /**
