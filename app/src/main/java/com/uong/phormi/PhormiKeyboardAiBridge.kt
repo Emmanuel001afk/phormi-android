@@ -47,7 +47,10 @@ object PhormiKeyboardAiBridge {
             return
         }
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass != InputType.TYPE_CLASS_TEXT || PhormiKeyboardTextEngine.isPrivateEditor(info)) {
+        if (inputClass != InputType.TYPE_CLASS_TEXT ||
+            (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
+            PhormiKeyboardTextEngine.isPrivateEditor(info)
+        ) {
             stop()
             return
         }
