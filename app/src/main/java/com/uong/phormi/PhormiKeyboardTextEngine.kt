@@ -45,9 +45,10 @@ object PhormiKeyboardTextEngine {
 
     fun shouldUsePredictions(info: EditorInfo?): Boolean {
         if (info == null || isPrivateEditor(info)) return false
+        if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        if ((info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) return false
         PhormiKeyboardAiBridge.start()
-        return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
-            (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+        return true
     }
 
     fun currentWord(ic: InputConnection?): String {
