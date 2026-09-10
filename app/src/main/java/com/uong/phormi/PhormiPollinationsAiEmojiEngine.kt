@@ -34,11 +34,21 @@ object PhormiPollinationsAiEmojiEngine {
         }
     }
 
+    /**
+     * Turn the whole typed context into one original reaction. Multiple concepts must be
+     * visually fused into one icon (for example a joyful face with integrated fire/spark
+     * energy), not returned as two unrelated emoji sitting beside each other.
+     */
     private fun buildPrompt(context: String): String =
-        "single expressive emoji icon representing this context: ${context.trim().take(180)}; " +
-            "centered isolated subject, simple bold emoji aesthetic, clean uncluttered background, " +
-            "square composition, no text, no letters, no words, no captions, no UI, no border, no watermark, " +
-            "one clear symbol or face, high readability at tiny size"
+        "one original custom emoji-style reaction fused from the whole context: ${context.trim().take(360)}; " +
+            "infer the strongest emotion plus important situational symbols (such as love, money, sun, " +
+            "fire, celebration, sadness, surprise or excitement) and combine the relevant concepts into " +
+            "ONE coherent expressive icon, with the secondary concept visibly integrated into the face or " +
+            "main symbol rather than shown as a separate second emoji; create a distinctive new emoji design, " +
+            "not a copy of any standard Unicode or platform emoji; centered isolated subject, simple bold " +
+            "high-quality emoji aesthetic, clean uncluttered background, square composition, no text, no " +
+            "letters, no words, no captions, no UI, no border, no watermark, one unified reaction, high " +
+            "readability at tiny size"
 
     private fun download(prompt: String, variant: Int, context: Context): File {
         val encoded = URLEncoder.encode(prompt, Charsets.UTF_8.name()).replace("+", "%20")
