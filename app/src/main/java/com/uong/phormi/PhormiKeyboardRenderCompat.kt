@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -15,7 +16,8 @@ import java.io.File
  * Compatibility render dispatcher for the rebuilt IME.
  *
  * The V2 service keeps its panel builders private. This extension restores the
- * render() call site used by the service while keeping those builders private.
+ * render() call site while adding Phormi-only presentation behavior around the
+ * private builders without changing the browser's input architecture.
  */
 internal fun PhormiKeyboardServiceV2.render(): View {
     val panel = runCatching {
@@ -37,34 +39,84 @@ internal fun PhormiKeyboardServiceV2.render(): View {
     val builder = method ?: error("Missing Phormi keyboard panel builder: $methodName")
     builder.isAccessible = true
     val built = builder.invoke(this) as View
-    val decorated = if (panel.endsWith("EMOJI") && panel != "AI_EMOJI") decorateEmojiGrid(built) else built
-    return wrapWithKeyboardHeight(decorated)
+    val decorated = when {
+        panel.endsWith("EMOJI") && panel != "AI_EMOJI" -> decorateEmojiGrid(built)
+        panel == "KEYBOARD" -> decorateContextRail(built)
+        else -> built
+    }
+    applyKeyboardHeight(decorated)
+    return decorated
 }
 
-/** Applies the user's keyboard-height preference to the entire IME surface. */
-private fun PhormiKeyboardServiceV2.wrapWithKeyboardHeight(view: View): View {
-    val scale = PhormiKeyboardPreferences.heightScale(this)
-    if (scale == 1f) return view
+/**
+ * Phormi Context Rail: a compact, local semantic reaction strip that stays in
+ * the normal keyboard while the user types. It combines the conversation's
+ * detected mood with ordinary keyboard suggestions, rather than hiding the
+ * feature behind a separate AI screen.
+ */
+private fun PhormiKeyboardServiceV2.decorateContextRail(view: View): View {
+    if (view !is LinearLayout || isPrivateEditor()) return view
+    val text = PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection)
+    val moods = PhormiKeyboardAiContext.suggestions(text).take(4)
+    if (moods.isEmpty()) return view
 
-    val wrapper = FrameLayout(this).apply {
-        clipChildren = true
-        clipToPadding = true
-        contentDescription = "Phormi Keyboard"
+    val rail = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        contentDescription = "Phormi contextual reactions"
+        setPadding(dpCompat(2), 0, dpCompat(2), 0)
     }
-    wrapper.addView(view, FrameLayout.LayoutParams(-1, -1))
-    view.pivotX = 0f
-    view.pivotY = 0f
-    view.scaleY = scale
-    wrapper.post {
-        val measured = view.measuredHeight
-        if (measured > 0) {
-            wrapper.layoutParams = wrapper.layoutParams?.apply {
-                height = (measured * scale).toInt()
+    val label = android.widget.TextView(this).apply {
+        text = "React"
+        textSize = 11f
+        setTextColor(Color.rgb(148, 163, 184))
+        gravity = Gravity.CENTER
+        contentDescription = "Contextual reactions"
+    }
+    rail.addView(label, LinearLayout.LayoutParams(dpCompat(46), dpCompat(36)))
+    moods.forEach { mood ->
+        val button = android.widget.Button(this).apply {
+            text = mood.emoji
+            textSize = 20f
+            isAllCaps = false
+            minWidth = 0
+            minHeight = 0
+            stateListAnimator = null
+            contentDescription = "${mood.label} reaction"
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(31, 41, 55))
+                cornerRadius = dpCompat(11).toFloat()
             }
-            wrapper.requestLayout()
+            setOnClickListener {
+                performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                commitText(mood.emoji)
+            }
         }
+        rail.addView(button, LinearLayout.LayoutParams(0, dpCompat(36), 1f).apply {
+            setMargins(dpCompat(2), 0, dpCompat(2), 0)
+        })
     }
-    return wrapper
+    val insertAt = if (view.childCount > 1) 1 else view.childCount
+    view.addView(rail, insertAt, LinearLayout.LayoutParams(-1, dpCompat(38)))
+    return view
+}
+
+/** Apply the user's height setting to the actual fixed-height keyboard rows. */
+private fun PhormiKeyboardServiceV2.applyKeyboardHeight(view: View) {
+    val scale = PhormiKeyboardPreferences.heightScale(this)
+    if (scale == 1f) return
+    resizeFixedKeyboardRows(view, scale)
+}
+
+private fun PhormiKeyboardServiceV2.resizeFixedKeyboardRows(view: View, scale: Float) {
+    val params = view.layoutParams
+    if (params != null && params.height in dpCompat(44)..dpCompat(56)) {
+        params.height = (params.height * scale).toInt().coerceAtLeast(dpCompat(36))
+        view.layoutParams = params
+    }
+    if (view is ViewGroup) {
+        for (index in 0 until view.childCount) resizeFixedKeyboardRows(view.getChildAt(index), scale)
+    }
 }
 
 private fun PhormiKeyboardServiceV2.decorateEmojiGrid(view: View): View {
