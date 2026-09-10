@@ -51,11 +51,20 @@ object PhormiKeyboardClipboardStore {
     @Synchronized fun clear(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_ITEMS).apply()
 
     fun capturePrimaryClipboard(context: Context) {
+        if (!shouldCaptureForActiveEditor()) return
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0 || isSensitive(clip.description)) return
         clip.getItemAt(0).coerceToText(context)?.let { record(context, it) }
     }
+
+    /** Do not build clipboard history while a secure or non-personalized editor owns the IME. */
+    private fun shouldCaptureForActiveEditor(): Boolean = runCatching {
+        val field = PhormiKeyboardServiceV2::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        val service = field.get(null) as? PhormiKeyboardServiceV2
+        val info = service?.currentInputEditorInfo
+        info != null && !PhormiKeyboardTextEngine.isPassword(info) && !PhormiKeyboardTextEngine.isNoPersonalizedLearning(info)
+    }.getOrDefault(true)
 
     private fun isSensitive(description: ClipDescription?): Boolean {
         if (description == null) return false
