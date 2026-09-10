@@ -55,7 +55,13 @@ internal fun PhormiKeyboardServiceV2.render(): View {
  * feature behind a separate AI screen.
  */
 private fun PhormiKeyboardServiceV2.decorateContextRail(view: View): View {
-    if (view !is LinearLayout || isPrivateEditor()) return view
+    val info = runCatching {
+        PhormiKeyboardServiceV2::class.java.getDeclaredField("editorInfo").apply { isAccessible = true }
+            .get(this) as? android.view.inputmethod.EditorInfo
+    }.getOrNull()
+    if (view !is LinearLayout || info == null || PhormiKeyboardTextEngine.isPassword(info) ||
+        PhormiKeyboardTextEngine.isUriLike(info) || PhormiKeyboardTextEngine.isNoPersonalizedLearning(info)) return view
+
     val text = PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection)
     val moods = PhormiKeyboardAiContext.suggestions(text).take(4)
     if (moods.isEmpty()) return view
@@ -89,7 +95,7 @@ private fun PhormiKeyboardServiceV2.decorateContextRail(view: View): View {
             }
             setOnClickListener {
                 performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                commitText(mood.emoji)
+                PhormiKeyboardServiceV2.commitExternalText(this@decorateContextRail, mood.emoji)
             }
         }
         rail.addView(button, LinearLayout.LayoutParams(0, dpCompat(36), 1f).apply {
