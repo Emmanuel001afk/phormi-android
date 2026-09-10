@@ -5,11 +5,13 @@
         <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_draft_rescue.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
-        <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
+        <exclude domain="phormi_keyboard_text.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_draft_rescue.xml" />
     </device-transfer>
 </data-extraction-rules>
