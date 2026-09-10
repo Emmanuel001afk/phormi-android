@@ -31,9 +31,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         heightValue = TextView(this).apply { setTextColor(android.graphics.Color.rgb(203, 213, 225)); textSize = 13f; setPadding(0, 0, 0, 4) }
         root.addView(heightValue)
         val heightSeek = SeekBar(this).apply {
-            max = 6
-            progress = PhormiKeyboardPreferences.height(this@PhormiKeyboardSettingsActivity)
-            contentDescription = "Keyboard height"
+            max = 6; progress = PhormiKeyboardPreferences.height(this@PhormiKeyboardSettingsActivity); contentDescription = "Keyboard height"
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { updateHeightLabel(progress) }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
@@ -48,39 +46,24 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         option(root, "Suggestions", "Show word suggestions when the editor does not provide its own completions.", PhormiKeyboardPreferences.suggestions(this), PhormiKeyboardPreferences.KEY_SUGGESTIONS)
         option(root, "Autocorrect", "Apply conservative local corrections for common typing mistakes.", PhormiKeyboardPreferences.autocorrect(this), PhormiKeyboardPreferences.KEY_AUTOCORRECT)
         option(root, "Auto-capitalization", "Capitalize the beginning of sentences and the first word in a text field.", PhormiKeyboardPreferences.autoCaps(this), PhormiKeyboardPreferences.KEY_AUTO_CAPS)
+        option(root, "AI Emoji", "Allow Phormi to create one integrated context-aware reaction from typed text.", PhormiKeyboardPreferences.aiEmoji(this), PhormiKeyboardPreferences.KEY_AI_EMOJI)
         option(root, "Key vibration", "Use the device haptic feedback setting for key presses.", PhormiKeyboardPreferences.haptic(this), PhormiKeyboardPreferences.KEY_HAPTIC)
         option(root, "Key sounds", "Play a short key sound where the device allows it.", PhormiKeyboardPreferences.sound(this), PhormiKeyboardPreferences.KEY_SOUND)
         setContentView(root); updateStatus()
     }
 
-    private fun updateHeightLabel(progress: Int) {
-        if (!::heightValue.isInitialized) return
-        val labels = arrayOf("Extra short", "Short", "Compact", "Normal", "Tall", "Extra tall", "Maximum")
-        heightValue.text = "${labels[progress.coerceIn(0, 6)]} keyboard height"
-    }
-
+    private fun updateHeightLabel(progress: Int) { if (::heightValue.isInitialized) { val labels = arrayOf("Extra short", "Short", "Compact", "Normal", "Tall", "Extra tall", "Maximum"); heightValue.text = "${labels[progress.coerceIn(0, 6)]} keyboard height" } }
     private fun updateStatus() {
-        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-        val serviceId = "$packageName/.PhormiKeyboardServiceV2"
-        val enabled = imm.enabledInputMethodList.any { it.id == serviceId }
-        val selected = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD) == serviceId
-        status.text = when {
-            selected -> "Status: enabled and currently selected as the active keyboard."
-            enabled -> "Status: enabled, but another keyboard is currently selected."
-            else -> "Status: not enabled yet. Tap ‘Enable Phormi Keyboard’, enable it in Android settings, then return here and choose it."
-        }
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager; val serviceId = "$packageName/.PhormiKeyboardServiceV2"
+        val enabled = imm.enabledInputMethodList.any { it.id == serviceId }; val selected = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD) == serviceId
+        status.text = when { selected -> "Status: enabled and currently selected as the active keyboard."; enabled -> "Status: enabled, but another keyboard is currently selected."; else -> "Status: not enabled yet. Tap ‘Enable Phormi Keyboard’, enable it in Android settings, then return here and choose it." }
         status.setTextColor(if (enabled) android.graphics.Color.rgb(134, 239, 172) else android.graphics.Color.rgb(248, 196, 113))
     }
-
     private fun option(root: LinearLayout, title: String, summary: String, checked: Boolean, key: String) {
         val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 8) }
-        val check = CheckBox(this).apply { text = title; isChecked = checked; setTextColor(android.graphics.Color.WHITE); textSize = 16f; setOnCheckedChangeListener { _, value -> PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity, key, value) } }
-        row.addView(check)
-        row.addView(TextView(this).apply { text = summary; setTextColor(android.graphics.Color.rgb(148, 163, 184)); textSize = 12f; setPadding(48, 0, 0, 8) })
-        root.addView(row)
+        row.addView(CheckBox(this).apply { text = title; isChecked = checked; setTextColor(android.graphics.Color.WHITE); textSize = 16f; setOnCheckedChangeListener { _, value -> PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity, key, value) } })
+        row.addView(TextView(this).apply { text = summary; setTextColor(android.graphics.Color.rgb(148, 163, 184)); textSize = 12f; setPadding(48, 0, 0, 8) }); root.addView(row)
     }
 }
 
-private object ToastCompat {
-    fun show(context: android.content.Context, message: String) = android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
-}
+private object ToastCompat { fun show(context: android.content.Context, message: String) = android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show() }
