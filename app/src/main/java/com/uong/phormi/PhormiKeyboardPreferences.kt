@@ -11,6 +11,7 @@ object PhormiKeyboardPreferences {
     private const val HAPTIC = "haptic"
     private const val SOUND = "sound"
     private const val HEIGHT = "keyboard_height"
+    private const val AI_EMOJI = "ai_emoji"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -19,8 +20,9 @@ object PhormiKeyboardPreferences {
     fun autoCaps(context: Context) = prefs(context).getBoolean(AUTO_CAPS, true)
     fun haptic(context: Context) = prefs(context).getBoolean(HAPTIC, true)
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
+    fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
 
-    /** 0..6 maps from Extra short through Extra tall, matching a Gboard-like height range. */
+    /** 0..6 maps from Extra short through Extra tall. */
     fun height(context: Context) = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
     fun heightScale(context: Context): Float = when (height(context)) {
         0 -> 0.85f
@@ -40,4 +42,5 @@ object PhormiKeyboardPreferences {
     const val KEY_AUTO_CAPS = AUTO_CAPS
     const val KEY_HAPTIC = HAPTIC
     const val KEY_SOUND = SOUND
+    const val KEY_AI_EMOJI = AI_EMOJI
 }
