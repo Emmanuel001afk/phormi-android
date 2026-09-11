@@ -46,8 +46,8 @@ private fun PhormiKeyboardServiceV2.installResizeHandle(root: View) {
     val container = root as? ViewGroup ?: return
     if (container.childCount == 0) return
     val old = container.getChildAt(0)
-    if (old.contentDescription?.toString() != "Resize Phormi Keyboard") return
-    container.removeViewAt(0)
+    if (old.contentDescription?.toString() == "Resize Phormi Keyboard") container.removeViewAt(0)
+
     val handle = object : View(this) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(canvas: Canvas) {
@@ -73,7 +73,7 @@ private fun PhormiKeyboardServiceV2.installResizeHandle(root: View) {
     var preview = startLevel
     handle.setOnTouchListener { _, event ->
         val density = resources.displayMetrics.density
-        fun heightPx(level: Int) = (420f * density * PhormiKeyboardPreferences.heightScaleFor(level)).roundToInt()
+        fun heightPx(level: Int) = (360f * density * PhormiKeyboardPreferences.heightScaleFor(level)).roundToInt()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 startY = event.rawY; startLevel = PhormiKeyboardPreferences.height(this); preview = startLevel; true
@@ -135,11 +135,8 @@ private fun PhormiKeyboardServiceV2.installDeleteCompat(root: View) {
             val ic = currentInputConnection ?: return
             runCatching {
                 val selected = ic.getSelectedText(0)
-                if (!selected.isNullOrEmpty()) {
-                    ic.commitText("", 1)
-                } else if (!ic.deleteSurroundingTextInCodePoints(1, 0)) {
-                    ic.deleteSurroundingText(1, 0)
-                }
+                if (!selected.isNullOrEmpty()) ic.commitText("", 1)
+                else if (!ic.deleteSurroundingTextInCodePoints(1, 0)) ic.deleteSurroundingText(1, 0)
             }
         }
         view.setOnClickListener { deleteOnce() }
