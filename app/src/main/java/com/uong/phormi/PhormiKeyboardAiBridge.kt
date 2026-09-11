@@ -69,26 +69,19 @@ object PhormiKeyboardAiBridge {
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
             PhormiKeyboardTextEngine.isPrivateEditor(info)
         ) return
-
-        val text = service.currentInputConnection?.let {
-            PhormiKeyboardTextEngine.contextBeforeCursor(it)
-        }.orEmpty()
+        val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutoCaps(service)
         if (text != lastText) {
             lastText = text
             updateSuggestions(service, info, text)
             scheduleAiReaction(service, text)
         }
-        if (lastAiText.isNotBlank() && service.getInputView() != null) {
-            installAiReaction(service, aiController?.latestFile())
-        }
     }
 
     private fun updateSuggestions(service: PhormiKeyboardServiceV2, info: android.view.inputmethod.EditorInfo, text: String) {
         if (!PhormiKeyboardPreferences.suggestions(service)) return
         val locale = PhormiKeyboardTextEngine.localeFor(info)
-        val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text, locale))
-            .distinct().take(4)
+        val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text, locale)).distinct().take(4)
         if (suggestions == lastSuggestions) return
         lastSuggestions = suggestions
         val field = findField(service.javaClass, "completions") ?: return
@@ -113,8 +106,7 @@ object PhormiKeyboardAiBridge {
             if (aiController == null) {
                 aiController = PhormiKeyboardAiEmojiController(current) { files, generating ->
                     if (started && !generating) {
-                        val active = currentService()
-                        if (active != null) installAiReaction(active, files.firstOrNull())
+                        currentService()?.let { active -> installAiReaction(active, files.firstOrNull()) }
                     }
                 }
             }
@@ -123,6 +115,7 @@ object PhormiKeyboardAiBridge {
         handler.postDelayed(aiPending!!, AI_DEBOUNCE_MS)
     }
 
+    /** Put one generated reaction into the same bounded emoji grid area as normal emoji. */
     private fun installAiReaction(service: PhormiKeyboardServiceV2, file: java.io.File?) {
         if (file == null || !file.exists() || !PhormiKeyboardPreferences.aiEmoji(service)) return
         val root = service.getInputView() as? ViewGroup ?: return
@@ -136,7 +129,8 @@ object PhormiKeyboardAiBridge {
         val grid = scroll.getChildAt(0) as? LinearLayout ?: return
 
         for (i in grid.childCount - 1 downTo 0) {
-            if (grid.getChildAt(i).tag == TAG_AI_ROW) grid.removeViewAt(i)
+            val child = grid.getChildAt(i)
+            if (child.tag == TAG_AI_ROW || (child is LinearLayout && child.childCount == 3)) grid.removeViewAt(i)
         }
 
         val row = LinearLayout(service).apply {
@@ -157,7 +151,10 @@ object PhormiKeyboardAiBridge {
                 setPadding(2, 0, 2, 0)
                 background = rounded(Color.rgb(39, 48, 64), 9)
                 contentDescription = emoji
-                setOnClickListener { PhormiKeyboardServiceV2.commitExternalText(service, emoji) }
+                setOnClickListener {
+                    feedback(this)
+                    PhormiKeyboardServiceV2.commitExternalText(service, emoji)
+                }
             }
             row.addView(button, LinearLayout.LayoutParams(0, scaled(service, 50), 1f).apply { setMargins(2, 2, 2, 2) })
         }
@@ -177,9 +174,7 @@ object PhormiKeyboardAiBridge {
             background = rounded(Color.rgb(39, 48, 64), 9)
             setOnClickListener {
                 feedback(this)
-                if (PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))) {
-                    lastAiText = ""
-                }
+                if (PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))) lastAiText = ""
             }
         }
         row.addView(image, LinearLayout.LayoutParams(0, scaled(service, 50), 1f).apply { setMargins(2, 2, 2, 2) })
@@ -250,5 +245,3 @@ object PhormiLocalPredictionEngine {
         return pool.filter { it.startsWith(token) && it != token }.take(4)
     }
 }
-
-private fun PhormiKeyboardAiEmojiController.latestFile(): java.io.File? = null
