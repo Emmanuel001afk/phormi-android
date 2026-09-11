@@ -63,9 +63,7 @@ object PhormiKeyboardClipboardStore {
             val item = clip.getItemAt(index)
             val uri = item.uri
             if (uri != null) {
-                val mime = clip.description?.let { desc ->
-                    if (desc.mimeTypeCount > 0) desc.getMimeType(0) else cm.primaryClipDescription?.getMimeType(0)
-                }
+                val mime = runCatching { clip.description?.getMimeType(0) }.getOrNull()
                 val copied = runCatching { PhormiKeyboardStickerStore.import(context, uri, "clipboard") }.getOrNull()
                 if (copied != null) {
                     recordUri(context, PhormiKeyboardStickerStore.contentUri(context, copied), mime, if (mime?.startsWith("image/") == true) "🖼 Screenshot / image" else "📎 Copied content")
