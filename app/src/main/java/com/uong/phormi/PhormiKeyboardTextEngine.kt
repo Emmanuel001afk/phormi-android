@@ -21,20 +21,20 @@ object PhormiKeyboardTextEngine {
 
     private val correctionsByLanguage = mapOf(
         "en" to mapOf("teh" to "the", "taht" to "that", "adn" to "and", "hte" to "the", "recieve" to "receive", "seperate" to "separate", "definately" to "definitely", "becuase" to "because", "adress" to "address", "thier" to "their", "wierd" to "weird", "untill" to "until", "tomorow" to "tomorrow", "dont" to "don't", "cant" to "can't", "wont" to "won't", "im" to "I'm", "ive" to "I've", "youre" to "you're", "thats" to "that's"),
-        "fr" to mapOf("bonjou" to "bonjour", "merc" to "merci", "commen" to "comment", "beaucou" to "beaucoup", "parceque" to "parce que", "vraimen" to "vraiment", "maintenan" to "maintenant", "demai" to "demain", "desole" to "désolé"),
-        "es" to mapOf("gracis" to "gracias", "holaa" to "hola", "buenosdias" to "buenos días", "tambien" to "también", "manana" to "mañana", "felis" to "feliz"),
-        "pt" to mapOf("obrigao" to "obrigado", "tambem" to "também", "amanha" to "amanhã", "familia" to "família", "voce" to "você"),
+        "fr" to mapOf("bonjou" to "bonjour", "merc" to "merci", "commen" to "comment", "beaucou" to "beaucoup", "parceque" to "parce que", "vraimen" to "vraiment", "desole" to "désolé"),
+        "es" to mapOf("gracis" to "gracias", "holaa" to "hola", "tambien" to "también", "manana" to "mañana"),
+        "pt" to mapOf("obrigao" to "obrigado", "tambem" to "também", "amanha" to "amanhã", "voce" to "você"),
         "de" to mapOf("uber" to "über", "fur" to "für", "schon" to "schön"),
-        "it" to mapOf("perche" to "perché", "piu" to "più", "cosi" to "così", "grazzie" to "grazie"),
-        "tr" to mapOf("tesekkur" to "teşekkür", "cok" to "çok", "bugun" to "bugün", "yarin" to "yarın", "degil" to "değil"),
+        "it" to mapOf("perche" to "perché", "piu" to "più", "cosi" to "così"),
+        "tr" to mapOf("tesekkur" to "teşekkür", "cok" to "çok", "bugun" to "bugün", "yarin" to "yarın"),
         "yo" to mapOf("bawo" to "báwo", "bee ni" to "bẹ́ẹ̀ni", "dada" to "dáadáa", "mo dupe" to "mo dúpẹ́", "ola" to "ọ̀la", "ore" to "ọ̀rẹ́", "ife" to "ìfẹ́", "ayo" to "ayọ̀", "pele" to "pẹ̀lẹ́"),
-        "ig" to mapOf("daalu" to "daalụ", "biko" to "biko"),
-        "sw" to mapOf("asante" to "asante", "tafadhali" to "tafadhali")
+        "ig" to mapOf("daalu" to "daalụ"),
+        "sw" to mapOf("asante" to "asante")
     )
 
     private val nextSeeds = mapOf(
         "en" to mapOf("good" to listOf("morning", "afternoon", "evening", "luck"), "how" to listOf("are", "is", "was", "do"), "thank" to listOf("you"), "happy" to listOf("birthday", "to", "for"), "i" to listOf("am", "will", "can", "want", "need"), "we" to listOf("are", "can", "will", "should")),
-        "fr" to mapOf("bonjour" to listOf("à", "tout", "comment"), "merci" to listOf("beaucoup", "pour"), "je" to listOf("suis", "vais", "peux", "veux"), "nous" to listOf("sommes", "allons", "pouvons")),
+        "fr" to mapOf("bonjour" to listOf("à", "tout", "comment"), "merci" to listOf("beaucoup", "pour"), "je" to listOf("suis", "vais", "peux", "veux")),
         "es" to mapOf("hola" to listOf("a", "todos", "cómo"), "gracias" to listOf("por", "mucho"), "yo" to listOf("soy", "quiero", "puedo")),
         "pt" to mapOf("olá" to listOf("amigo", "a", "todos"), "obrigado" to listOf("por", "muito"), "eu" to listOf("sou", "vou", "posso", "quero")),
         "de" to mapOf("hallo" to listOf("zusammen", "wie", "mein"), "danke" to listOf("dir", "sehr"), "ich" to listOf("bin", "habe", "will", "kann")),
@@ -43,7 +43,7 @@ object PhormiKeyboardTextEngine {
         "tr" to mapOf("merhaba" to listOf("nasılsın", "arkadaş"), "teşekkür" to listOf("ederim", "çok"), "ben" to listOf("bir", "de", "çok")),
         "yo" to mapOf("báwo" to listOf("ni", "ni o ṣe"), "mo" to listOf("fẹ́", "wà", "dúpẹ́", "mọ̀"), "ẹ" to listOf("ṣe", "gan")),
         "ig" to mapOf("kedu" to listOf("ka", "ị", "mere"), "daalụ" to listOf("nke ukwuu"), "anyị" to listOf("ga", "nwere", "chọrọ")),
-        "ha" to mapOf("sannu" to listOf("da", "lafiya"), "na" to listOf("gode", "son", "ina")),
+        "ha" to mapOf("sannu" to listOf("da", "lafiya")),
         "sw" to mapOf("habari" to listOf("ya", "za"), "asante" to listOf("sana", "kwa")),
         "ar" to mapOf("مرحبا" to listOf("بكم", "كيف"), "شكرا" to listOf("لك", "جزيلا")),
         "hi" to mapOf("नमस्ते" to listOf("आप", "कैसे"), "धन्यवाद" to listOf("आपको")),
@@ -64,13 +64,22 @@ object PhormiKeyboardTextEngine {
     fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isNoPersonalizedLearning(info) && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0 && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
 
     fun localeFor(info: EditorInfo?): Locale {
-        val subtype = runCatching { currentSubtype() }.getOrNull()
+        val subtype = currentSubtype()
         val tag = subtype?.locale?.replace('_', '-')?.takeIf { it.isNotBlank() }
         return if (tag != null) Locale.forLanguageTag(tag) else info?.hintLocales?.get(0) ?: Locale.getDefault()
     }
 
     private fun currentSubtype() = runCatching {
-        PhormiKeyboardServiceV2.instanceForEngine()?.getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
+        val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
+        val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
+        val service = field?.get(companion) as? PhormiKeyboardServiceV2
+        service?.getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
+    }.getOrNull()
+
+    private fun currentService(): PhormiKeyboardServiceV2? = runCatching {
+        val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
+        val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
+        field?.get(companion) as? PhormiKeyboardServiceV2
     }.getOrNull()
 
     fun currentWord(ic: InputConnection?): String = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty().trimEnd().split(Regex("[\\s\\n\\r\\t]+"), limit = 0).lastOrNull().orEmpty().takeLastWhile { it.isLetter() || it == '\'' || it == '’' }.take(48)
@@ -102,29 +111,20 @@ object PhormiKeyboardTextEngine {
 
     fun learn(context: Context, word: String, info: EditorInfo?) {
         if (!allowsPersonalizedLearning(info)) return
-        val value = word.trim()
-        if (value.length !in 2..64 || value.any(Char::isDigit)) return
-        val all = loadLearned(context).toMutableList()
-        all.removeAll { it.equals(value, true) }
-        all.add(0, value)
-        saveLearned(context, all)
+        val value = word.trim(); if (value.length !in 2..64 || value.any(Char::isDigit)) return
+        val all = loadLearned(context).toMutableList(); all.removeAll { it.equals(value, true) }; all.add(0, value); saveLearned(context, all)
     }
 
     fun learnPair(context: Context, previous: String, current: String, info: EditorInfo?) {
         if (!allowsPersonalizedLearning(info) || previous.isBlank() || current.isBlank()) return
-        val key = previous.lowercase(localeFor(info))
-        val map = loadAllNextWords(context).toMutableMap()
-        map[key] = (map[key].orEmpty().filterNot { it.equals(current, true) } + current.take(64)).takeLast(10)
-        saveAllNextWords(context, map)
+        val key = previous.lowercase(localeFor(info)); val map = loadAllNextWords(context).toMutableMap()
+        map[key] = (map[key].orEmpty().filterNot { it.equals(current, true) } + current.take(64)).takeLast(10); saveAllNextWords(context, map)
     }
 
     fun learnCorrection(context: Context, original: String, accepted: String, info: EditorInfo?) {
         if (!allowsPersonalizedLearning(info)) return
-        val a = original.trim(); val b = accepted.trim()
-        if (a.length !in 2..64 || b.isBlank() || a.equals(b, true)) return
-        val map = loadLearnedCorrections(context).toMutableMap()
-        map[a.lowercase(localeFor(info))] = b
-        saveLearnedCorrections(context, map)
+        val a = original.trim(); val b = accepted.trim(); if (a.length !in 2..64 || b.isBlank() || a.equals(b, true)) return
+        val map = loadLearnedCorrections(context).toMutableMap(); map[a.lowercase(localeFor(info))] = b; saveLearnedCorrections(context, map)
     }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
@@ -143,7 +143,6 @@ object PhormiKeyboardTextEngine {
     }
 
     private fun activeLocale(context: Context): Locale = if (context is PhormiKeyboardServiceV2) localeFor(context.currentInputEditorInfo) else Locale.getDefault()
-    private fun currentService(): PhormiKeyboardServiceV2? = PhormiKeyboardServiceV2.instanceForEngine()
 
     private fun loadLearned(context: Context): List<String> = runCatching {
         val array = JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LEARNED, "[]") ?: "[]")
@@ -151,23 +150,16 @@ object PhormiKeyboardTextEngine {
     }.getOrDefault(emptyList())
 
     private fun saveLearned(context: Context, words: List<String>) {
-        val array = JSONArray(); words.take(MAX_LEARNED).forEach(array::put)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_LEARNED, array.toString()).apply()
+        val array = JSONArray(); words.take(MAX_LEARNED).forEach(array::put); context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_LEARNED, array.toString()).apply()
     }
 
     private fun loadAllNextWords(context: Context): Map<String, List<String>> = runCatching {
         val obj = JSONObject(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_BIGRAMS, "{}") ?: "{}")
-        buildMap {
-            obj.keys().forEach { key ->
-                val array = obj.optJSONArray(key) ?: return@forEach
-                put(key, buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add) })
-            }
-        }
+        buildMap { obj.keys().forEach { key -> val array = obj.optJSONArray(key) ?: return@forEach; put(key, buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add) }) } }
     }.getOrDefault(emptyMap())
 
     private fun saveAllNextWords(context: Context, map: Map<String, List<String>>) {
-        val obj = JSONObject(); map.entries.take(MAX_BIGRAMS).forEach { (key, values) -> obj.put(key, JSONArray(values.take(10))) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS, obj.toString()).apply()
+        val obj = JSONObject(); map.entries.take(MAX_BIGRAMS).forEach { (key, values) -> obj.put(key, JSONArray(values.take(10))) }; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS, obj.toString()).apply()
     }
 
     private fun loadLearnedCorrections(context: Context): Map<String, String> = runCatching {
@@ -176,8 +168,7 @@ object PhormiKeyboardTextEngine {
     }.getOrDefault(emptyMap())
 
     private fun saveLearnedCorrections(context: Context, map: Map<String, String>) {
-        val obj = JSONObject(); map.entries.take(MAX_CORRECTIONS).forEach { (key, value) -> obj.put(key, value) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CORRECTIONS, obj.toString()).apply()
+        val obj = JSONObject(); map.entries.take(MAX_CORRECTIONS).forEach { (key, value) -> obj.put(key, value) }; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CORRECTIONS, obj.toString()).apply()
     }
 
     private fun variation(info: EditorInfo?): Int = (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
