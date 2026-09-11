@@ -23,15 +23,21 @@ object PhormiKeyboardPreferences {
     fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
 
     /** 0..6 maps from Extra short through Extra tall. */
-    fun height(context: Context) = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
-    fun heightScale(context: Context): Float = when (height(context)) {
-        0 -> 0.85f
-        1 -> 0.92f
-        2 -> 0.97f
-        3 -> 1.00f
-        4 -> 1.08f
-        5 -> 1.17f
-        else -> 1.27f
+    fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
+    fun heightScale(context: Context): Float {
+        // The IME renderer calls this for every keyboard surface. Starting the
+        // enhancement loop here keeps live suggestions/reactions tied to the
+        // actual system-IME lifecycle without adding another visible service.
+        PhormiKeyboardAiBridge.start(context)
+        return when (height(context)) {
+            0 -> 0.85f
+            1 -> 0.92f
+            2 -> 0.97f
+            3 -> 1.00f
+            4 -> 1.08f
+            5 -> 1.17f
+            else -> 1.27f
+        }
     }
 
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
