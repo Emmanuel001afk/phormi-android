@@ -57,7 +57,9 @@ object PhormiKeyboardAiBridge {
         val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service)
-        installViewEnhancements(service)
+        // The system IME renderer already owns touch feedback. Do not replace key
+        // touch handlers here: doing so would make normal taps compete with a
+        // gesture recognizer. Glide typing will be added at the keyboard-row level.
         if (text != lastText) {
             lastText = text
             updateSuggestions(service, info, text)
@@ -140,26 +142,10 @@ object PhormiKeyboardAiBridge {
         if (!(caps.get(service) as? Boolean ?: false) && !(shift.get(service) as? Boolean ?: false)) { shift.set(service, true); rerender(service) }
     }
 
-    private fun installViewEnhancements(service: PhormiKeyboardServiceV2) {
-        val root = service.getInputView() ?: return; val buttons = mutableListOf<Button>(); collectButtons(root, buttons)
-        val letterButtons = buttons.filter { it.text.toString().matches(Regex("[A-Za-z]")) }
-        letterButtons.forEach { button ->
-            if (button.getTag(TAG_GLIDE) == true) return@forEach
-            button.setTag(TAG_GLIDE, true); val state = GlideState()
-            button.setOnTouchListener { view, event ->
-                feedback(view, event.actionMasked)
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { state.active = true; state.sequence.clear(); state.sequence.add(button.text.toString().lowercase()); state.last = button; true }
-                    MotionEvent.ACTION_MOVE -> { val hit = nearestLetter(letterButtons, event.rawX, event.rawY); if (state.active && hit != null && hit !== state.last) { state.sequence.add(hit.text.toString().lowercase()); state.last = hit }; true }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { if (event.actionMasked == MotionEvent.ACTION_UP && state.active) { if (state.sequence.size >= 2) service.currentInputConnection?.commitText(PhormiGlideEngine.resolve(state.sequence.joinToString("")), 1) else view.performClick() }; state.active = false; true }
-                    else -> true
-                }
-            }
-        }
-        buttons.filterNot { letterButtons.contains(it) || it.text.toString() == "Space" }.forEach { button ->
-            if (button.getTag(TAG_FEEDBACK) == true) return@forEach
-            button.setTag(TAG_FEEDBACK, true); button.setOnTouchListener { view, event -> feedback(view, event.actionMasked); false }
-        }
+    private fun installViewEnhancements(@Suppress("UNUSED_PARAMETER") service: PhormiKeyboardServiceV2) {
+        // Intentionally empty. The V2 renderer owns all touch handling so taps,
+        // long-press/repeat, space cursor movement, and future gesture input remain
+        // coordinated instead of competing for the same MotionEvent stream.
     }
 
     private fun feedback(view: View, action: Int = MotionEvent.ACTION_DOWN) { if (action == MotionEvent.ACTION_DOWN) { if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK) } }
