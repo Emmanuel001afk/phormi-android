@@ -13,6 +13,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.Locale
 
 /** Renderer bridge for V2. Every panel must resolve to an actual in-IME surface. */
 internal fun PhormiKeyboardServiceV2.render(): View {
@@ -29,6 +30,7 @@ internal fun PhormiKeyboardServiceV2.render(): View {
     if (panelName == "KEYBOARD") {
         installGlideCompat(view)
         decorateShiftState(view)
+        installMultilingualLongPress(view)
     }
     return view
 }
@@ -56,6 +58,50 @@ private fun PhormiKeyboardServiceV2.decorateShiftState(root: View) {
                     shift -> "Shift for next letter"
                     auto -> "Automatic capitalization"
                     else -> "Shift"
+                }
+            }
+        }
+        if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
+    }
+    visit(root)
+}
+
+/** Long-press accents make Yoruba and other Latin-script languages usable without a second character keyboard. */
+private fun PhormiKeyboardServiceV2.installMultilingualLongPress(root: View) {
+    val locale = runCatching { currentInputMethodSubtype?.locale?.replace('_', '-')?.let(Locale::forLanguageTag) }.getOrElse { Locale.getDefault() } ?: Locale.getDefault()
+    val language = locale.language
+    val alternatives = when (language) {
+        "yo" -> mapOf("a" to "àáā", "e" to "ẹéè", "i" to "íì", "o" to "ọóò", "s" to "ṣśš", "n" to "ńñ")
+        "ig" -> mapOf("a" to "áà", "e" to "ẹéè", "i" to "ịíì", "o" to "ọóò", "u" to "ụúù", "n" to "ṅñ")
+        "fr" -> mapOf("a" to "àâäæ", "c" to "ç", "e" to "éèêë", "i" to "îï", "o" to "ôöœ", "u" to "ùûü", "y" to "ÿ")
+        "es" -> mapOf("a" to "áà", "e" to "éè", "i" to "íì", "o" to "óò", "u" to "úü", "n" to "ñ")
+        "pt" -> mapOf("a" to "áàâãä", "c" to "ç", "e" to "éêë", "i" to "í", "o" to "óôõö", "u" to "úü")
+        "de" -> mapOf("a" to "äá", "o" to "öó", "u" to "üú", "s" to "ß")
+        "it" -> mapOf("a" to "àá", "e" to "èé", "i" to "ìí", "o" to "òó", "u" to "ùú")
+        "tr" -> mapOf("c" to "ç", "g" to "ğ", "i" to "ıİ", "o" to "ö", "s" to "ş", "u" to "ü")
+        "vi" -> mapOf("a" to "áàảãạâă", "e" to "éèẻẽẹê", "i" to "íìỉĩị", "o" to "óòỏõọôơ", "u" to "úùủũụư", "d" to "đ")
+        "pl" -> mapOf("a" to "ąá", "c" to "ć", "e" to "ęé", "l" to "ł", "n" to "ń", "o" to "ó", "s" to "ś", "z" to "źż")
+        "cs" -> mapOf("a" to "á", "c" to "č", "d" to "ď", "e" to "éě", "i" to "í", "n" to "ň", "o" to "ó", "r" to "ř", "s" to "š", "t" to "ť", "u" to "úů", "z" to "ž")
+        "ro" -> mapOf("a" to "ăâ", "i" to "î", "s" to "ș", "t" to "ț")
+        "hu" -> mapOf("a" to "á", "e" to "é", "i" to "í", "o" to "óöő", "u" to "úüű")
+        else -> emptyMap()
+    }
+    if (alternatives.isEmpty()) return
+    fun visit(view: View) {
+        if (view is Button) {
+            val base = view.text?.toString()?.lowercase(locale).orEmpty()
+            val chars = alternatives[base]
+            if (!chars.isNullOrBlank()) {
+                view.setOnLongClickListener {
+                    val options = chars.map { it.toString() }.toTypedArray()
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("$base — ${locale.displayLanguage}")
+                        .setItems(options) { _, which ->
+                            javaClass.walkHierarchyMethods("commitTextToEditor")?.apply { isAccessible = true }?.invoke(this, options[which])
+                            javaClass.walkHierarchyMethods("refreshPredictions")?.apply { isAccessible = true }?.invoke(this, true)
+                            setInputView(render())
+                        }.show()
+                    true
                 }
             }
         }
@@ -149,4 +195,4 @@ private fun PhormiKeyboardServiceV2.dpCompat(value:Int):Int=(value*resources.dis
 private fun PhormiKeyboardServiceV2.setPanelCompat(name:String){runCatching{val field=javaClass.walkHierarchyFields("panel")?.apply{isAccessible=true}?:return;val value=field.type.enumConstants?.firstOrNull{it.toString()==name}?:return;field.set(this,value)}}
 private fun PhormiKeyboardServiceV2.prepareAiContextCompat(){runCatching{javaClass.walkHierarchyMethods("prepareAiContext")?.apply{isAccessible=true}?.invoke(this)}}
 private fun Class<*>.walkHierarchyFields(name:String):java.lang.reflect.Field?{var type:Class<*>?=this;while(type!=null){type.declaredFields.firstOrNull{it.name==name}?.let{return it};type=type.superclass};return null}
-private fun Class<*>.walkHierarchyMethods(name:String):java.lang.reflect.Method?{var type:Class<*>?=this;while(type!=null){type.declaredMethods.firstOrNull{it.name==name&&it.parameterTypes.isEmpty()}?.let{return it};type=type.superclass};return null}
+private fun Class<*>.walkHierarchyMethods(name:String):java.lang.reflect.Method?{var type:Class<*>?=this;while(type!=null){type.declaredMethods.firstOrNull{it.name==name&&it.parameterTypes.size==0}?.let{return it};type=type.superclass};return null}
