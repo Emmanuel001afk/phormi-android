@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<lint>
-    <!-- The service uses InputMethodService switching APIs on supported runtime paths.
-         Runtime compatibility remains tracked separately; this avoids treating the
-         platform API annotation as an APK build blocker while minSdk stays 26. -->
-    <issue id="NewApi">
-        <ignore path="**/PhormiKeyboardServiceV2.kt" />
-    </issue>
-</lint>
