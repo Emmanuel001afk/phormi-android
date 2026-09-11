@@ -106,7 +106,7 @@ private fun PhormiKeyboardServiceV2.decorateShiftState(root: View) {
     walkViews(root) { view ->
         if (view is Button) {
             val text = (view as TextView).text?.toString().orEmpty()
-            if (text == "⇧" || text == "⇧·" || text == "⇧A" || text == "⇧🔒") {
+            if (text == "⇧" || text == "⇧·" || text == "⇧A" || text == "⇧🔒" || text == "⇧ LOCK") {
                 view.text = when {
                     caps -> "⇧ LOCK"
                     shift -> "⇧·"
@@ -221,10 +221,13 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
 }
 
 private fun PhormiKeyboardServiceV2.buildToolsSurface(): View {
+    val height = dpCompat((360f * PhormiKeyboardPreferences.heightScale(this)).roundToInt())
     val root = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dpCompat(8), dpCompat(5), dpCompat(8), dpCompat(5))
         setBackgroundColor(if (PhormiKeyboardPreferences.theme(this@buildToolsSurface) == 3) Color.rgb(242,244,247) else Color.rgb(13,18,30))
+        layoutParams = LinearLayout.LayoutParams(-1, height)
+        minimumHeight = height
     }
     root.addView(TextView(this).apply {
         text = "Phormi Keyboard Tools"
@@ -272,7 +275,8 @@ private fun PhormiKeyboardServiceV2.buildToolsSurface(): View {
 }
 
 private fun PhormiKeyboardServiceV2.buildMediaSurface(): View {
-    val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dpCompat(8), dpCompat(5), dpCompat(8), dpCompat(5)); setBackgroundColor(if (PhormiKeyboardPreferences.theme(this@buildMediaSurface) == 3) Color.rgb(242,244,247) else Color.rgb(13,18,30)) }
+    val height = dpCompat((360f * PhormiKeyboardPreferences.heightScale(this)).roundToInt())
+    val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dpCompat(8), dpCompat(5), dpCompat(8), dpCompat(5)); setBackgroundColor(if (PhormiKeyboardPreferences.theme(this@buildMediaSurface) == 3) Color.rgb(242,244,247) else Color.rgb(13,18,30)); layoutParams = LinearLayout.LayoutParams(-1, height); minimumHeight = height }
     root.addView(TextView(this).apply { text = "GIF & Stickers"; textSize = 18f; typeface = android.graphics.Typeface.DEFAULT_BOLD; setTextColor(if (PhormiKeyboardPreferences.theme(this@buildMediaSurface) == 3) Color.rgb(20,27,36) else Color.WHITE); gravity = Gravity.CENTER_VERTICAL }, LinearLayout.LayoutParams(-1, dpCompat(38)))
     val scroll = ScrollView(this).apply { isFillViewport = true; isVerticalScrollBarEnabled = false }
     val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
