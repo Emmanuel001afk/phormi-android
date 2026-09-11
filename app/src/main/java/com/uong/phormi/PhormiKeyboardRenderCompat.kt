@@ -45,8 +45,6 @@ private fun PhormiKeyboardServiceV2.currentSubtypeLocale(): Locale {
 }
 
 private fun PhormiKeyboardServiceV2.viewportHeightPx(): Int {
-    // One global physical viewport. The percentage preference changes this value,
-    // never the panel-specific geometry.
     val baseDp = 360
     return (baseDp * resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(this)).toInt().coerceAtLeast(1)
 }
@@ -59,13 +57,6 @@ private fun PhormiKeyboardServiceV2.normalizeViewport(view: View) {
     view.layoutParams = lp
     view.minimumHeight = h
     view.minimumWidth = 0
-    view.clipChildren = true
-    view.clipToPadding = true
-    view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
-
-    // InputMethodService uses a non-fullscreen IME window by default. Explicitly
-    // constrain the actual IME window too, so a ScrollView can never make the
-    // window grow to the height of its entire emoji/media list.
     runCatching { window?.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, h) }
 }
 
