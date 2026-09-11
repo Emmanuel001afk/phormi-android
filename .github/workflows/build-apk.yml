@@ -2,7 +2,9 @@ name: Build Phormi APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - round12-keyboard-completion-multilingual
   workflow_dispatch: {}
 
 permissions:
