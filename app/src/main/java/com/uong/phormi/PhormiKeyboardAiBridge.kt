@@ -1,25 +1,35 @@
 package com.uong.phormi
 
 import android.content.Context
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
-import android.view.SoundEffectConstants
 import android.view.View
+import android.view.ViewGroup
+import android.view.SoundEffectConstants
 import android.view.inputmethod.CompletionInfo
 import android.widget.Button
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.LinearLayout
 import kotlin.math.sqrt
 
 /** Local enhancement layer for the Phormi system IME. */
 object PhormiKeyboardAiBridge {
     private const val TAG_GLIDE = 0x50484731
     private const val TAG_FEEDBACK = 0x50484631
+    private const val TAG_AI_REACTION = 0x50484145
     private val handler = Handler(Looper.getMainLooper())
     private var started = false
     private var lastText = ""
     private var lastSuggestions = emptyList<String>()
+    private var lastAiText = ""
+    private var aiController: PhormiKeyboardAiEmojiController? = null
 
     fun start() {
         if (started) return
@@ -29,7 +39,15 @@ object PhormiKeyboardAiBridge {
         })
     }
     fun start(@Suppress("UNUSED_PARAMETER") context: Context) = start()
-    fun stop() { started = false; lastText = ""; lastSuggestions = emptyList(); handler.removeCallbacksAndMessages(null) }
+    fun stop() {
+        started = false
+        lastText = ""
+        lastSuggestions = emptyList()
+        lastAiText = ""
+        aiController?.cancel()
+        aiController = null
+        handler.removeCallbacksAndMessages(null)
+    }
 
     private fun update() {
         val service = currentService(); val info = service?.currentInputEditorInfo
@@ -40,8 +58,14 @@ object PhormiKeyboardAiBridge {
         applyAutocorrect(service, text)
         applyAutoCaps(service)
         installViewEnhancements(service)
-        if (text == lastText) return
-        lastText = text
+        if (text != lastText) {
+            lastText = text
+            updateSuggestions(service, info, text)
+            updateAiReaction(service, text)
+        }
+    }
+
+    private fun updateSuggestions(service: PhormiKeyboardServiceV2, info: android.view.inputmethod.EditorInfo, text: String) {
         val locale = PhormiKeyboardTextEngine.localeFor(info)
         val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text, locale)).distinct().take(8)
         if (suggestions == lastSuggestions) return
@@ -51,6 +75,52 @@ object PhormiKeyboardAiBridge {
         @Suppress("UNCHECKED_CAST") val old = (completionField.get(service) as? List<CompletionInfo>).orEmpty().filterNot { it.id <= -9000L }
         completionField.set(service, (old + suggestions.mapIndexed { index, value -> CompletionInfo(-9000L - index, index, value) }).take(8))
         rerender(service)
+    }
+
+    private fun updateAiReaction(service: PhormiKeyboardServiceV2, text: String) {
+        if (!PhormiKeyboardPreferences.aiEmoji(service) || text.trim().length < 3) return
+        if (text == lastAiText) return
+        lastAiText = text
+        if (aiController == null) {
+            aiController = PhormiKeyboardAiEmojiController(service) { files, generating ->
+                if (!started) return@PhormiKeyboardAiEmojiController
+                val current = currentService() ?: return@PhormiKeyboardAiEmojiController
+                val file = files.firstOrNull()
+                if (file != null && !generating) installAiReaction(current, file)
+            }
+        }
+        aiController?.generate(text.trim())
+    }
+
+    private fun installAiReaction(service: PhormiKeyboardServiceV2, file: java.io.File) {
+        val root = service.getInputView() as? ViewGroup ?: return
+        val density = service.resources.displayMetrics.density
+        val rail: HorizontalScrollView
+        val row: LinearLayout
+        val candidate = if (root.childCount > 2) root.getChildAt(2) else null
+        if (candidate is HorizontalScrollView && candidate.childCount > 0 && candidate.getChildAt(0) is LinearLayout) {
+            rail = candidate
+            row = candidate.getChildAt(0) as LinearLayout
+        } else {
+            rail = HorizontalScrollView(service).apply { isHorizontalScrollBarEnabled = false; tag = TAG_AI_REACTION }
+            row = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+            rail.addView(row)
+            root.addView(rail, minOf(2, root.childCount), LinearLayout.LayoutParams(-1, (36 * density).toInt().coerceAtLeast(1)))
+        }
+        for (i in row.childCount - 1 downTo 0) if (row.getChildAt(i).getTag(TAG_AI_REACTION) == true) row.removeViewAt(i)
+        val image = ImageView(service).apply {
+            tag = TAG_AI_REACTION
+            setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding((4 * density).toInt(), (2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt())
+            contentDescription = "Phormi custom reaction"
+            background = GradientDrawable().apply { setColor(Color.rgb(31, 41, 55)); cornerRadius = 12 * density }
+            setOnClickListener {
+                feedback(this)
+                PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))
+            }
+        }
+        row.addView(image, 0, LinearLayout.LayoutParams((42 * density).toInt(), (34 * density).toInt()).apply { setMargins((2 * density).toInt(), 0, (4 * density).toInt(), 0) })
     }
 
     private fun applyAutocorrect(service: PhormiKeyboardServiceV2, text: String) {
@@ -90,10 +160,10 @@ object PhormiKeyboardAiBridge {
         }
     }
 
-    private fun feedback(view: View, action: Int) { if (action == MotionEvent.ACTION_DOWN) { if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK) } }
+    private fun feedback(view: View, action: Int = MotionEvent.ACTION_DOWN) { if (action == MotionEvent.ACTION_DOWN) { if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK) } }
     private class GlideState { var active = false; var last: Button? = null; val sequence = mutableListOf<String>() }
     private fun nearestLetter(buttons: List<Button>, x: Float, y: Float): Button? { var best: Button? = null; var bestDistance = Float.MAX_VALUE; buttons.forEach { b -> val loc = IntArray(2); b.getLocationOnScreen(loc); val dx = x - (loc[0] + b.width / 2f); val dy = y - (loc[1] + b.height / 2f); val d = sqrt(dx * dx + dy * dy); if (d < maxOf(b.width, b.height) * 1.15f && d < bestDistance) { best = b; bestDistance = d } }; return best }
-    private fun collectButtons(view: View, out: MutableList<Button>) { if (view is Button) out += view; if (view is android.view.ViewGroup) for (i in 0 until view.childCount) collectButtons(view.getChildAt(i), out) }
+    private fun collectButtons(view: View, out: MutableList<Button>) { if (view is Button) out += view; if (view is ViewGroup) for (i in 0 until view.childCount) collectButtons(view.getChildAt(i), out) }
     private fun rerender(service: PhormiKeyboardServiceV2) { runCatching { service.setInputView(service.render()) } }
     private fun currentService(): PhormiKeyboardServiceV2? { val outer = PhormiKeyboardServiceV2::class.java; val companion = runCatching { outer.getDeclaredField("Companion").apply { isAccessible = true }.get(null) }.getOrNull() ?: return null; val field = findField(companion.javaClass, "instance") ?: return null; field.isAccessible = true; return field.get(companion) as? PhormiKeyboardServiceV2 }
     private fun findField(type: Class<*>, name: String) = generateSequence(type) { it.superclass }.flatMap { it.declaredFields.asSequence() }.firstOrNull { it.name == name }
