@@ -24,19 +24,14 @@ object PhormiKeyboardPreferences {
 
     /** 0..6 maps from Extra short through Extra tall. */
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
-    fun heightScale(context: Context): Float {
-        // The renderer is guaranteed to run only while the system IME is active.
-        // Keep the bridge bootstrap here until the V2 lifecycle can own it directly.
-        PhormiKeyboardAiBridge.start(context)
-        return when (height(context)) {
-            0 -> 0.85f
-            1 -> 0.92f
-            2 -> 0.97f
-            3 -> 1.00f
-            4 -> 1.08f
-            5 -> 1.17f
-            else -> 1.27f
-        }
+    fun heightScale(context: Context): Float = when (height(context)) {
+        0 -> 0.85f
+        1 -> 0.92f
+        2 -> 0.97f
+        3 -> 1.00f
+        4 -> 1.08f
+        5 -> 1.17f
+        else -> 1.27f
     }
 
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
