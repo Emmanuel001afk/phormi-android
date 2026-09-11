@@ -11,7 +11,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
-/** Dedicated keyboard settings surface with an explicit enable/select flow. */
+/** Dedicated keyboard settings surface. */
 class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var heightValue: TextView
@@ -27,6 +27,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         root.addView(Button(this).apply { text = "Enable Phormi Keyboard"; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }.onFailure { ToastCompat.show(this@PhormiKeyboardSettingsActivity, "Keyboard settings are unavailable") } } })
         root.addView(Button(this).apply { text = "Choose Phormi Keyboard"; setOnClickListener { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker() } })
         root.addView(Button(this).apply { text = "Language & subtype settings"; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS)) }.onFailure { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) } } })
+
         root.addView(TextView(this).apply { text = "Keyboard size"; gravity = Gravity.CENTER_VERTICAL; setTextColor(android.graphics.Color.rgb(56, 189, 248)); textSize = 16f; setPadding(0, 22, 0, 4) })
         heightValue = TextView(this).apply { setTextColor(android.graphics.Color.rgb(203, 213, 225)); textSize = 13f; setPadding(0, 0, 0, 4) }
         root.addView(heightValue)
@@ -41,6 +42,15 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         root.addView(heightSeek, LinearLayout.LayoutParams(-1, 52))
         root.addView(TextView(this).apply { text = "Extra short  •  Short  •  Compact  •  Normal  •  Tall  •  Extra tall  •  Maximum"; setTextColor(android.graphics.Color.rgb(148, 163, 184)); textSize = 11f; setPadding(0, 0, 0, 10) })
         updateHeightLabel(heightSeek.progress)
+
+        root.addView(TextView(this).apply { text = "Appearance"; gravity = Gravity.CENTER_VERTICAL; setTextColor(android.graphics.Color.rgb(56, 189, 248)); textSize = 16f; setPadding(0, 22, 0, 8) })
+        val themes = arrayOf("Midnight", "Graphite", "Ocean", "Light")
+        val themeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        themes.forEachIndexed { index, name ->
+            themeRow.addView(Button(this).apply { text = name; isAllCaps = false; setOnClickListener { PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity, index); ToastCompat.show(this@PhormiKeyboardSettingsActivity, "$name appearance saved") } }, LinearLayout.LayoutParams(0, 52, 1f).apply { setMargins(3, 0, 3, 0) })
+        }
+        root.addView(themeRow)
+        root.addView(TextView(this).apply { text = "Appearance presets change the keyboard surface and key treatment while keeping the same keyboard features."; setTextColor(android.graphics.Color.rgb(148, 163, 184)); textSize = 12f; setPadding(0, 6, 0, 8) })
 
         root.addView(TextView(this).apply { text = "Keyboard behavior"; gravity = Gravity.CENTER_VERTICAL; setTextColor(android.graphics.Color.rgb(56, 189, 248)); textSize = 16f; setPadding(0, 22, 0, 8) })
         option(root, "Suggestions", "Show word suggestions when the editor does not provide its own completions.", PhormiKeyboardPreferences.suggestions(this), PhormiKeyboardPreferences.KEY_SUGGESTIONS)
