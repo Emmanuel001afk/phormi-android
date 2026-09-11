@@ -83,10 +83,11 @@ object PhormiKeyboardAiBridge {
         lastAiText = text
         if (aiController == null) {
             aiController = PhormiKeyboardAiEmojiController(service) { files, generating ->
-                if (!started) return@PhormiKeyboardAiEmojiController
-                val current = currentService() ?: return@PhormiKeyboardAiEmojiController
-                val file = files.firstOrNull()
-                if (file != null && !generating) installAiReaction(current, file)
+                if (started) {
+                    val current = currentService()
+                    val file = files.firstOrNull()
+                    if (current != null && file != null && !generating) installAiReaction(current, file)
+                }
             }
         }
         aiController?.generate(text.trim())
