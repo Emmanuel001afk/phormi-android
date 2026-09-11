@@ -26,13 +26,43 @@ internal fun PhormiKeyboardServiceV2.render(): View {
         "SETTINGS" -> invokePrivateBuilder("buildSettings")
         else -> invokePrivateBuilder("buildKeyboard")
     }
-    if (panelName == "KEYBOARD") installGlideCompat(view)
+    if (panelName == "KEYBOARD") {
+        installGlideCompat(view)
+        decorateShiftState(view)
+    }
     return view
 }
 
 private fun PhormiKeyboardServiceV2.invokePrivateBuilder(name: String): View = runCatching {
     javaClass.walkHierarchyMethods(name)?.apply { isAccessible = true }?.invoke(this) as View
 }.getOrElse { throw IllegalStateException("Unable to render Phormi keyboard panel: $name", it) }
+
+private fun PhormiKeyboardServiceV2.decorateShiftState(root: View) {
+    val shift = javaClass.walkHierarchyFields("shift")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
+    val caps = javaClass.walkHierarchyFields("capsLock")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
+    val auto = javaClass.walkHierarchyFields("autoShift")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
+    fun visit(view: View) {
+        if (view is Button) {
+            val text = (view as TextView).text?.toString().orEmpty()
+            if (text == "⇧" || text == "⇧·" || text == "⇧A" || text == "⇧ LOCK") {
+                view.text = when {
+                    caps -> "⇧ LOCK"
+                    shift -> "⇧·"
+                    auto -> "⇧"
+                    else -> "⇧"
+                }
+                view.contentDescription = when {
+                    caps -> "Caps Lock on"
+                    shift -> "Shift for next letter"
+                    auto -> "Automatic capitalization"
+                    else -> "Shift"
+                }
+            }
+        }
+        if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
+    }
+    visit(root)
+}
 
 /** Adds swipe typing without changing the stable V2 renderer. Ordinary taps remain ordinary taps. */
 private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
@@ -61,7 +91,6 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
         }
         setInputView(render())
     }
-
     fun wire(view: View) {
         if (view is Button && isLetterButton(view)) {
             val base = (view as TextView).text.toString()[0].lowercaseChar()
