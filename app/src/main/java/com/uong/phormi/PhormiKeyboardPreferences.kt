@@ -13,6 +13,7 @@ object PhormiKeyboardPreferences {
     private const val HEIGHT = "keyboard_height"
     private const val AI_EMOJI = "ai_emoji"
     private const val THEME = "keyboard_theme"
+    private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -38,6 +39,11 @@ object PhormiKeyboardPreferences {
     /** Appearance preset. 0=Midnight, 1=Graphite, 2=Ocean, 3=Light. */
     fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
     fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
+
+    fun wallpaperUri(context: Context): String? = prefs(context).getString(WALLPAPER_URI, null)
+    fun setWallpaperUri(context: Context, value: String?) = prefs(context).edit().apply {
+        if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
+    }.apply()
 
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
     fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).apply()
