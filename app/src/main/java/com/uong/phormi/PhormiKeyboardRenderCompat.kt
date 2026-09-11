@@ -39,7 +39,7 @@ private fun PhormiKeyboardServiceV2.currentSubtypeLocale(): Locale {
 }
 
 private fun PhormiKeyboardServiceV2.normalizeViewport(view: View, panelName: String) {
-    val symbolMode = runCatching { javaClass.walkHierarchyFields("symbols")?.apply { isAccessible = true }?.get(this) as? Boolean }.getOrDefault(false)
+    val symbolMode = runCatching { javaClass.walkHierarchyFields("symbols")?.apply { isAccessible = true }?.get(this) as? Boolean }.getOrNull() == true
     val childCount = (view as? ViewGroup)?.childCount ?: 0
     val baseDp = if (panelName == "KEYBOARD") when {
         symbolMode -> 430
@@ -82,7 +82,8 @@ private fun PhormiKeyboardServiceV2.applyLocaleLayout(root: View) {
     }
     val letters = ArrayList<Button>(26)
     fun collect(view: View) {
-        if (view is Button && view.text?.toString()?.length == 1 && view.text.toString()[0].isLetter()) letters += view
+        val button = view as? Button
+        if (button != null && button.text?.toString()?.length == 1 && button.text.toString()[0].isLetter()) letters += button
         if (view is ViewGroup) for (i in 0 until view.childCount) collect(view.getChildAt(i))
     }
     collect(root)
@@ -172,7 +173,11 @@ private fun PhormiKeyboardServiceV2.installMultilingualLongPress(root: View) {
 }
 
 private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
-    fun isLetterButton(view: View): Boolean = view is Button && view.text?.toString()?.length == 1 && view.text?.toString()?.firstOrNull()?.isLetter() == true
+    fun isLetterButton(view: View): Boolean {
+        val button = view as? Button ?: return false
+        val label = button.text?.toString() ?: return false
+        return label.length == 1 && label.first().isLetter()
+    }
     fun findLetter(parent: View, rawX: Float, rawY: Float): Char? {
         if (parent is ViewGroup) {
             val rect = Rect()
@@ -181,7 +186,10 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
                 if (!child.isShown) continue
                 child.getGlobalVisibleRect(rect)
                 if (!rect.contains(rawX.toInt(), rawY.toInt())) continue
-                if (isLetterButton(child)) return child.text.toString()[0].lowercaseChar()
+                if (isLetterButton(child)) {
+                    val button = child as Button
+                    return button.text.toString()[0].lowercaseChar()
+                }
                 findLetter(child, rawX, rawY)?.let { return it }
             }
         }
