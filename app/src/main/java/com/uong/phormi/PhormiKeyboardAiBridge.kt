@@ -53,7 +53,7 @@ object PhormiKeyboardAiBridge {
         val service = currentService(); val info = service?.currentInputEditorInfo
         if (service == null || info == null) { stop(); return }
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass != InputType.TYPE_CLASS_TEXT || (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 || PhormiKeyboardTextEngine.isPrivateEditor(info) || !PhormiKeyboardPreferences.suggestions(service)) { stop(); return }
+        if (inputClass != InputType.TYPE_CLASS_TEXT || (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 || PhormiKeyboardTextEngine.isPrivateEditor(info)) { stop(); return }
         val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service)
@@ -66,6 +66,7 @@ object PhormiKeyboardAiBridge {
     }
 
     private fun updateSuggestions(service: PhormiKeyboardServiceV2, info: android.view.inputmethod.EditorInfo, text: String) {
+        if (!PhormiKeyboardPreferences.suggestions(service)) return
         val locale = PhormiKeyboardTextEngine.localeFor(info)
         val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text, locale)).distinct().take(8)
         if (suggestions == lastSuggestions) return
