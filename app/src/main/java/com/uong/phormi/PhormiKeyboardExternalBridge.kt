@@ -6,7 +6,7 @@ import android.os.Looper
 
 /** Compatibility bridge for activities that need to hand text back to the active IME. */
 object PhormiKeyboardExternalBridge {
-    private const val PREFS = "phormi_keyboard_pending_text"
+    private const val PREFS = "phormi_keyboard_pending"
     private const val KEY_TEXT = "pending_text"
     private const val MAX_PENDING = 4000
     private val handler = Handler(Looper.getMainLooper())
