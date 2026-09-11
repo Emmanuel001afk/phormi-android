@@ -27,6 +27,7 @@ object PhormiKeyboardAiBridge {
     private var lastText = ""
     private var lastEditorKey = ""
     private var lastSuggestions = emptyList<String>()
+    private var lastEmojiSuggestions = emptyList<String>()
     private var lastAiText = ""
     private var lastAiFile: java.io.File? = null
     private var aiController: PhormiKeyboardAiEmojiController? = null
@@ -51,6 +52,7 @@ object PhormiKeyboardAiBridge {
         lastText = ""
         lastEditorKey = ""
         lastSuggestions = emptyList()
+        lastEmojiSuggestions = emptyList()
         lastAiText = ""
         lastAiFile = null
         aiPending?.let(handler::removeCallbacks)
@@ -60,33 +62,59 @@ object PhormiKeyboardAiBridge {
         handler.removeCallbacksAndMessages(null)
     }
 
+    private fun resetForEditor(key: String) {
+        lastEditorKey = key
+        lastText = ""
+        lastSuggestions = emptyList()
+        lastEmojiSuggestions = emptyList()
+        lastAiText = ""
+        lastAiFile = null
+        aiPending?.let(handler::removeCallbacks)
+        aiPending = null
+        aiController?.cancel()
+        aiController = null
+    }
+
     private fun update() {
         val service = currentService()
         if (service == null) {
             stop()
             return
         }
-        val info = service.currentInputEditorInfo ?: return
+        val info = service.currentInputEditorInfo
+        if (info == null) {
+            resetForEditor("")
+            return
+        }
+        val editorKey = "${info.packageName}:${info.fieldId}:${info.inputType}"
+        if (editorKey != lastEditorKey) resetForEditor(editorKey)
+
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass != InputType.TYPE_CLASS_TEXT ||
+        val blocked = inputClass != InputType.TYPE_CLASS_TEXT ||
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
             PhormiKeyboardTextEngine.isPrivateEditor(info)
-        ) return
-        val editorKey = "${info.packageName}:${info.fieldId}:${info.inputType}"
-        if (editorKey != lastEditorKey) {
-            lastEditorKey = editorKey
+        if (blocked) {
+            // Privacy transitions must immediately invalidate both visible and
+            // pending AI state; do not wait for the next text change.
             lastText = ""
+            lastSuggestions = emptyList()
+            lastEmojiSuggestions = emptyList()
             lastAiText = ""
             lastAiFile = null
             aiPending?.let(handler::removeCallbacks)
             aiPending = null
+            aiController?.cancel()
+            aiController = null
+            return
         }
+
         val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutoCaps(service)
         if (text != lastText) {
             lastText = text
             lastAiFile = null
             updateSuggestions(service, info, text)
+            updateEmojiSuggestions(text)
             scheduleAiReaction(service, text)
         }
         lastAiFile?.let { installAiReaction(service, it) }
@@ -95,7 +123,7 @@ object PhormiKeyboardAiBridge {
     private fun updateSuggestions(service: PhormiKeyboardServiceV2, info: android.view.inputmethod.EditorInfo, text: String) {
         if (!PhormiKeyboardPreferences.suggestions(service)) return
         val locale = PhormiKeyboardTextEngine.localeFor(info)
-        val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text, locale)).distinct().take(4)
+        val suggestions = PhormiLocalPredictionEngine.suggest(text, locale).distinct().take(4)
         if (suggestions == lastSuggestions) return
         lastSuggestions = suggestions
         val field = findField(service.javaClass, "completions") ?: return
@@ -104,6 +132,10 @@ object PhormiKeyboardAiBridge {
         val old = (field.get(service) as? List<CompletionInfo>).orEmpty().filterNot { it.id <= -9000L }
         field.set(service, (old + suggestions.mapIndexed { index, value -> CompletionInfo(-9000L - index, index, value) }).take(4))
         rerender(service)
+    }
+
+    private fun updateEmojiSuggestions(text: String) {
+        lastEmojiSuggestions = PhormiEmojiSuggester.suggest(text).distinct().take(3)
     }
 
     private fun scheduleAiReaction(service: PhormiKeyboardServiceV2, text: String) {
@@ -126,7 +158,8 @@ object PhormiKeyboardAiBridge {
                         currentService()?.let { active ->
                             val activeInfo = active.currentInputEditorInfo
                             val activeKey = activeInfo?.let { "${it.packageName}:${it.fieldId}:${it.inputType}" }
-                            if (activeKey == editorKey) {
+                            if (activeKey == editorKey && activeInfo != null &&
+                                !PhormiKeyboardTextEngine.isPrivateEditor(activeInfo)) {
                                 lastAiFile = files.firstOrNull()
                                 installAiReaction(active, lastAiFile)
                             }
@@ -142,6 +175,8 @@ object PhormiKeyboardAiBridge {
     /** Put one generated reaction into the same bounded emoji grid area as normal emoji. */
     private fun installAiReaction(service: PhormiKeyboardServiceV2, file: java.io.File?) {
         if (file == null || !file.exists() || !PhormiKeyboardPreferences.aiEmoji(service)) return
+        val info = service.currentInputEditorInfo ?: return
+        if (PhormiKeyboardTextEngine.isPrivateEditor(info)) return
         val root = service.getInputView() as? ViewGroup ?: return
         val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
         val panel = findField(service.javaClass, "panel")?.let { field ->
@@ -152,18 +187,18 @@ object PhormiKeyboardAiBridge {
         val scroll = (0 until root.childCount).map { root.getChildAt(it) }.filterIsInstance<ScrollView>().firstOrNull() ?: return
         val grid = scroll.getChildAt(0) as? LinearLayout ?: return
 
-        // Remove only rows created by the bridge. Never use child-count alone as a
-        // selector: ordinary emoji rows can legitimately contain three cells.
         for (i in grid.childCount - 1 downTo 0) {
             if (grid.getChildAt(i).tag == TAG_AI_ROW) grid.removeViewAt(i)
         }
 
-        // V2 may already have rendered its contextual mood row and generated-image
-        // row. They are always the first rows before the normal category grid. Remove
-        // those two transient rows only, then insert the single integrated rail row.
         if (grid.childCount > 0) {
             val first = grid.getChildAt(0)
-            if (first is LinearLayout && first.tag == null && first.childCount == 3) grid.removeViewAt(0)
+            if (first is LinearLayout && first.tag == null && first.childCount == 3) {
+                val labels = (0 until first.childCount).mapNotNull { (first.getChildAt(it) as? android.widget.TextView)?.text?.toString() }
+                if (labels.isNotEmpty() && labels.all { it in PhormiEmojiSuggester.suggest(lastText) }) {
+                    grid.removeViewAt(0)
+                }
+            }
         }
         if (grid.childCount > 0) {
             val first = grid.getChildAt(0)
@@ -177,7 +212,7 @@ object PhormiKeyboardAiBridge {
             tag = TAG_AI_ROW
         }
         addReactionCell(service, row, bitmap, file)
-        lastSuggestions.take(3).forEach { emoji ->
+        lastEmojiSuggestions.forEach { emoji ->
             val button = android.widget.Button(service).apply {
                 text = emoji
                 textSize = 20f
@@ -187,7 +222,7 @@ object PhormiKeyboardAiBridge {
                 isAllCaps = false
                 stateListAnimator = null
                 setPadding(2, 0, 2, 0)
-                background = rounded(Color.rgb(39, 48, 64), 9)
+                background = rounded(Color.rgb(39, 48, 64), 9, service)
                 contentDescription = emoji
                 setOnClickListener {
                     feedback(this)
@@ -209,7 +244,7 @@ object PhormiKeyboardAiBridge {
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setPadding(4, 2, 4, 2)
             contentDescription = "Phormi custom reaction"
-            background = rounded(Color.rgb(39, 48, 64), 9)
+            background = rounded(Color.rgb(39, 48, 64), 9, service)
             setOnClickListener {
                 feedback(this)
                 if (PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))) {
@@ -222,7 +257,10 @@ object PhormiKeyboardAiBridge {
     }
 
     private fun scaled(service: PhormiKeyboardServiceV2, dp: Int): Int = (dp * service.resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(service)).toInt().coerceAtLeast(1)
-    private fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply { setColor(color); cornerRadius = radiusDp * 1f }
+    private fun rounded(color: Int, radiusDp: Int, context: Context) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = radiusDp * context.resources.displayMetrics.density
+    }
 
     private fun applyAutoCaps(service: PhormiKeyboardServiceV2) {
         if (!PhormiKeyboardPreferences.autoCaps(service) || !PhormiKeyboardTextEngine.autoCapitalize(service.currentInputConnection, service.currentInputEditorInfo)) return
