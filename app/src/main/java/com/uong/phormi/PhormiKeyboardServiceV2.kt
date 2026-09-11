@@ -299,7 +299,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val root = root(); val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         list.addView(TextView(this).apply { text = "Phormi Keyboard Settings"; textSize = 19f; typeface = Typeface.DEFAULT_BOLD; setTextColor(themeText()); setPadding(dp(8), dp(4), dp(8), dp(8)) })
         list.addView(TextView(this).apply { text = "Keyboard-only controls. Browser settings are not changed here."; textSize = 12f; setTextColor(Color.rgb(148,163,184)); setPadding(dp(8), 0, dp(8), dp(8)) })
-        list.addView(pill("⌨  System keyboard selection") { runCatching { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker() } }, LinearLayout.LayoutParams(-1, scaled(42)).apply { setMargins(dp(4), dp(2), dp(4), dp(2)) })
+        list.addView(pill("⌨  System keyboard selection") { runCatching { (getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker() } }, LinearLayout.LayoutParams(-1, scaled(42)).apply { setMargins(dp(4), dp(2), dp(4), dp(2)) })
         val heightLabel = TextView(this).apply { textSize = 13f; setTextColor(themeText()); setPadding(dp(8), dp(6), dp(8), 0) }; list.addView(heightLabel)
         fun heightName(p: Int) = arrayOf("Extra short","Short","Compact","Normal","Tall","Extra tall","Maximum")[p.coerceIn(0,6)]
         heightLabel.text = "Keyboard size: ${heightName(PhormiKeyboardPreferences.height(this))}"
@@ -389,7 +389,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun matchCase(value:String,original:String)=if(original.all{!it.isLetter()||it.isUpperCase()})value.uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else if(original.firstOrNull()?.isUpperCase()==true)value.replaceFirstChar{it.uppercase()} else value
     private fun toggleShift(){ autoShift=false; if(capsLock){capsLock=false;shift=false}else if(shift){capsLock=true;shift=false}else shift=true }
     private fun prepareAiContext(){ if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){val text=PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim();if(text.length>=3&&!aiGenerating)generateAiEmoji(text)} }
-    private fun startVoice(){ if(!PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardTextEngine.isUriLike(editorInfo))return; val locale=PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag(); runCatching{startActivity(Intent(this,PhormiKeyboardVoiceActivity::class.java).putExtra(PhormiKeyboardVoiceActivity.EXTRA_LOCALE,locale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}.onFailure{showToast("Voice input is unavailable")} }
+    private fun startVoice(){
+        val type = editorInfo?.inputType ?: 0
+        val clazz = type and InputType.TYPE_MASK_CLASS
+        val variation = type and InputType.TYPE_MASK_VARIATION
+        val password = clazz == InputType.TYPE_CLASS_TEXT && (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+        if (password) { showToast("Voice typing is disabled for password fields"); return }
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag()
+        runCatching { startActivity(Intent(this,PhormiKeyboardVoiceActivity::class.java).putExtra(PhormiKeyboardVoiceActivity.EXTRA_LOCALE,locale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.onFailure { showToast("Voice input is unavailable") }
+    }
     private fun applyPendingInput(){val p=getSharedPreferences(PREFS,MODE_PRIVATE);p.getString(KEY_PENDING_TEXT,null)?.let{p.edit().remove(KEY_PENDING_TEXT).apply();commitTextToEditor(it)};p.getString(KEY_PENDING_URI,null)?.let{p.edit().remove(KEY_PENDING_URI).apply();commitContentToEditor(Uri.parse(it))}}
     private fun commitTextToEditor(text:String):Boolean{val ok=currentInputConnection?.commitText(text,1)?:false;if(ok)syncSelection();return ok}
     private fun commitContentToEditor(uri:Uri):Boolean{if(Build.VERSION.SDK_INT<25)return false;val ic=currentInputConnection?:return false;val mime=contentResolver.getType(uri)?:"image/*";val info=InputContentInfo(uri,ClipDescription("Phormi media",arrayOf(mime)));return runCatching{ic.commitContent(info,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)}.getOrDefault(false)}
