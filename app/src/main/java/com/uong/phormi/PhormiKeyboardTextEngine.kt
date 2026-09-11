@@ -4,11 +4,12 @@ import android.content.Context
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
-/** Offline-first multilingual text engine. Locale comes from the selected IME subtype when available. */
+/** Offline-first multilingual text engine with learning and system spellchecker fallback. */
 object PhormiKeyboardTextEngine {
     private const val PREFS = "phormi_keyboard_text"
     private const val KEY_LEARNED = "learned_words"
@@ -62,13 +63,15 @@ object PhormiKeyboardTextEngine {
     fun allowsAiEmoji(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isUriLike(info) && !isNoPersonalizedLearning(info)
     fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isNoPersonalizedLearning(info) && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0 && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
 
-    fun localeFor(info: EditorInfo?): Locale = runCatching {
-        val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
-        val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
-        val service = field?.get(companion) as? PhormiKeyboardServiceV2
-        val tag = service?.currentInputMethodSubtype?.locale?.replace('_', '-')?.takeIf { it.isNotBlank() }
-        if (tag != null) Locale.forLanguageTag(tag) else info?.hintLocales?.get(0) ?: Locale.getDefault()
-    }.getOrElse { info?.hintLocales?.get(0) ?: Locale.getDefault() }
+    fun localeFor(info: EditorInfo?): Locale {
+        val subtype = runCatching { currentSubtype() }.getOrNull()
+        val tag = subtype?.locale?.replace('_', '-')?.takeIf { it.isNotBlank() }
+        return if (tag != null) Locale.forLanguageTag(tag) else info?.hintLocales?.get(0) ?: Locale.getDefault()
+    }
+
+    private fun currentSubtype() = runCatching {
+        PhormiKeyboardServiceV2.instanceForEngine()?.getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
+    }.getOrNull()
 
     fun currentWord(ic: InputConnection?): String = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty().trimEnd().split(Regex("[\\s\\n\\r\\t]+"), limit = 0).lastOrNull().orEmpty().takeLastWhile { it.isLetter() || it == '\'' || it == '’' }.take(48)
     fun previousWord(ic: InputConnection?, locale: Locale = Locale.getDefault()): String { val before = ic?.getTextBeforeCursor(180, 0)?.toString().orEmpty().trimEnd(); return before.split(Regex("[\\s\\n\\r\\t]+" )).dropLast(1).lastOrNull().orEmpty().trim(' ', '\'', '"', '.', ',', '!', '?', ':', ';').lowercase(locale) }
@@ -88,24 +91,94 @@ object PhormiKeyboardTextEngine {
 
     fun nextWordSuggestions(context: Context, previous: String, locale: Locale = activeLocale(context)): List<String> {
         val key = previous.lowercase(locale).trim(); if (key.isBlank()) return emptyList()
-        val result = LinkedHashSet<String>(); nextSeeds[locale.language]?.get(key).orEmpty().forEach(result::add); loadAllNextWords(context)[key].orEmpty().forEach(result::add); return result.take(4)
+        val result = LinkedHashSet<String>()
+        nextSeeds[locale.language]?.get(key).orEmpty().forEach(result::add)
+        loadAllNextWords(context)[key].orEmpty().forEach(result::add)
+        return result.take(4)
     }
+
     fun correctionFor(context: Context, word: String, locale: Locale = activeLocale(context)): String? = correctionsByLanguage[locale.language]?.get(word.lowercase(locale)) ?: loadLearnedCorrections(context)[word.lowercase(locale)]
     fun correctionFor(word: String): String? = correctionsByLanguage[Locale.getDefault().language]?.get(word.lowercase(Locale.getDefault()))
 
-    fun learn(context: Context, word: String, info: EditorInfo?) { if (!allowsPersonalizedLearning(info)) return; val value=word.trim(); if(value.length !in 2..64||value.any(Char::isDigit))return; val all=loadLearned(context).toMutableList(); all.removeAll{it.equals(value,true)}; all.add(0,value); saveLearned(context,all) }
-    fun learnPair(context: Context, previous: String, current: String, info: EditorInfo?) { if(!allowsPersonalizedLearning(info)||previous.isBlank()||current.isBlank())return; val key=previous.lowercase(localeFor(info)); val map=loadAllNextWords(context).toMutableMap(); map[key]=(map[key].orEmpty().filterNot{it.equals(current,true)}+current.take(64)).takeLast(10); saveAllNextWords(context,map) }
-    fun learnCorrection(context: Context, original: String, accepted: String, info: EditorInfo?) { if(!allowsPersonalizedLearning(info))return; val a=original.trim();val b=accepted.trim();if(a.length !in 2..64||b.isBlank()||a.equals(b,true))return;val map=loadLearnedCorrections(context).toMutableMap();map[a.lowercase(localeFor(info))]=b;saveLearnedCorrections(context,map) }
-    fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean { if(ic==null||info==null||isPrivateEditor(info))return false;val type=info.inputType;if(type and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS!=0||type and InputType.TYPE_TEXT_FLAG_CAP_WORDS!=0)return true;if(type and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES==0)return false;val before=ic.getTextBeforeCursor(80,0)?.toString().orEmpty().trimEnd();return before.isEmpty()||before.lastOrNull() in setOf('.', '!', '?', ':', ';','\n') }
-    fun contextBeforeCursor(ic: InputConnection?): String { val service=currentService()?:return "";if(!allowsAiEmoji(service.currentInputEditorInfo))return "";return ic?.getTextBeforeCursor(240,0)?.toString().orEmpty() }
+    fun learn(context: Context, word: String, info: EditorInfo?) {
+        if (!allowsPersonalizedLearning(info)) return
+        val value = word.trim()
+        if (value.length !in 2..64 || value.any(Char::isDigit)) return
+        val all = loadLearned(context).toMutableList()
+        all.removeAll { it.equals(value, true) }
+        all.add(0, value)
+        saveLearned(context, all)
+    }
 
-    private fun activeLocale(context: Context): Locale = if(context is PhormiKeyboardServiceV2) localeFor(context.currentInputEditorInfo) else Locale.getDefault()
-    private fun currentService(): PhormiKeyboardServiceV2?=runCatching{val companion=PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply{isAccessible=true}.get(null);val field=companion.javaClass.declaredFields.firstOrNull{it.name=="instance"}?.apply{isAccessible=true};field?.get(companion) as? PhormiKeyboardServiceV2}.getOrNull()
-    private fun loadLearned(context:Context):List<String>=runCatching{val a=JSONArray(context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_LEARNED,"[]")?:"[]");buildList{for(i in 0 until a.length())a.optString(i).takeIf{it.isNotBlank()}?.let(::add)}}.getOrDefault(emptyList())
-    private fun saveLearned(context:Context,words:List<String>){val a=JSONArray();words.take(MAX_LEARNED).forEach(a::put);context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(KEY_LEARNED,a.toString()).apply()}
-    private fun loadAllNextWords(context:Context):Map<String,List<String>>=runCatching{val o=JSONObject(context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_BIGRAMS,"{}")?:"{}");buildMap{o.keys().forEach{k->val a=o.optJSONArray(k)?:return@forEach;put(k,buildList{for(i in 0 until a.length())a.optString(i).takeIf{it.isNotBlank()}?.let(::add)})}}}.getOrDefault(emptyMap())
-    private fun saveAllNextWords(context:Context,map:Map<String,List<String>>){val o=JSONObject();map.entries.take(MAX_BIGRAMS).forEach{(k,v)->o.put(k,JSONArray(v.take(10)))};context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS,o.toString()).apply()}
-    private fun loadLearnedCorrections(context:Context):Map<String,String>=runCatching{val o=JSONObject(context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_CORRECTIONS,"{}")?:"{}");buildMap{o.keys().forEach{k->o.optString(k).takeIf{it.isNotBlank()}?.let{put(k,it)}}}}.getOrDefault(emptyMap())
-    private fun saveLearnedCorrections(context:Context,map:Map<String,String>){val o=JSONObject();map.entries.take(MAX_CORRECTIONS).forEach{(k,v)->o.put(k,v)};context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString(KEY_CORRECTIONS,o.toString()).apply()}
-    private fun variation(info:EditorInfo?):Int=(info?.inputType?:0) and InputType.TYPE_MASK_VARIATION
+    fun learnPair(context: Context, previous: String, current: String, info: EditorInfo?) {
+        if (!allowsPersonalizedLearning(info) || previous.isBlank() || current.isBlank()) return
+        val key = previous.lowercase(localeFor(info))
+        val map = loadAllNextWords(context).toMutableMap()
+        map[key] = (map[key].orEmpty().filterNot { it.equals(current, true) } + current.take(64)).takeLast(10)
+        saveAllNextWords(context, map)
+    }
+
+    fun learnCorrection(context: Context, original: String, accepted: String, info: EditorInfo?) {
+        if (!allowsPersonalizedLearning(info)) return
+        val a = original.trim(); val b = accepted.trim()
+        if (a.length !in 2..64 || b.isBlank() || a.equals(b, true)) return
+        val map = loadLearnedCorrections(context).toMutableMap()
+        map[a.lowercase(localeFor(info))] = b
+        saveLearnedCorrections(context, map)
+    }
+
+    fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
+        if (ic == null || info == null || isPrivateEditor(info)) return false
+        val type = info.inputType
+        if (type and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 || type and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
+        if (type and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0) return false
+        val before = ic.getTextBeforeCursor(80, 0)?.toString().orEmpty().trimEnd()
+        return before.isEmpty() || before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
+    }
+
+    fun contextBeforeCursor(ic: InputConnection?): String {
+        val service = currentService() ?: return ""
+        if (!allowsAiEmoji(service.currentInputEditorInfo)) return ""
+        return ic?.getTextBeforeCursor(240, 0)?.toString().orEmpty()
+    }
+
+    private fun activeLocale(context: Context): Locale = if (context is PhormiKeyboardServiceV2) localeFor(context.currentInputEditorInfo) else Locale.getDefault()
+    private fun currentService(): PhormiKeyboardServiceV2? = PhormiKeyboardServiceV2.instanceForEngine()
+
+    private fun loadLearned(context: Context): List<String> = runCatching {
+        val array = JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LEARNED, "[]") ?: "[]")
+        buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add) }
+    }.getOrDefault(emptyList())
+
+    private fun saveLearned(context: Context, words: List<String>) {
+        val array = JSONArray(); words.take(MAX_LEARNED).forEach(array::put)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_LEARNED, array.toString()).apply()
+    }
+
+    private fun loadAllNextWords(context: Context): Map<String, List<String>> = runCatching {
+        val obj = JSONObject(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_BIGRAMS, "{}") ?: "{}")
+        buildMap {
+            obj.keys().forEach { key ->
+                val array = obj.optJSONArray(key) ?: return@forEach
+                put(key, buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add) })
+            }
+        }
+    }.getOrDefault(emptyMap())
+
+    private fun saveAllNextWords(context: Context, map: Map<String, List<String>>) {
+        val obj = JSONObject(); map.entries.take(MAX_BIGRAMS).forEach { (key, values) -> obj.put(key, JSONArray(values.take(10))) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS, obj.toString()).apply()
+    }
+
+    private fun loadLearnedCorrections(context: Context): Map<String, String> = runCatching {
+        val obj = JSONObject(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CORRECTIONS, "{}") ?: "{}")
+        buildMap { obj.keys().forEach { key -> obj.optString(key).takeIf { it.isNotBlank() }?.let { put(key, it) } } }
+    }.getOrDefault(emptyMap())
+
+    private fun saveLearnedCorrections(context: Context, map: Map<String, String>) {
+        val obj = JSONObject(); map.entries.take(MAX_CORRECTIONS).forEach { (key, value) -> obj.put(key, value) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CORRECTIONS, obj.toString()).apply()
+    }
+
+    private fun variation(info: EditorInfo?): Int = (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
 }
