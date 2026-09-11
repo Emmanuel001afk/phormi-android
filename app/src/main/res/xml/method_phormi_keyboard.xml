@@ -2,24 +2,15 @@
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:supportsSwitchingToNextInputMethod="true"
     android:settingsActivity="com.uong.phormi.PhormiKeyboardSettingsActivity">
-    <subtype
-        android:label="Phormi Keyboard — English (US)"
-        android:imeSubtypeLocale="en_US"
-        android:imeSubtypeMode="keyboard"
-        android:isAsciiCapable="true" />
-    <subtype
-        android:label="Phormi Keyboard — English (UK)"
-        android:imeSubtypeLocale="en_GB"
-        android:imeSubtypeMode="keyboard"
-        android:isAsciiCapable="true" />
-    <subtype
-        android:label="Phormi Keyboard — English (Nigeria)"
-        android:imeSubtypeLocale="en_NG"
-        android:imeSubtypeMode="keyboard"
-        android:isAsciiCapable="true" />
-    <subtype
-        android:label="Phormi Keyboard — Français"
-        android:imeSubtypeLocale="fr_FR"
-        android:imeSubtypeMode="keyboard"
-        android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - English (US)" android:imeSubtypeLocale="en_US" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="Phormi Keyboard - English (UK)" android:imeSubtypeLocale="en_GB" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="Phormi Keyboard - English (Nigeria)" android:imeSubtypeLocale="en_NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="Phormi Keyboard - Spanish" android:imeSubtypeLocale="es_ES" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="Phormi Keyboard - French" android:imeSubtypeLocale="fr_FR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - Portuguese" android:imeSubtypeLocale="pt_BR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - German" android:imeSubtypeLocale="de_DE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - Italian" android:imeSubtypeLocale="it_IT" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - Indonesian" android:imeSubtypeLocale="id_ID" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="Phormi Keyboard - Turkish" android:imeSubtypeLocale="tr_TR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - Yoruba (Nigeria)" android:imeSubtypeLocale="yo_NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
 </input-method>
