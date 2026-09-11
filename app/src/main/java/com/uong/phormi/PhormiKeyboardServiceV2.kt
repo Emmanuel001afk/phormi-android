@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
@@ -19,6 +20,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.CompletionInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -240,9 +242,68 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun addRows(root: LinearLayout, rows: List<String>) {
         rows.forEach { chars ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-            chars.forEach { c -> val label = if (c.isLetter() && (shift || capsLock || autoShift)) c.uppercaseChar().toString() else c.toString(); row.addView(keyButton(label) { commitTextToEditor(label); if (shift && !capsLock) shift = false; autoShift = false; refreshPredictions(); setInputView(render()) }) }
+            chars.forEach { c ->
+                val label = if (c.isLetter() && (shift || capsLock || autoShift)) c.uppercaseChar().toString() else c.toString()
+                val button = keyButton(label) { commitTextToEditor(label); if (shift && !capsLock) shift = false; autoShift = false; refreshPredictions(); setInputView(render()) }
+                if (c.isLetter()) installGlide(button, c.lowercaseChar())
+                row.addView(button)
+            }
             root.addView(row, LinearLayout.LayoutParams(-1, scaled(50)))
         }
+    }
+
+    /** Real swipe typing: normal taps still click the key, while a horizontal/diagonal drag samples letter keys and commits one word on release. */
+    private fun installGlide(button: Button, baseChar: Char) {
+        var downX = 0f; var downY = 0f; var gliding = false; val word = StringBuilder(); var last: Char? = null
+        button.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; gliding = false; word.setLength(0); last = null; false }
+                MotionEvent.ACTION_MOVE -> {
+                    val moved = abs(event.rawX - downX) > dp(18) || abs(event.rawY - downY) > dp(18)
+                    if (moved) {
+                        if (!gliding) gliding = true
+                        sampleGlideKey(event.rawX, event.rawY)?.let { ch -> if (ch != last) { word.append(ch); last = ch } }
+                        true
+                    } else false
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!gliding) { button.performClick(); true }
+                    else {
+                        sampleGlideKey(event.rawX, event.rawY)?.let { ch -> if (ch != last) word.append(ch) }
+                        if (word.isNotEmpty()) {
+                            val value = if (capsLock || shift || autoShift) word.toString().uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else word.toString()
+                            commitTextToEditor(value)
+                            if (shift && !capsLock) shift = false
+                            autoShift = false
+                            refreshPredictions(); setInputView(render())
+                        }
+                        true
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> { gliding = false; word.setLength(0); true }
+                else -> false
+            }
+        }
+    }
+
+    private fun sampleGlideKey(rawX: Float, rawY: Float): Char? {
+        val root = getInputView() as? ViewGroup ?: return null
+        val found = findLetterAt(root, rawX, rawY) ?: return null
+        return found
+    }
+
+    private fun findLetterAt(parent: ViewGroup, rawX: Float, rawY: Float): Char? {
+        val rect = Rect()
+        for (i in parent.childCount - 1 downTo 0) {
+            val child = parent.getChildAt(i)
+            if (!child.isShown) continue
+            child.getGlobalVisibleRect(rect)
+            if (!rect.contains(rawX.roundToInt(), rawY.roundToInt())) continue
+            val tag = child.tag?.toString().orEmpty()
+            if (tag.startsWith("glide:") && tag.length == 7) return tag[6]
+            if (child is ViewGroup) findLetterAt(child, rawX, rawY)?.let { return it }
+        }
+        return null
     }
 
     private fun buildEmoji(): View {
