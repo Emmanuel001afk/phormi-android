@@ -26,10 +26,13 @@ object PhormiKeyboardAiBridge {
     private var started = false
     private var lastText = ""
     private var lastEditorKey = ""
+    private var lastPanel = ""
     private var lastSuggestions = emptyList<String>()
     private var lastEmojiSuggestions = emptyList<String>()
     private var lastAiText = ""
     private var lastAiFile: java.io.File? = null
+    private var installedAiPath = ""
+    private var installedAiPanel = ""
     private var aiController: PhormiKeyboardAiEmojiController? = null
     private var aiPending: Runnable? = null
 
@@ -51,10 +54,13 @@ object PhormiKeyboardAiBridge {
         started = false
         lastText = ""
         lastEditorKey = ""
+        lastPanel = ""
         lastSuggestions = emptyList()
         lastEmojiSuggestions = emptyList()
         lastAiText = ""
         lastAiFile = null
+        installedAiPath = ""
+        installedAiPanel = ""
         aiPending?.let(handler::removeCallbacks)
         aiPending = null
         aiController?.cancel()
@@ -65,10 +71,13 @@ object PhormiKeyboardAiBridge {
     private fun resetForEditor(key: String) {
         lastEditorKey = key
         lastText = ""
+        lastPanel = ""
         lastSuggestions = emptyList()
         lastEmojiSuggestions = emptyList()
         lastAiText = ""
         lastAiFile = null
+        installedAiPath = ""
+        installedAiPanel = ""
         aiPending?.let(handler::removeCallbacks)
         aiPending = null
         aiController?.cancel()
@@ -89,6 +98,12 @@ object PhormiKeyboardAiBridge {
         val editorKey = "${info.packageName}:${info.fieldId}:${info.inputType}"
         if (editorKey != lastEditorKey) resetForEditor(editorKey)
 
+        val panel = currentPanel(service).orEmpty()
+        if (panel != lastPanel) {
+            lastPanel = panel
+            installedAiPanel = ""
+        }
+
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
         val blocked = inputClass != InputType.TYPE_CLASS_TEXT ||
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
@@ -96,12 +111,13 @@ object PhormiKeyboardAiBridge {
         if (blocked) {
             // Privacy transitions must immediately invalidate both visible and
             // pending AI state; do not wait for the next text change.
-            val panel = currentPanel(service)
             lastText = ""
             lastSuggestions = emptyList()
             lastEmojiSuggestions = emptyList()
             lastAiText = ""
             lastAiFile = null
+            installedAiPath = ""
+            installedAiPanel = ""
             aiPending?.let(handler::removeCallbacks)
             aiPending = null
             aiController?.cancel()
@@ -115,11 +131,21 @@ object PhormiKeyboardAiBridge {
         if (text != lastText) {
             lastText = text
             lastAiFile = null
+            installedAiPath = ""
+            installedAiPanel = ""
             updateSuggestions(service, info, text)
             updateEmojiSuggestions(text)
             scheduleAiReaction(service, text)
         }
-        lastAiFile?.let { installAiReaction(service, it) }
+        val file = lastAiFile
+        if (file != null && panel == "EMOJI" && file.exists()) {
+            val path = file.absolutePath
+            if (path != installedAiPath || panel != installedAiPanel) {
+                installAiReaction(service, file)
+                installedAiPath = path
+                installedAiPanel = panel
+            }
+        }
     }
 
     private fun updateSuggestions(service: PhormiKeyboardServiceV2, info: android.view.inputmethod.EditorInfo, text: String) {
@@ -163,7 +189,11 @@ object PhormiKeyboardAiBridge {
                             if (activeKey == editorKey && activeInfo != null &&
                                 !PhormiKeyboardTextEngine.isPrivateEditor(activeInfo)) {
                                 lastAiFile = files.firstOrNull()
+                                installedAiPath = ""
+                                installedAiPanel = ""
                                 installAiReaction(active, lastAiFile)
+                                installedAiPath = lastAiFile?.absolutePath.orEmpty()
+                                installedAiPanel = currentPanel(active).orEmpty()
                             }
                         }
                     }
@@ -248,6 +278,8 @@ object PhormiKeyboardAiBridge {
                 if (PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))) {
                     lastAiText = ""
                     lastAiFile = null
+                    installedAiPath = ""
+                    installedAiPanel = ""
                 }
             }
         }
