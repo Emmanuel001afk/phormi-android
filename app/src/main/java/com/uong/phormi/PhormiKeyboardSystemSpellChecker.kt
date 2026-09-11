@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.inputmethod.CompletionInfo
@@ -27,7 +28,9 @@ object PhormiKeyboardSystemSpellChecker {
         val k = key(clean, locale)
         if (cache.containsKey(k) && cache[k].orEmpty().isNotEmpty()) return
         val manager = context.getSystemService(Context.TEXT_SERVICES_MANAGER_SERVICE) as? TextServicesManager ?: return
-        if (manager.currentSpellCheckerInfo == null) return
+        if (Build.VERSION.SDK_INT >= 31) {
+            if (manager.currentSpellCheckerInfo == null) return
+        }
         if (session == null || sessionLocale != locale || session?.isSessionDisconnected == true) {
             runCatching { session?.close() }
             session = runCatching { manager.newSpellCheckerSession(null, locale, listener, true) }.getOrNull()
