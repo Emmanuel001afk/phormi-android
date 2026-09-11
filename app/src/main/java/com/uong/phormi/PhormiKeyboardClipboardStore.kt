@@ -4,8 +4,6 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
-import org.json.JSONArray
-import org.json.JSONObject
 
 /** Local clipboard history. Text and copied image/URI entries are supported; sensitive content is excluded. */
 object PhormiKeyboardClipboardStore {
@@ -19,7 +17,7 @@ object PhormiKeyboardClipboardStore {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY_ITEMS, null) ?: prefs.getString("items_v2", "[]") ?: "[]"
         return runCatching {
-            val a = JSONArray(raw)
+            val a = org.json.JSONArray(raw)
             buildList {
                 for (i in 0 until a.length()) {
                     val o = a.optJSONObject(i) ?: continue
@@ -54,17 +52,30 @@ object PhormiKeyboardClipboardStore {
     @Synchronized fun clearUnpinned(context: Context) = save(context, list(context).filter { it.pinned })
     @Synchronized fun clear(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_ITEMS).apply()
 
+    /** Capture the system clipboard while the IME is active. Images are copied into app-private storage so their source permission cannot expire. */
     fun capturePrimaryClipboard(context: Context) {
         if (!shouldCaptureForActiveEditor()) return
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val clip = cm.primaryClip ?: return
         if (clip.itemCount == 0 || isSensitive(clip.description)) return
-        val item = clip.getItemAt(0)
-        val uri = item.uri
-        if (uri != null) {
-            val mime = clip.description?.getMimeType(0)
-            recordUri(context, uri, mime, if (mime?.startsWith("image/") == true) "🖼 Copied image" else "📎 Copied content")
-        } else item.coerceToText(context)?.let { record(context, it) }
+        val limit = clip.itemCount.coerceAtMost(5)
+        for (index in 0 until limit) {
+            val item = clip.getItemAt(index)
+            val uri = item.uri
+            if (uri != null) {
+                val mime = clip.description?.let { desc ->
+                    if (desc.mimeTypeCount > 0) desc.getMimeType(0) else cm.primaryClipDescription?.getMimeType(0)
+                }
+                val copied = runCatching { PhormiKeyboardStickerStore.import(context, uri, "clipboard") }.getOrNull()
+                if (copied != null) {
+                    recordUri(context, PhormiKeyboardStickerStore.contentUri(context, copied), mime, if (mime?.startsWith("image/") == true) "🖼 Screenshot / image" else "📎 Copied content")
+                } else {
+                    recordUri(context, uri, mime, if (mime?.startsWith("image/") == true) "🖼 Copied image" else "📎 Copied content")
+                }
+            } else {
+                item.coerceToText(context)?.let { record(context, it) }
+            }
+        }
     }
 
     private fun shouldCaptureForActiveEditor(): Boolean = runCatching {
@@ -93,8 +104,10 @@ object PhormiKeyboardClipboardStore {
         val safe = source.filterNot { looksSensitive(it.text) }
         val pinned = safe.filter { it.pinned }
         val unpinned = safe.filterNot { it.pinned }.take(MAX_ITEMS - pinned.size.coerceAtMost(MAX_ITEMS))
-        val a = JSONArray()
-        (pinned + unpinned).take(MAX_ITEMS).forEach { item -> a.put(JSONObject().put("text", item.text).put("pinned", item.pinned).put("createdAt", item.createdAt).apply { item.uri?.let { put("uri", it) }; item.mime?.let { put("mime", it) } }) }
+        val a = org.json.JSONArray()
+        (pinned + unpinned).take(MAX_ITEMS).forEach { item ->
+            a.put(org.json.JSONObject().put("text", item.text).put("pinned", item.pinned).put("createdAt", item.createdAt).apply { item.uri?.let { put("uri", it) }; item.mime?.let { put("mime", it) } })
+        }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_ITEMS, a.toString()).apply()
     }
 }
