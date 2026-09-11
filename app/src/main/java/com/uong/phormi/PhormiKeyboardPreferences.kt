@@ -12,6 +12,7 @@ object PhormiKeyboardPreferences {
     private const val SOUND = "sound"
     private const val HEIGHT = "keyboard_height"
     private const val AI_EMOJI = "ai_emoji"
+    private const val THEME = "keyboard_theme"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -22,7 +23,7 @@ object PhormiKeyboardPreferences {
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
     fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
 
-    /** 0..6 maps from Extra short through Extra tall. */
+    /** 0..6 maps from Extra short through Maximum. */
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
     fun heightScale(context: Context): Float = when (height(context)) {
         0 -> 0.85f
@@ -33,6 +34,10 @@ object PhormiKeyboardPreferences {
         5 -> 1.17f
         else -> 1.27f
     }
+
+    /** Appearance preset. 0=Midnight, 1=Graphite, 2=Ocean, 3=Light. */
+    fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
+    fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
 
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
     fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).apply()
