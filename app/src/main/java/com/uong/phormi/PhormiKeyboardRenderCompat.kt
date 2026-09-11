@@ -10,16 +10,9 @@ import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import java.util.Locale
 
-/**
- * Compatibility layer around the real IME service.
- * Every panel is routed to its real builder; this file only supplies geometry,
- * language-layout and gesture compatibility fixes.
- */
+/** Compatibility layer around the real IME service. */
 internal fun PhormiKeyboardServiceV2.render(): View {
-    val panelName = runCatching {
-        javaClass.walkHierarchyFields("panel")?.apply { isAccessible = true }?.get(this)?.toString()
-    }.getOrDefault("KEYBOARD")
-
+    val panelName = runCatching { javaClass.walkHierarchyFields("panel")?.apply { isAccessible = true }?.get(this)?.toString() }.getOrDefault("KEYBOARD")
     val view = when (panelName) {
         "EMOJI" -> invokeBuilder("buildEmoji")
         "CLIPBOARD" -> invokeBuilder("buildClipboard")
@@ -29,36 +22,30 @@ internal fun PhormiKeyboardServiceV2.render(): View {
         "SETTINGS" -> invokeBuilder("buildSettings")
         else -> invokeBuilder("buildKeyboard")
     }
-
     normalizeViewport(view)
     when (panelName) {
-        "KEYBOARD" -> {
-            applyLocaleLayout(view)
-            decorateShiftState(view)
-            installGlideCompat(view)
-            installMultilingualLongPress(view)
-        }
+        "KEYBOARD" -> { applyLocaleLayout(view); decorateShiftState(view); installGlideCompat(view); installMultilingualLongPress(view) }
         "EMOJI" -> normalizeEmojiGrid(view)
     }
     return view
 }
 
-/** Do not manufacture a second navigation-bar area inside the IME. */
+/** Keep one controlled IME viewport. The phone's navigation bar remains outside the IME. */
 private fun PhormiKeyboardServiceV2.normalizeViewport(view: View) {
-    val lp = view.layoutParams ?: LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT)
-    lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+    val lp = view.layoutParams ?: LinearLayout.LayoutParams(-1, scaledCompat(280))
+    lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+    lp.height = scaledCompat(280)
     view.layoutParams = lp
-    view.minimumHeight = 0
-    // IME windows are positioned by InputMethodService. Returning the insets unchanged avoids
-    // the double bottom padding that produced the large dead strip in the previous build.
+    view.minimumHeight = scaledCompat(280)
     view.setOnApplyWindowInsetsListener { _, insets -> insets }
     if (Build.VERSION.SDK_INT >= 23) view.requestApplyInsets()
 }
 
-/** Emoji cells have a stable physical size and the grid scrolls inside the keyboard viewport. */
+private fun PhormiKeyboardServiceV2.scaledCompat(dp: Int): Int = (dp * resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(this)).toInt().coerceAtLeast(1)
+
+/** Emoji cells remain consistent in size; the existing ScrollView owns the vertical scroll. */
 private fun PhormiKeyboardServiceV2.normalizeEmojiGrid(root: View) {
-    val scale = PhormiKeyboardPreferences.heightScale(this).coerceIn(.92f, 1.16f)
-    val cell = (44f * resources.displayMetrics.density * scale).toInt().coerceAtLeast(1)
+    val cell = scaledCompat(44)
     fun visit(v: View) {
         if (v is Button) {
             val t = v.text?.toString().orEmpty()
@@ -72,11 +59,9 @@ private fun PhormiKeyboardServiceV2.normalizeEmojiGrid(root: View) {
     visit(root)
 }
 
-/** Real Latin layout order for locales whose standard keyboard is not QWERTY. */
+/** Real layout order for the common non-QWERTY Latin subtypes. */
 private fun PhormiKeyboardServiceV2.applyLocaleLayout(root: View) {
-    val language = runCatching {
-        currentInputMethodSubtype?.locale?.replace('_', '-')?.let(Locale::forLanguageTag)?.language
-    }.getOrNull() ?: return
+    val language = runCatching { currentInputMethodSubtype?.locale?.replace('_', '-')?.let(Locale::forLanguageTag)?.language }.getOrNull() ?: return
     val rows = when (language) {
         "fr" -> listOf("azertyuiop", "qsdfghjklm", "wxcvbn")
         "de", "cs" -> listOf("qwertzuiop", "asdfghjkl", "yxcvbnm")
@@ -125,13 +110,8 @@ private fun PhormiKeyboardServiceV2.decorateShiftState(root: View) {
     val caps = javaClass.walkHierarchyFields("capsLock")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
     val auto = javaClass.walkHierarchyFields("autoShift")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
     fun visit(view: View) {
-        if (view is Button) {
-            when (view.text?.toString().orEmpty()) {
-                "⇧", "⇧·", "⇧A", "⇧ LOCK" -> {
-                    view.text = when { caps -> "⇧ LOCK"; shift -> "⇧·"; else -> "⇧" }
-                    view.contentDescription = when { caps -> "Caps Lock on"; shift -> "Shift for next letter"; auto -> "Automatic capitalization"; else -> "Shift" }
-                }
-            }
+        if (view is Button) when (view.text?.toString().orEmpty()) {
+            "⇧", "⇧·", "⇧A", "⇧ LOCK" -> { view.text = when { caps -> "⇧ LOCK"; shift -> "⇧·"; else -> "⇧" }; view.contentDescription = when { caps -> "Caps Lock on"; shift -> "Shift for next letter"; auto -> "Automatic capitalization"; else -> "Shift" } }
         }
         if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
     }
@@ -163,11 +143,7 @@ private fun PhormiKeyboardServiceV2.installMultilingualLongPress(root: View) {
             alternatives[base]?.let { chars ->
                 view.setOnLongClickListener {
                     val options = chars.map(Char::toString).toTypedArray()
-                    AlertDialog.Builder(this).setTitle("$base — ${locale.displayLanguage}").setItems(options) { _, which ->
-                        invokePrivate("commitTextToEditor", options[which])
-                        invokePrivate("refreshPredictions", true)
-                        setInputView(render())
-                    }.show()
+                    AlertDialog.Builder(this).setTitle("$base — ${locale.displayLanguage}").setItems(options) { _, which -> invokePrivate("commitTextToEditor", options[which]); invokePrivate("refreshPredictions", true); setInputView(render()) }.show()
                     true
                 }
             }
@@ -177,7 +153,6 @@ private fun PhormiKeyboardServiceV2.installMultilingualLongPress(root: View) {
     visit(root)
 }
 
-/** Lightweight gesture compatibility; normal taps still use the service's click listeners. */
 private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
     fun isLetterButton(v: View): Boolean = v is Button && v.text?.toString()?.length == 1 && v.text?.toString()?.firstOrNull()?.isLetter() == true
     fun findLetter(parent: ViewGroup, rawX: Float, rawY: Float): Char? {
@@ -197,12 +172,9 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
             view.setOnTouchListener { _, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; gliding = false; word.setLength(0); word.append(base); last = base; false }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (!gliding && (kotlin.math.abs(event.rawX - downX) > 18f * resources.displayMetrics.density || kotlin.math.abs(event.rawY - downY) > 18f * resources.displayMetrics.density)) gliding = true
-                        if (gliding) { findLetter(root, event.rawX, event.rawY)?.let { if (it != last) { word.append(it); last = it } }; true } else false
-                    }
-                    MotionEvent.ACTION_UP -> { if (!gliding) view.performClick() else { findLetter(root, event.rawX, event.rawY)?.let { if (it != last) word.append(it) }; commitWord(word.toString()) }; true }
-                    MotionEvent.ACTION_CANCEL -> { word.setLength(0); gliding = false; true }
+                    MotionEvent.ACTION_MOVE -> { if (!gliding && (kotlin.math.abs(event.rawX-downX) > 18f*resources.displayMetrics.density || kotlin.math.abs(event.rawY-downY) > 18f*resources.displayMetrics.density)) gliding=true; if (gliding) { findLetter(root,event.rawX,event.rawY)?.let{if(it!=last){word.append(it);last=it}}; true } else false }
+                    MotionEvent.ACTION_UP -> { if (!gliding) view.performClick() else { findLetter(root,event.rawX,event.rawY)?.let{if(it!=last)word.append(it)}; commitWord(word.toString()) }; true }
+                    MotionEvent.ACTION_CANCEL -> { word.setLength(0); gliding=false; true }
                     else -> false
                 }
             }
@@ -212,14 +184,5 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
     wire(root)
 }
 
-private fun Class<*>.walkHierarchyFields(name: String): java.lang.reflect.Field? {
-    var type: Class<*>? = this
-    while (type != null) { type.declaredFields.firstOrNull { it.name == name }?.let { return it }; type = type.superclass }
-    return null
-}
-
-private fun Class<*>.walkHierarchyMethods(name: String, arity: Int): java.lang.reflect.Method? {
-    var type: Class<*>? = this
-    while (type != null) { type.declaredMethods.firstOrNull { it.name == name && it.parameterTypes.size == arity }?.let { return it }; type = type.superclass }
-    return null
-}
+private fun Class<*>.walkHierarchyFields(name: String): java.lang.reflect.Field? { var type: Class<*>? = this; while (type != null) { type.declaredFields.firstOrNull { it.name == name }?.let { return it }; type=type.superclass }; return null }
+private fun Class<*>.walkHierarchyMethods(name: String, arity: Int): java.lang.reflect.Method? { var type: Class<*>? = this; while (type != null) { type.declaredMethods.firstOrNull { it.name == name && it.parameterTypes.size == arity }?.let { return it }; type=type.superclass }; return null }
