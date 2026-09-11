@@ -96,6 +96,7 @@ object PhormiKeyboardAiBridge {
         if (blocked) {
             // Privacy transitions must immediately invalidate both visible and
             // pending AI state; do not wait for the next text change.
+            val panel = currentPanel(service)
             lastText = ""
             lastSuggestions = emptyList()
             lastEmojiSuggestions = emptyList()
@@ -105,6 +106,7 @@ object PhormiKeyboardAiBridge {
             aiPending = null
             aiController?.cancel()
             aiController = null
+            if (panel == "EMOJI") rerender(service)
             return
         }
 
@@ -179,11 +181,7 @@ object PhormiKeyboardAiBridge {
         if (PhormiKeyboardTextEngine.isPrivateEditor(info)) return
         val root = service.getInputView() as? ViewGroup ?: return
         val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
-        val panel = findField(service.javaClass, "panel")?.let { field ->
-            field.isAccessible = true
-            field.get(service)?.toString()?.substringAfterLast('.')
-        } ?: return
-        if (panel != "EMOJI") return
+        if (currentPanel(service) != "EMOJI") return
         val scroll = (0 until root.childCount).map { root.getChildAt(it) }.filterIsInstance<ScrollView>().firstOrNull() ?: return
         val grid = scroll.getChildAt(0) as? LinearLayout ?: return
 
@@ -276,6 +274,11 @@ object PhormiKeyboardAiBridge {
     private fun feedback(view: View) {
         if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK)
+    }
+
+    private fun currentPanel(service: PhormiKeyboardServiceV2): String? = findField(service.javaClass, "panel")?.let { field ->
+        field.isAccessible = true
+        field.get(service)?.toString()?.substringAfterLast('.')
     }
 
     private fun rerender(service: PhormiKeyboardServiceV2) = runCatching { service.setInputView(service.render()) }
