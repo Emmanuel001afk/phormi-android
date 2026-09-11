@@ -28,6 +28,7 @@ object PhormiKeyboardAiBridge {
     private var lastText = ""
     private var lastSuggestions = emptyList<String>()
     private var lastAiText = ""
+    private var lastAiFile: java.io.File? = null
     private var aiController: PhormiKeyboardAiEmojiController? = null
     private var aiPending: Runnable? = null
 
@@ -50,6 +51,7 @@ object PhormiKeyboardAiBridge {
         lastText = ""
         lastSuggestions = emptyList()
         lastAiText = ""
+        lastAiFile = null
         aiPending?.let(handler::removeCallbacks)
         aiPending = null
         aiController?.cancel()
@@ -76,6 +78,7 @@ object PhormiKeyboardAiBridge {
             updateSuggestions(service, info, text)
             scheduleAiReaction(service, text)
         }
+        lastAiFile?.let { installAiReaction(service, it) }
     }
 
     private fun updateSuggestions(service: PhormiKeyboardServiceV2, info: android.view.inputmethod.EditorInfo, text: String) {
@@ -106,7 +109,10 @@ object PhormiKeyboardAiBridge {
             if (aiController == null) {
                 aiController = PhormiKeyboardAiEmojiController(current) { files, generating ->
                     if (started && !generating) {
-                        currentService()?.let { active -> installAiReaction(active, files.firstOrNull()) }
+                        currentService()?.let { active ->
+                            lastAiFile = files.firstOrNull()
+                            installAiReaction(active, lastAiFile)
+                        }
                     }
                 }
             }
@@ -174,7 +180,10 @@ object PhormiKeyboardAiBridge {
             background = rounded(Color.rgb(39, 48, 64), 9)
             setOnClickListener {
                 feedback(this)
-                if (PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))) lastAiText = ""
+                if (PhormiKeyboardServiceV2.commitPickedContent(service, PhormiKeyboardStickerStore.contentUri(service, file))) {
+                    lastAiText = ""
+                    lastAiFile = null
+                }
             }
         }
         row.addView(image, LinearLayout.LayoutParams(0, scaled(service, 50), 1f).apply { setMargins(2, 2, 2, 2) })
