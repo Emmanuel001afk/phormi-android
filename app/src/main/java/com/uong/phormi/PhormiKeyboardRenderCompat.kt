@@ -36,7 +36,11 @@ private fun PhormiKeyboardServiceV2.invokePrivateBuilder(name: String): View = r
 
 /** Adds swipe typing without changing the stable V2 renderer. Ordinary taps remain ordinary taps. */
 private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
-    fun isLetterButton(v: View): Boolean = v is Button && v.text?.toString()?.length == 1 && v.text.toString()[0].isLetter() && v.height >= (resources.displayMetrics.density * 40f)
+    fun isLetterButton(v: View): Boolean {
+        if (v !is Button) return false
+        val label = (v as TextView).text?.toString().orEmpty()
+        return label.length == 1 && label[0].isLetter() && v.height >= (resources.displayMetrics.density * 40f)
+    }
     fun findLetter(parent: ViewGroup, rawX: Float, rawY: Float): Char? {
         val rect = Rect()
         for (i in parent.childCount - 1 downTo 0) {
@@ -44,7 +48,7 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
             if (!child.isShown) continue
             child.getGlobalVisibleRect(rect)
             if (!rect.contains(rawX.toInt(), rawY.toInt())) continue
-            if (isLetterButton(child)) return child.text.toString()[0].lowercaseChar()
+            if (isLetterButton(child)) return (child as TextView).text.toString()[0].lowercaseChar()
             if (child is ViewGroup) findLetter(child, rawX, rawY)?.let { return it }
         }
         return null
@@ -60,7 +64,7 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
 
     fun wire(view: View) {
         if (view is Button && isLetterButton(view)) {
-            val base = view.text.toString()[0].lowercaseChar()
+            val base = (view as TextView).text.toString()[0].lowercaseChar()
             var downX = 0f; var downY = 0f; var gliding = false; val word = StringBuilder(); var last: Char? = null
             view.setOnTouchListener { _, event ->
                 when (event.actionMasked) {
@@ -68,13 +72,13 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
                     MotionEvent.ACTION_MOVE -> {
                         if (kotlin.math.abs(event.rawX - downX) > 18f * resources.displayMetrics.density || kotlin.math.abs(event.rawY - downY) > 18f * resources.displayMetrics.density) {
                             gliding = true
-                            (root as? ViewGroup)?.let { findLetter(it, event.rawX, event.rawY) }?.let { if (it != last) { word.append(it); last = it } }
+                            findLetter(root as ViewGroup, event.rawX, event.rawY)?.let { if (it != last) { word.append(it); last = it } }
                             true
                         } else false
                     }
                     MotionEvent.ACTION_UP -> {
                         if (!gliding) { view.performClick(); true } else {
-                            (root as? ViewGroup)?.let { findLetter(it, event.rawX, event.rawY) }?.let { if (it != last) word.append(it) }
+                            findLetter(root as ViewGroup, event.rawX, event.rawY)?.let { if (it != last) word.append(it) }
                             if (word.isNotEmpty()) commitWord(word.toString()) else true
                             true
                         }
