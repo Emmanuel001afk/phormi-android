@@ -252,12 +252,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
     }
 
-    /** Real swipe typing: normal taps still click the key, while a horizontal/diagonal drag samples letter keys and commits one word on release. */
+    /** Real swipe typing: normal taps still click the key, while a drag samples letter keys and commits one word. */
     private fun installGlide(button: Button, baseChar: Char) {
         var downX = 0f; var downY = 0f; var gliding = false; val word = StringBuilder(); var last: Char? = null
         button.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; gliding = false; word.setLength(0); last = null; false }
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; gliding = false; word.setLength(0); word.append(baseChar); last = baseChar; false }
                 MotionEvent.ACTION_MOVE -> {
                     val moved = abs(event.rawX - downX) > dp(18) || abs(event.rawY - downY) > dp(18)
                     if (moved) {
@@ -270,14 +270,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                     if (!gliding) { button.performClick(); true }
                     else {
                         sampleGlideKey(event.rawX, event.rawY)?.let { ch -> if (ch != last) word.append(ch) }
-                        if (word.isNotEmpty()) {
-                            val value = if (capsLock || shift || autoShift) word.toString().uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else word.toString()
-                            commitTextToEditor(value)
-                            if (shift && !capsLock) shift = false
-                            autoShift = false
-                            refreshPredictions(); setInputView(render())
-                        }
-                        true
+                        val value = if (capsLock || shift || autoShift) word.toString().uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else word.toString()
+                        commitTextToEditor(value)
+                        if (shift && !capsLock) shift = false
+                        autoShift = false
+                        refreshPredictions(); setInputView(render()); true
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> { gliding = false; word.setLength(0); true }
@@ -286,11 +283,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
     }
 
-    private fun sampleGlideKey(rawX: Float, rawY: Float): Char? {
-        val root = getInputView() as? ViewGroup ?: return null
-        val found = findLetterAt(root, rawX, rawY) ?: return null
-        return found
-    }
+    private fun sampleGlideKey(rawX: Float, rawY: Float): Char? = findLetterAt(getInputView() as? ViewGroup ?: return null, rawX, rawY)
 
     private fun findLetterAt(parent: ViewGroup, rawX: Float, rawY: Float): Char? {
         val rect = Rect()
@@ -404,7 +397,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (!PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo) || !PhormiKeyboardPreferences.aiEmoji(this)) { panel = Panel.KEYBOARD; return buildKeyboard() }
         val root = root(); root.addView(pill("← Emoji") { panel = Panel.EMOJI; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(38)))
         root.addView(TextView(this).apply { text = if (aiGenerating) "Creating one integrated reaction…" else "Phormi custom reaction"; textSize = 17f; setTextColor(themeText()); gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, scaled(42)))
-        if (aiFiles.isNotEmpty()) { val file = aiFiles.first(); root.addView(emojiImageButton(file,"Custom context reaction") { if (commitContentToEditor(PhormiKeyboardStickerStore.contentUri(this@PhormiKeyboardServiceV2,file))) { aiFiles = aiFiles.drop(1); setInputView(render()) } }, LinearLayout.LayoutParams(-1, scaled(100))) }
+        if (aiFiles.isNotEmpty()) { val file = aiFiles.first(); root.addView(emojiImageButton(file,"Custom context reaction") { if (commitContentToEditor(PhormiKeyboardStickerStore.contentUri(this@PhormiKeyboardServiceV2, file))) { aiFiles = aiFiles.drop(1); setInputView(render()) } }, LinearLayout.LayoutParams(-1, scaled(100))) }
         val contextText = PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim()
         root.addView(pill(if (aiGenerating) "Generating…" else "Generate reaction from typed context") { generateAiEmoji(contextText.ifBlank { "happy positive celebration" }) }, LinearLayout.LayoutParams(-1, scaled(42))); return root
     }
@@ -424,7 +417,6 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val rawWord = PhormiKeyboardTextEngine.currentWord(ic)
         runCatching {
             ic.beginBatchEdit()
-            // URLs and email addresses need prediction, but never destructive autocorrection.
             if (PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) && !PhormiKeyboardTextEngine.isUriLike(editorInfo) && rawWord.isNotBlank()) {
                 val locale = PhormiKeyboardTextEngine.localeFor(editorInfo); val corrected = PhormiKeyboardTextEngine.correctionFor(this,rawWord,locale); val finalWord = corrected?.let { matchCase(it,rawWord) } ?: rawWord
                 if (corrected != null) { ic.deleteSurroundingText(rawWord.length,0); ic.commitText(finalWord,1) }
@@ -456,6 +448,17 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun commitTextToEditor(text:String):Boolean{val ok=currentInputConnection?.commitText(text,1)?:false;if(ok)syncSelection();return ok}
     private fun commitContentToEditor(uri:Uri):Boolean{if(Build.VERSION.SDK_INT<25)return false;val ic=currentInputConnection?:return false;val mime=contentResolver.getType(uri)?:"image/*";val info=InputContentInfo(uri,ClipDescription("Phormi media",arrayOf(mime)));return runCatching{ic.commitContent(info,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)}.getOrDefault(false)}
     private fun showToast(text:String)=Toast.makeText(this,text,Toast.LENGTH_SHORT).show()
+
+    /** Public for the live AI bridge: rebuild exactly one keyboard/panel shell. */
+    fun render(): View = when (panel) {
+        Panel.KEYBOARD -> buildKeyboard()
+        Panel.EMOJI -> buildEmoji()
+        Panel.CLIPBOARD -> buildClipboard()
+        Panel.AI_EMOJI -> buildAiEmoji()
+        Panel.TOOLS -> buildTools()
+        Panel.MEDIA -> buildMedia()
+        Panel.SETTINGS -> buildSettings()
+    }
 
     override fun onKeyDown(keyCode:Int,event:KeyEvent?):Boolean{if(keyCode==KeyEvent.KEYCODE_BACK&&panel!=Panel.KEYBOARD){panel=Panel.KEYBOARD;setInputView(render());return true};return super.onKeyDown(keyCode,event)}
 }
