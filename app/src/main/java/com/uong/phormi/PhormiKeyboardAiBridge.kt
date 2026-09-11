@@ -12,7 +12,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.SoundEffectConstants
 import android.view.inputmethod.CompletionInfo
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -26,6 +25,7 @@ object PhormiKeyboardAiBridge {
     private val handler = Handler(Looper.getMainLooper())
     private var started = false
     private var lastText = ""
+    private var lastEditorKey = ""
     private var lastSuggestions = emptyList<String>()
     private var lastAiText = ""
     private var lastAiFile: java.io.File? = null
@@ -49,6 +49,7 @@ object PhormiKeyboardAiBridge {
     fun stop() {
         started = false
         lastText = ""
+        lastEditorKey = ""
         lastSuggestions = emptyList()
         lastAiText = ""
         lastAiFile = null
@@ -71,10 +72,20 @@ object PhormiKeyboardAiBridge {
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
             PhormiKeyboardTextEngine.isPrivateEditor(info)
         ) return
+        val editorKey = "${info.packageName}:${info.fieldId}:${info.inputType}"
+        if (editorKey != lastEditorKey) {
+            lastEditorKey = editorKey
+            lastText = ""
+            lastAiText = ""
+            lastAiFile = null
+            aiPending?.let(handler::removeCallbacks)
+            aiPending = null
+        }
         val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutoCaps(service)
         if (text != lastText) {
             lastText = text
+            lastAiFile = null
             updateSuggestions(service, info, text)
             scheduleAiReaction(service, text)
         }
