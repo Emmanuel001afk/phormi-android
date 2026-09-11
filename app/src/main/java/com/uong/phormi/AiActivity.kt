@@ -56,15 +56,9 @@ class AiActivity : AppCompatActivity() {
             val k = key.text.toString().trim()
             val e = endpoint.text.toString().trim()
             val m = model.text.toString().trim()
-            if (k.isBlank()) {
-                status.text = "Paste the API key first."
-                return@setOnClickListener
-            }
+            if (k.isBlank()) { status.text = "Paste the API key first."; return@setOnClickListener }
             val inferred = controller.inferProviderConfig(n, e, m)
-            if (inferred.endpoint.isBlank()) {
-                status.text = "Endpoint is required for a custom provider name. Choose a template or enter the provider endpoint."
-                return@setOnClickListener
-            }
+            if (inferred.endpoint.isBlank()) { status.text = "Endpoint is required for a custom provider name. Choose a template or enter the provider endpoint."; return@setOnClickListener }
             val button = findViewById<Button>(R.id.btn_save_keys)
             button.isEnabled = false
             status.text = "Testing HTTPS AI connection…"
@@ -77,11 +71,8 @@ class AiActivity : AppCompatActivity() {
                     key.text.clear()
                     refresh()
                     status.text = "Connected: $n · ${cfg.model}"
-                } catch (t: Throwable) {
-                    status.text = "Connection failed: ${t.message ?: "unknown error"}"
-                } finally {
-                    button.isEnabled = true
-                }
+                } catch (t: Throwable) { status.text = "Connection failed: ${t.message ?: "unknown error"}" }
+                finally { button.isEnabled = true }
             }
         }
         active.setOnCheckedChangeListener { _, checked -> controller.setActive(checked); refresh() }
@@ -93,22 +84,13 @@ class AiActivity : AppCompatActivity() {
     private fun runAssistant() {
         val text = instruction.text.toString().trim()
         if (text.isBlank()) return startVoiceInput()
-        if (!controller.hasAnyKey()) {
-            status.text = "Save an external AI connection first."
-            return
-        }
+        if (!controller.hasAnyKey()) { status.text = "Save an external AI connection first."; return }
         if (PhormiAccessibilityService.instance == null) {
             status.text = getString(R.string.accessibility_reminder)
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            return
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
         }
-
-        // The AI screen must not remain foreground while the agent operates the browser.
-        // Persist the task, close this screen, and let PhormiRepairApplication start the
-        // controller after MainActivity is resumed so Accessibility observes the browser.
         PhormiAiPendingTask.enqueue(applicationContext, "", text)
-        status.text = "Returning to the browser…"
-        finish()
+        status.text = "Returning to the browser…"; finish()
     }
 
     private fun startVoiceInput() {
@@ -122,11 +104,7 @@ class AiActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == voiceRequest && resultCode == Activity.RESULT_OK) {
-            data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let {
-                instruction.setText(it); instruction.setSelection(it.length)
-            }
-        }
+        if (requestCode == voiceRequest && resultCode == Activity.RESULT_OK) data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { instruction.setText(it); instruction.setSelection(it.length) }
     }
 
     private fun refresh() { keyStatus.text = controller.keyStatusSummary() }
