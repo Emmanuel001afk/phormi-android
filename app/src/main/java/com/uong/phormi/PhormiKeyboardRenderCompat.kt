@@ -1,7 +1,6 @@
 package com.uong.phormi
 
 import android.graphics.Rect
-import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -11,6 +10,11 @@ import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import java.util.Locale
 
+/**
+ * Rendering compatibility layer for the keyboard service.
+ * The IME has one physical viewport for every panel. Panels never resize the IME;
+ * content that exceeds the viewport must scroll inside that viewport.
+ */
 internal fun PhormiKeyboardServiceV2.render(): View {
     val panelName = runCatching { javaClass.walkHierarchyFields("panel")?.apply { isAccessible = true }?.get(this)?.toString() }.getOrNull() ?: "KEYBOARD"
     val view = when (panelName) {
@@ -22,13 +26,15 @@ internal fun PhormiKeyboardServiceV2.render(): View {
         "SETTINGS" -> invokeBuilder("buildSettings")
         else -> invokeBuilder("buildKeyboard")
     }
-    normalizeViewport(view, panelName)
+    normalizeViewport(view)
     if (panelName == "KEYBOARD") {
         applyLocaleLayout(view)
         decorateShiftState(view)
         installGlideCompat(view)
         installMultilingualLongPress(view)
-    } else if (panelName == "EMOJI") normalizeEmojiGrid(view)
+    } else if (panelName == "EMOJI") {
+        normalizeEmojiGrid(view)
+    }
     return view
 }
 
@@ -38,22 +44,29 @@ private fun PhormiKeyboardServiceV2.currentSubtypeLocale(): Locale {
     return if (tag != null) Locale.forLanguageTag(tag) else currentInputEditorInfo?.hintLocales?.get(0) ?: Locale.getDefault()
 }
 
-private fun PhormiKeyboardServiceV2.normalizeViewport(view: View, panelName: String) {
-    val symbolMode = runCatching { javaClass.walkHierarchyFields("symbols")?.apply { isAccessible = true }?.get(this) as? Boolean }.getOrNull() == true
-    val childCount = (view as? ViewGroup)?.childCount ?: 0
-    val baseDp = if (panelName == "KEYBOARD") when {
-        symbolMode -> 430
-        childCount >= 8 -> 365
-        childCount >= 7 -> 315
-        else -> 280
-    } else 280
-    val h = scaledCompat(baseDp)
-    val lp = view.layoutParams ?: LinearLayout.LayoutParams(-1, h)
+private fun PhormiKeyboardServiceV2.viewportHeightPx(): Int {
+    // One global physical viewport. The percentage preference changes this value,
+    // never the panel-specific geometry.
+    val baseDp = 360
+    return (baseDp * resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(this)).toInt().coerceAtLeast(1)
+}
+
+private fun PhormiKeyboardServiceV2.normalizeViewport(view: View) {
+    val h = viewportHeightPx()
+    val lp = view.layoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h)
     lp.width = ViewGroup.LayoutParams.MATCH_PARENT
     lp.height = h
     view.layoutParams = lp
     view.minimumHeight = h
-    if (Build.VERSION.SDK_INT >= 23) view.requestApplyInsets()
+    view.minimumWidth = 0
+    view.clipChildren = true
+    view.clipToPadding = true
+    view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
+
+    // InputMethodService uses a non-fullscreen IME window by default. Explicitly
+    // constrain the actual IME window too, so a ScrollView can never make the
+    // window grow to the height of its entire emoji/media list.
+    runCatching { window?.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, h) }
 }
 
 private fun PhormiKeyboardServiceV2.scaledCompat(dp: Int): Int = (dp * resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(this)).toInt().coerceAtLeast(1)
@@ -186,10 +199,7 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
                 if (!child.isShown) continue
                 child.getGlobalVisibleRect(rect)
                 if (!rect.contains(rawX.toInt(), rawY.toInt())) continue
-                if (isLetterButton(child)) {
-                    val button = child as Button
-                    return button.text.toString()[0].lowercaseChar()
-                }
+                if (isLetterButton(child)) return (child as Button).text.toString()[0].lowercaseChar()
                 findLetter(child, rawX, rawY)?.let { return it }
             }
         }
