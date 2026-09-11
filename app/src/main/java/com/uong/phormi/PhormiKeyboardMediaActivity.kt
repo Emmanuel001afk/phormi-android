@@ -52,13 +52,11 @@ class PhormiKeyboardMediaActivity : Activity() {
     }
 
     private fun openPicker() {
-        // Use image/* for discovery because some document providers do not expose a
-        // GIF with the expected MIME type. We still advertise GIF as the preferred type.
         val gif = mode == "gif"
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "image/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, if (gif) arrayOf("image/gif", "image/webp", "image/*") else arrayOf("image/png", "image/jpeg", "image/webp", "image/gif", "image/*"))
+            putExtra(Intent.EXTRA_MIME_TYPES, if (gif) arrayOf("image/gif", "image/webp", "image/png", "image/jpeg", "image/*") else arrayOf("image/png", "image/jpeg", "image/webp", "image/gif", "image/*"))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }, REQUEST_PICK)
     }
@@ -89,6 +87,19 @@ class PhormiKeyboardMediaActivity : Activity() {
                         } else {
                             PhormiKeyboardStickerPackStore.add(this, "Imported", file)
                             PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                        }
+                    }
+                    "gif" -> {
+                        // Keep GIF/image assets in the same persistent media library as stickers.
+                        // This fixes the previous behavior where the picker returned a URI but the
+                        // GIF never appeared again on the keyboard's media surface.
+                        val file = PhormiKeyboardStickerStore.import(this, uri, "gif")
+                        if (file == null) {
+                            Toast.makeText(this, "Could not import this GIF/image", Toast.LENGTH_SHORT).show()
+                        } else {
+                            PhormiKeyboardStickerPackStore.add(this, "GIF & Images", file)
+                            val delivered = PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                            if (!delivered) Toast.makeText(this, "GIF saved — return to the keyboard to insert it", Toast.LENGTH_SHORT).show()
                         }
                     }
                     else -> {
