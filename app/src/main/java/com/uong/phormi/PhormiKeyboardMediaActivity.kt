@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 
 class PhormiKeyboardMediaActivity : Activity() {
     companion object { const val EXTRA_MODE = "mode"; private const val REQUEST_PICK = 4401 }
@@ -20,24 +21,29 @@ class PhormiKeyboardMediaActivity : Activity() {
 
     private fun showStickerChooser() {
         val packs = PhormiKeyboardStickerPackStore.packs(this)
-        val choices = mutableListOf("✨ Create AI emoji", "📁 Import sticker")
+        val choices = mutableListOf("📁 Import sticker")
         choices += packs.map { "📦 ${it.name} (${it.files.size})" }
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Phormi Stickers")
             .setItems(choices.toTypedArray()) { _, which ->
-                when {
-                    which == 0 -> startActivity(Intent(this, PhormiAiEmojiActivity::class.java))
-                    which == 1 -> openPicker()
-                    else -> {
-                        val pack = packs[which - 2]
-                        val files = PhormiKeyboardStickerPackStore.files(this, pack)
-                        if (files.isEmpty()) Toast.makeText(this, "This pack is empty", Toast.LENGTH_SHORT).show()
-                        else PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, files.first()))
-                        finish()
-                    }
-                }
+                if (which == 0) openPicker() else chooseSticker(packs[which - 1])
             }
             .setNegativeButton("Cancel") { _, _ -> finish() }
+            .show()
+    }
+
+    private fun chooseSticker(pack: PhormiKeyboardStickerPackStore.Pack) {
+        val files = PhormiKeyboardStickerPackStore.files(this, pack)
+        if (files.isEmpty()) { Toast.makeText(this, "This pack is empty", Toast.LENGTH_SHORT).show(); finish(); return }
+        val names = files.map { it.name }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(pack.name)
+            .setItems(names) { _, which ->
+                val file = files.getOrNull(which) ?: return@setItems
+                PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                finish()
+            }
+            .setNegativeButton("Back") { _, _ -> showStickerChooser() }
             .show()
     }
 
