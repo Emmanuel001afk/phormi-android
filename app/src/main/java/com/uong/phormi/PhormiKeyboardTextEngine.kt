@@ -17,50 +17,113 @@ object PhormiKeyboardTextEngine {
     private const val MAX_LEARNED = 1500
     private const val MAX_BIGRAMS = 3000
     private const val MAX_CORRECTIONS = 500
-    private val commonWords = listOf("about","after","again","all","also","always","and","another","any","are","around","because","been","before","being","best","better","but","can","come","could","day","did","different","do","does","done","down","each","even","every","feel","find","first","for","from","get","give","good","great","had","has","have","help","here","how","just","know","like","little","look","love","make","many","more","most","much","myself","need","never","new","next","not","now","only","other","our","out","over","people","please","really","right","same","see","should","some","something","still","take","than","that","their","them","then","there","these","they","thing","think","this","time","today","together","too","try","use","very","want","way","well","were","what","when","where","which","who","why","will","with","without","would","yes","you","your","hello","thanks","thank","sorry","happy","sad","excited","angry","amazing","awesome","beautiful","friend","friends","family","home","work","phone","message","morning","night","welcome","okay","ok","sure","tomorrow")
-    private val frenchWords = listOf("à","ai","aime","alors","après","avec","beaucoup","bien","bonjour","bonne","bonsoir","ça","ce","cela","cette","comme","comment","dans","de","demain","des","du","elle","elles","en","encore","est","et","être","fait","faire","famille","faut","fois","fort","grand","grande","heureux","ici","ils","je","j'aime","jour","la","le","les","leur","lui","mais","maintenant","merci","mes","moi","mon","matin","ne","nous","nouveau","nuit","où","parce","pas","petit","peut","plus","pour","pourquoi","quand","que","quel","quelle","qui","quoi","rien","sais","sans","se","ses","si","sont","sur","ta","te","tes","toi","ton","toujours","tous","tout","très","tu","un","une","vais","veut","vous","votre","vraiment","voilà","oui","non","désolé","triste","excité","amour","amis")
+
+    private val commonWords = listOf("about","after","again","all","also","always","and","another","any","are","around","because","been","before","being","best","better","but","can","come","could","day","did","different","do","does","done","down","each","even","every","feel","find","first","for","from","get","give","good","great","had","has","have","help","here","how","just","know","like","little","look","love","make","many","more","most","much","myself","need","never","new","next","not","now","only","other","our","out","over","people","please","really","right","same","see","should","some","something","still","take","than","that","their","them","then","there","these","they","thing","think","this","time","today","together","too","try","use","very","want","way","well","were","what","when","where","which","who","why","will","with","without","would","yes","you","your","hello","thanks","thank","sorry","happy","sad","excited","angry","amazing","awesome","beautiful","friend","friends","family","home","work","phone","message","morning","night","welcome","okay","sure","tomorrow")
+    private val frenchWords = listOf("à","ai","aime","alors","après","avec","beaucoup","bien","bonjour","bonne","bonsoir","ça","ce","cela","cette","comme","comment","dans","de","demain","des","du","elle","elles","en","encore","est","et","être","fait","faire","famille","faut","fois","fort","grand","grande","heureux","ici","ils","je","jour","la","le","les","leur","lui","mais","maintenant","merci","mes","moi","mon","matin","ne","nous","nouveau","nuit","où","parce","pas","petit","peut","plus","pour","pourquoi","quand","que","quel","quelle","qui","quoi","rien","sais","sans","se","ses","si","sont","sur","ta","te","tes","toi","ton","toujours","tous","tout","très","tu","un","une","vais","veut","vous","votre","vraiment","voilà","oui","non","désolé","triste","excité","amour","amis")
     private val corrections = mapOf("teh" to "the","taht" to "that","adn" to "and","hte" to "the","recieve" to "receive","seperate" to "separate","definately" to "definitely","occured" to "occurred","becuase" to "because","adress" to "address","thier" to "their","wierd" to "weird","untill" to "until","tomorow" to "tomorrow","tommorow" to "tomorrow","remeber" to "remember","alot" to "a lot","writting" to "writing","begining" to "beginning","enviroment" to "environment","goverment" to "government","reciever" to "receiver","dont" to "don't","cant" to "can't","wont" to "won't","isnt" to "isn't","didnt" to "didn't","doesnt" to "doesn't","wasnt" to "wasn't","couldnt" to "couldn't","wouldnt" to "wouldn't","shouldnt" to "shouldn't","im" to "I'm","ive" to "I've","ill" to "I'll","id" to "I'd","youre" to "you're","youve" to "you've","theyre" to "they're","thats" to "that's","whats" to "what's","lets" to "let's","hes" to "he's","shes" to "she's","weve" to "we've")
     private val frenchCorrections = mapOf("bonjou" to "bonjour","merc" to "merci","commen" to "comment","beaucou" to "beaucoup","parceque" to "parce que","vraimen" to "vraiment","maintenan" to "maintenant","demai" to "demain","excite" to "excité","desole" to "désolé")
     private val nextWordSeed = mapOf("good" to listOf("morning","afternoon","evening","luck","job"),"how" to listOf("are","is","was","do","did"),"thank" to listOf("you"),"happy" to listOf("birthday","to","for","with"),"see" to listOf("you","the","what"),"i" to listOf("am","will","can","want","need","love","think"),"we" to listOf("are","can","will","should","need"),"please" to listOf("send","help","let","give"),"looking" to listOf("for","forward","good"),"love" to listOf("you","this","that","it"),"very" to listOf("good","happy","excited","important","much"))
     private val frenchNextWordSeed = mapOf("bonjour" to listOf("à","tout","comment","monsieur","madame"),"merci" to listOf("beaucoup","pour","à","encore"),"comment" to listOf("ça","allez","vas","faire"),"je" to listOf("suis","vais","peux","veux","pense","aime"),"nous" to listOf("sommes","allons","pouvons","devons","avons"),"vous" to listOf("êtes","allez","pouvez","avez","voulez"),"très" to listOf("bien","heureux","triste","excité","important"),"bonne" to listOf("journée","chance","nuit","soirée"),"à" to listOf("demain","bientôt","plus","tard"),"pour" to listOf("vous","moi","ça","faire","que"))
+
     fun isPassword(info: EditorInfo?): Boolean = variation(info) in setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
     fun isUriLike(info: EditorInfo?): Boolean { val v = variation(info); return v == InputType.TYPE_TEXT_VARIATION_URI || v == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || v == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS }
     fun isNoPersonalizedLearning(info: EditorInfo?): Boolean = info?.imeOptions?.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
-    fun isPrivateEditor(info: EditorInfo?): Boolean = isPassword(info) || isUriLike(info) || isNoPersonalizedLearning(info)
-    fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPrivateEditor(info) && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
-    fun localeFor(info: EditorInfo?): Locale { val hinted = runCatching { info?.hintLocales?.get(0) }.getOrNull(); return hinted ?: Locale.getDefault() }
-    private fun activeLocale(context: Context, fallback: Locale = Locale.getDefault()): Locale = if (context is PhormiKeyboardServiceV2) localeFor(context.currentInputEditorInfo) else fallback
+    fun isPrivateEditor(info: EditorInfo?): Boolean = isPassword(info) || isNoPersonalizedLearning(info)
+    fun allowsPersonalizedLearning(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isUriLike(info) && !isNoPersonalizedLearning(info)
+    fun allowsAiEmoji(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isUriLike(info) && !isNoPersonalizedLearning(info)
+    fun shouldUsePredictions(info: EditorInfo?): Boolean {
+        if (info == null || isPassword(info) || isNoPersonalizedLearning(info)) return false
+        if ((info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) return false
+        return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
+    }
+    fun localeFor(info: EditorInfo?): Locale = runCatching { info?.hintLocales?.get(0) }.getOrNull() ?: Locale.getDefault()
+    private fun activeLocale(context: Context): Locale = if (context is PhormiKeyboardServiceV2) localeFor(context.currentInputEditorInfo) else Locale.getDefault()
+
     fun currentWord(ic: InputConnection?): String = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty().split(Regex("[\\s\\n\\r\\t]+"), limit = 0).lastOrNull().orEmpty().takeLastWhile { it.isLetter() || it == '\'' }
-    fun previousWord(ic: InputConnection?): String { val before = ic?.getTextBeforeCursor(160, 0)?.toString().orEmpty().trimEnd(); val parts = before.split(Regex("[\\s\\n\\r\\t]+"), limit = 0); return parts.dropLast(1).lastOrNull().orEmpty().trim(' ', '\'', '"', '.', ',', '!', '?', ':', ';').lowercase(Locale.getDefault()) }
-    fun suggestions(context: Context, prefix: String, locale: Locale = activeLocale(context)): List<String> { val p = prefix.lowercase(locale); if (p.isBlank()) return emptyList(); val french = locale.language == Locale.FRENCH.language; val pool = LinkedHashSet<String>(); if (french) frenchCorrections[p]?.let(pool::add) else corrections[p]?.let(pool::add); loadLearned(context).filter { it.startsWith(p, ignoreCase = true) }.forEach(pool::add); (if (french) frenchWords else commonWords).filter { it.startsWith(p, ignoreCase = true) }.forEach(pool::add); if (pool.isEmpty()) (if (french) frenchWords else commonWords).filter { editDistance(it.lowercase(locale), p) <= 2 }.sortedBy { editDistance(it.lowercase(locale), p) }.forEach(pool::add); return pool.take(5) }
-    fun nextWordSuggestions(context: Context, previous: String, locale: Locale = activeLocale(context)): List<String> { val key = previous.lowercase(locale).trim(); if (key.isBlank()) return emptyList(); val pool = LinkedHashSet<String>(); (if (locale.language == Locale.FRENCH.language) frenchNextWordSeed[key] else nextWordSeed[key]).orEmpty().forEach(pool::add); loadNextWords(context, key).forEach(pool::add); return pool.take(4) }
-    fun correctionFor(context: Context, word: String, locale: Locale = activeLocale(context)): String? { val key = word.lowercase(locale); if (locale.language == Locale.FRENCH.language) return frenchCorrections[key] ?: loadLearnedCorrections(context)[key]; return corrections[key] ?: loadLearnedCorrections(context)[key] }
-    /** Legacy bridge used by V2 autocorrect. Resolve the live IME through its companion so the active subtype locale is respected. */
+    fun previousWord(ic: InputConnection?, locale: Locale = Locale.getDefault()): String {
+        val before = ic?.getTextBeforeCursor(160, 0)?.toString().orEmpty().trimEnd()
+        val parts = before.split(Regex("[\\s\\n\\r\\t]+"))
+        return parts.dropLast(1).lastOrNull().orEmpty().trim(' ', '\'', '"', '.', ',', '!', '?', ':', ';').lowercase(locale)
+    }
+
+    fun suggestions(context: Context, prefix: String, locale: Locale = activeLocale(context)): List<String> {
+        val p = prefix.lowercase(locale); if (p.isBlank()) return emptyList()
+        val french = locale.language == Locale.FRENCH.language
+        val pool = LinkedHashSet<String>()
+        if (french) frenchCorrections[p]?.let(pool::add) else corrections[p]?.let(pool::add)
+        loadLearned(context).filter { it.startsWith(p, true) }.forEach(pool::add)
+        (if (french) frenchWords else commonWords).filter { it.startsWith(p, true) }.forEach(pool::add)
+        if (pool.isEmpty()) (if (french) frenchWords else commonWords).filter { editDistance(it.lowercase(locale), p) <= 2 }.sortedBy { editDistance(it.lowercase(locale), p) }.forEach(pool::add)
+        return pool.take(5)
+    }
+
+    fun nextWordSuggestions(context: Context, previous: String, locale: Locale = activeLocale(context)): List<String> {
+        val key = previous.lowercase(locale).trim(); if (key.isBlank()) return emptyList()
+        val pool = LinkedHashSet<String>()
+        (if (locale.language == Locale.FRENCH.language) frenchNextWordSeed[key] else nextWordSeed[key]).orEmpty().forEach(pool::add)
+        loadNextWords(context, key).forEach(pool::add)
+        return pool.take(4)
+    }
+
+    fun correctionFor(context: Context, word: String, locale: Locale = activeLocale(context)): String? {
+        val key = word.lowercase(locale)
+        return if (locale.language == Locale.FRENCH.language) frenchCorrections[key] ?: loadLearnedCorrections(context)[key] else corrections[key] ?: loadLearnedCorrections(context)[key]
+    }
+
     fun correctionFor(word: String): String? {
         val service = runCatching {
-            val outer = PhormiKeyboardServiceV2::class.java
-            val companion = outer.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
+            val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
             val field = companion.javaClass.getDeclaredField("instance").apply { isAccessible = true }
             field.get(companion) as? PhormiKeyboardServiceV2
         }.getOrNull()
-        return if (service != null) correctionFor(service, word, localeFor(service.currentInputEditorInfo)) else {
-            val key = word.lowercase(Locale.getDefault())
-            corrections[key] ?: frenchCorrections[key]
-        }
+        return if (service != null) correctionFor(service, word, localeFor(service.currentInputEditorInfo)) else corrections[word.lowercase(Locale.getDefault())]
     }
-    fun learn(context: Context, word: String, info: EditorInfo?) { if (word.isBlank() || isPrivateEditor(info)) return; val normalized = word.trim(); if (normalized.length !in 2..48 || normalized.any { it.isDigit() }) return; val words = loadLearned(context).toMutableList(); words.removeAll { it.equals(normalized, ignoreCase = true) }; words.add(0, normalized); saveLearned(context, words) }
-    fun learnPair(context: Context, previous: String, current: String, info: EditorInfo?) { if (isPrivateEditor(info) || previous.isBlank() || current.isBlank()) return; val key = previous.lowercase(Locale.getDefault()).take(48); val value = current.take(48); val all = loadAllNextWords(context).toMutableMap(); val values = (all[key].orEmpty().filterNot { it.equals(value, ignoreCase = true) } + value).takeLast(8); all[key] = values; saveAllNextWords(context, all) }
-    fun learnCorrection(context: Context, original: String, accepted: String, info: EditorInfo?) { if (isPrivateEditor(info)) return; val raw = original.trim(); val fixed = accepted.trim(); if (raw.length !in 2..48 || fixed.isBlank() || raw.equals(fixed, ignoreCase = true)) return; val map = loadLearnedCorrections(context).toMutableMap(); map[raw.lowercase(Locale.getDefault())] = fixed; saveLearnedCorrections(context, map) }
-    fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean { if (ic == null || info == null || isPrivateEditor(info)) return false; val flags = info.inputType; if (flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 || flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true; if (flags and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0) return false; val trimmed = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty().trimEnd(); return trimmed.isEmpty() || trimmed.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n') }
-    fun contextBeforeCursor(ic: InputConnection?): String { if (ic == null) return ""; val info = runCatching { val outer = PhormiKeyboardServiceV2::class.java; val companion = outer.getDeclaredField("Companion").apply { isAccessible = true }.get(null); val field = companion.javaClass.getDeclaredField("instance").apply { isAccessible = true }; (field.get(companion) as? PhormiKeyboardServiceV2)?.currentInputEditorInfo }.getOrNull(); if (isPrivateEditor(info)) return ""; return ic.getTextBeforeCursor(240, 0)?.toString().orEmpty() }
+
+    fun learn(context: Context, word: String, info: EditorInfo?) {
+        if (!allowsPersonalizedLearning(info)) return
+        val normalized = word.trim(); if (normalized.length !in 2..48 || normalized.any(Char::isDigit)) return
+        val words = loadLearned(context).toMutableList(); words.removeAll { it.equals(normalized, true) }; words.add(0, normalized); saveLearned(context, words)
+    }
+
+    fun learnPair(context: Context, previous: String, current: String, info: EditorInfo?) {
+        if (!allowsPersonalizedLearning(info) || previous.isBlank() || current.isBlank()) return
+        val locale = localeFor(info); val key = previous.lowercase(locale).take(48); val value = current.take(48)
+        val all = loadAllNextWords(context).toMutableMap(); all[key] = (all[key].orEmpty().filterNot { it.equals(value, true) } + value).takeLast(8); saveAllNextWords(context, all)
+    }
+
+    fun learnCorrection(context: Context, original: String, accepted: String, info: EditorInfo?) {
+        if (!allowsPersonalizedLearning(info)) return
+        val raw = original.trim(); val fixed = accepted.trim(); if (raw.length !in 2..48 || fixed.isBlank() || raw.equals(fixed, true)) return
+        val map = loadLearnedCorrections(context).toMutableMap(); map[raw.lowercase(localeFor(info))] = fixed; saveLearnedCorrections(context, map)
+    }
+
+    fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
+        if (ic == null || info == null || isPrivateEditor(info)) return false
+        val flags = info.inputType
+        if (flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 || flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
+        if (flags and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0) return false
+        val trimmed = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty().trimEnd()
+        return trimmed.isEmpty() || trimmed.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
+    }
+
+    fun contextBeforeCursor(ic: InputConnection?): String {
+        if (ic == null) return ""
+        val service = runCatching {
+            val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
+            val field = companion.javaClass.getDeclaredField("instance").apply { isAccessible = true }
+            field.get(companion) as? PhormiKeyboardServiceV2
+        }.getOrNull()
+        if (!allowsAiEmoji(service?.currentInputEditorInfo)) return ""
+        return ic.getTextBeforeCursor(240, 0)?.toString().orEmpty()
+    }
+
     private fun loadLearned(context: Context): List<String> { val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LEARNED, "[]") ?: "[]"; return runCatching { val a = JSONArray(raw); buildList { for (i in 0 until a.length()) a.optString(i).takeIf { it.isNotBlank() }?.let(::add) } }.getOrDefault(emptyList()) }
     private fun saveLearned(context: Context, words: List<String>) { val a = JSONArray(); words.take(MAX_LEARNED).forEach(a::put); context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_LEARNED, a.toString()).apply() }
     private fun loadNextWords(context: Context, previous: String): List<String> = loadAllNextWords(context)[previous].orEmpty()
-    private fun loadAllNextWords(context: Context): Map<String, List<String>> { val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_BIGRAMS, "{}") ?: "{}"; return runCatching { val obj = JSONObject(raw); buildMap { obj.keys().forEach { key -> val arr = obj.optJSONArray(key) ?: return@forEach; put(key, buildList { for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let(::add) }) } } }.getOrDefault(emptyMap()) }
-    private fun saveAllNextWords(context: Context, pairs: Map<String, List<String>>) { val obj = JSONObject(); pairs.entries.take(MAX_BIGRAMS).forEach { (key, values) -> obj.put(key, JSONArray(values.take(8))) }; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS, obj.toString()).apply() }
-    private fun loadLearnedCorrections(context: Context): Map<String, String> { val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CORRECTIONS, "{}") ?: "{}"; return runCatching { val obj = JSONObject(raw); buildMap { obj.keys().forEach { key -> obj.optString(key).takeIf { it.isNotBlank() }?.let { put(key, it) } } } }.getOrDefault(emptyMap()) }
-    private fun saveLearnedCorrections(context: Context, values: Map<String, String>) { val obj = JSONObject(); values.entries.take(MAX_CORRECTIONS).forEach { (k,v) -> obj.put(k,v) }; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CORRECTIONS, obj.toString()).apply() }
-    fun languageTag(locale: Locale = Locale.getDefault()): String = locale.toLanguageTag()
+    private fun loadAllNextWords(context: Context): Map<String, List<String>> { val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_BIGRAMS, "{}") ?: "{}"; return runCatching { val o = JSONObject(raw); buildMap { o.keys().forEach { k -> val a = o.optJSONArray(k) ?: return@forEach; put(k, buildList { for (i in 0 until a.length()) a.optString(i).takeIf { it.isNotBlank() }?.let(::add) }) } } }.getOrDefault(emptyMap()) }
+    private fun saveAllNextWords(context: Context, pairs: Map<String, List<String>>) { val o = JSONObject(); pairs.entries.take(MAX_BIGRAMS).forEach { (k,v) -> o.put(k, JSONArray(v.take(8))) }; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BIGRAMS, o.toString()).apply() }
+    private fun loadLearnedCorrections(context: Context): Map<String, String> { val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CORRECTIONS, "{}") ?: "{}"; return runCatching { val o = JSONObject(raw); buildMap { o.keys().forEach { k -> o.optString(k).takeIf { it.isNotBlank() }?.let { put(k, it) } } } }.getOrDefault(emptyMap()) }
+    private fun saveLearnedCorrections(context: Context, values: Map<String, String>) { val o = JSONObject(); values.entries.take(MAX_CORRECTIONS).forEach { (k,v) -> o.put(k,v) }; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CORRECTIONS, o.toString()).apply() }
     private fun variation(info: EditorInfo?): Int = (info?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
     private fun editDistance(a: String, b: String): Int { if (a == b) return 0; if (a.isEmpty()) return b.length; if (b.isEmpty()) return a.length; var prev = IntArray(b.length + 1) { it }; for (i in a.indices) { val cur = IntArray(b.length + 1); cur[0] = i + 1; for (j in b.indices) cur[j + 1] = minOf(cur[j] + 1, prev[j + 1] + 1, prev[j] + if (a[i] == b[j]) 0 else 1); prev = cur }; return prev[b.length] }
 }
