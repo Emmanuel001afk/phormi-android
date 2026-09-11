@@ -11,7 +11,11 @@ class PhormiKeyboardMediaActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (mode == "sticker") showStickerChooser() else openPicker()
+        when (mode) {
+            "sticker" -> showStickerChooser()
+            "wallpaper" -> openWallpaperPicker()
+            else -> openPicker()
+        }
     }
 
     private fun showStickerChooser() {
@@ -47,16 +51,27 @@ class PhormiKeyboardMediaActivity : Activity() {
         }, REQUEST_PICK)
     }
 
+    private fun openWallpaperPicker() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/png", "image/jpeg", "image/webp", "image/*"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }, REQUEST_PICK)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_PICK && resultCode == RESULT_OK) data?.data?.let { uri ->
             runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            if (mode == "sticker") {
-                PhormiKeyboardStickerStore.import(this, uri, "imported")?.let { file ->
+            when (mode) {
+                "wallpaper" -> PhormiKeyboardPreferences.setWallpaperUri(this, uri.toString())
+                "sticker" -> PhormiKeyboardStickerStore.import(this, uri, "imported")?.let { file ->
                     PhormiKeyboardStickerPackStore.add(this, "Imported", file)
                     PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
                 }
-            } else PhormiKeyboardServiceV2.commitPickedContent(this, uri)
+                else -> PhormiKeyboardServiceV2.commitPickedContent(this, uri)
+            }
         }
         finish()
     }
