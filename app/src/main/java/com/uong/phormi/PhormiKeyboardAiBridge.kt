@@ -110,10 +110,13 @@ object PhormiKeyboardAiBridge {
         if (!PhormiKeyboardPreferences.aiEmoji(service) || text.trim().length < 3) return
         aiPending?.let(handler::removeCallbacks)
         val snapshot = text.trim().takeLast(240)
+        val editorKey = lastEditorKey
         aiPending = Runnable {
             if (!started) return@Runnable
             val current = currentService() ?: return@Runnable
             val info = current.currentInputEditorInfo ?: return@Runnable
+            val currentKey = "${info.packageName}:${info.fieldId}:${info.inputType}"
+            if (currentKey != editorKey) return@Runnable
             if (PhormiKeyboardTextEngine.isPrivateEditor(info) || !PhormiKeyboardPreferences.aiEmoji(current)) return@Runnable
             if (snapshot == lastAiText) return@Runnable
             lastAiText = snapshot
@@ -121,8 +124,12 @@ object PhormiKeyboardAiBridge {
                 aiController = PhormiKeyboardAiEmojiController(current) { files, generating ->
                     if (started && !generating) {
                         currentService()?.let { active ->
-                            lastAiFile = files.firstOrNull()
-                            installAiReaction(active, lastAiFile)
+                            val activeInfo = active.currentInputEditorInfo
+                            val activeKey = activeInfo?.let { "${it.packageName}:${it.fieldId}:${it.inputType}" }
+                            if (activeKey == editorKey) {
+                                lastAiFile = files.firstOrNull()
+                                installAiReaction(active, lastAiFile)
+                            }
                         }
                     }
                 }
@@ -145,9 +152,23 @@ object PhormiKeyboardAiBridge {
         val scroll = (0 until root.childCount).map { root.getChildAt(it) }.filterIsInstance<ScrollView>().firstOrNull() ?: return
         val grid = scroll.getChildAt(0) as? LinearLayout ?: return
 
+        // Remove only rows created by the bridge. Never use child-count alone as a
+        // selector: ordinary emoji rows can legitimately contain three cells.
         for (i in grid.childCount - 1 downTo 0) {
-            val child = grid.getChildAt(i)
-            if (child.tag == TAG_AI_ROW || (child is LinearLayout && child.childCount == 3)) grid.removeViewAt(i)
+            if (grid.getChildAt(i).tag == TAG_AI_ROW) grid.removeViewAt(i)
+        }
+
+        // V2 may already have rendered its contextual mood row and generated-image
+        // row. They are always the first rows before the normal category grid. Remove
+        // those two transient rows only, then insert the single integrated rail row.
+        if (grid.childCount > 0) {
+            val first = grid.getChildAt(0)
+            if (first is LinearLayout && first.tag == null && first.childCount == 3) grid.removeViewAt(0)
+        }
+        if (grid.childCount > 0) {
+            val first = grid.getChildAt(0)
+            val firstCell = if (first is LinearLayout && first.childCount == 1) first.getChildAt(0) else null
+            if (first is LinearLayout && first.tag == null && firstCell is ImageView) grid.removeViewAt(0)
         }
 
         val row = LinearLayout(service).apply {
