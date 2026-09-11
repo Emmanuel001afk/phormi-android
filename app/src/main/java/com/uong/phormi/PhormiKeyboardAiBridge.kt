@@ -28,32 +28,22 @@ object PhormiKeyboardAiBridge {
             override fun run() { runCatching { update() }; if (started) handler.postDelayed(this, 650L) }
         })
     }
-
     fun start(@Suppress("UNUSED_PARAMETER") context: Context) = start()
-
-    fun stop() {
-        started = false
-        lastText = ""
-        lastSuggestions = emptyList()
-        handler.removeCallbacksAndMessages(null)
-    }
+    fun stop() { started = false; lastText = ""; lastSuggestions = emptyList(); handler.removeCallbacksAndMessages(null) }
 
     private fun update() {
-        val service = currentService()
-        val info = service?.currentInputEditorInfo
+        val service = currentService(); val info = service?.currentInputEditorInfo
         if (service == null || info == null) { stop(); return }
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass != InputType.TYPE_CLASS_TEXT ||
-            (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 ||
-            PhormiKeyboardTextEngine.isPrivateEditor(info) ||
-            !PhormiKeyboardPreferences.suggestions(service)) { stop(); return }
+        if (inputClass != InputType.TYPE_CLASS_TEXT || (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 || PhormiKeyboardTextEngine.isPrivateEditor(info) || !PhormiKeyboardPreferences.suggestions(service)) { stop(); return }
         val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
         applyAutocorrect(service, text)
         applyAutoCaps(service)
         installViewEnhancements(service)
         if (text == lastText) return
         lastText = text
-        val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text)).distinct().take(8)
+        val locale = PhormiKeyboardTextEngine.localeFor(info)
+        val suggestions = (PhormiEmojiSuggester.suggest(text) + PhormiLocalPredictionEngine.suggest(text, locale)).distinct().take(8)
         if (suggestions == lastSuggestions) return
         lastSuggestions = suggestions
         val completionField = findField(service.javaClass, "completions") ?: return
@@ -66,48 +56,30 @@ object PhormiKeyboardAiBridge {
     private fun applyAutocorrect(service: PhormiKeyboardServiceV2, text: String) {
         if (!PhormiKeyboardPreferences.autocorrect(service) || !text.endsWith(" ")) return
         val word = text.removeSuffix(" ").split(Regex("\\s+")).lastOrNull().orEmpty()
-        PhormiKeyboardTextEngine.correctionFor(word)?.let { right ->
-            service.currentInputConnection?.let { ic ->
-                ic.beginBatchEdit()
-                runCatching { ic.deleteSurroundingText(word.length + 1, 0); ic.commitText("$right ", 1) }
-                ic.endBatchEdit()
-            }
-        }
+        val right = PhormiKeyboardTextEngine.correctionFor(service, word, PhormiKeyboardTextEngine.localeFor(service.currentInputEditorInfo)) ?: return
+        service.currentInputConnection?.let { ic -> ic.beginBatchEdit(); runCatching { ic.deleteSurroundingText(word.length + 1, 0); ic.commitText("$right ", 1) }; ic.endBatchEdit() }
     }
 
     private fun applyAutoCaps(service: PhormiKeyboardServiceV2) {
         if (!PhormiKeyboardPreferences.autoCaps(service)) return
-        val shouldCap = PhormiKeyboardTextEngine.autoCapitalize(service.currentInputConnection, service.currentInputEditorInfo)
-        if (!shouldCap) return
-        val shift = findField(service.javaClass, "shift") ?: return
-        val caps = findField(service.javaClass, "capsLock") ?: return
+        if (!PhormiKeyboardTextEngine.autoCapitalize(service.currentInputConnection, service.currentInputEditorInfo)) return
+        val shift = findField(service.javaClass, "shift") ?: return; val caps = findField(service.javaClass, "capsLock") ?: return
         shift.isAccessible = true; caps.isAccessible = true
-        if (!(caps.get(service) as? Boolean ?: false) && !(shift.get(service) as? Boolean ?: false)) {
-            shift.set(service, true)
-            rerender(service)
-        }
+        if (!(caps.get(service) as? Boolean ?: false) && !(shift.get(service) as? Boolean ?: false)) { shift.set(service, true); rerender(service) }
     }
 
     private fun installViewEnhancements(service: PhormiKeyboardServiceV2) {
-        val root = service.getInputView() ?: return
-        val buttons = mutableListOf<Button>(); collectButtons(root, buttons)
+        val root = service.getInputView() ?: return; val buttons = mutableListOf<Button>(); collectButtons(root, buttons)
         val letterButtons = buttons.filter { it.text.toString().matches(Regex("[A-Za-z]")) }
         letterButtons.forEach { button ->
             if (button.getTag(TAG_GLIDE) == true) return@forEach
-            button.setTag(TAG_GLIDE, true)
-            val state = GlideState()
+            button.setTag(TAG_GLIDE, true); val state = GlideState()
             button.setOnTouchListener { view, event ->
                 feedback(view, event.actionMasked)
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { state.active = true; state.sequence.clear(); state.sequence.add(button.text.toString().lowercase()); state.last = button; true }
                     MotionEvent.ACTION_MOVE -> { val hit = nearestLetter(letterButtons, event.rawX, event.rawY); if (state.active && hit != null && hit !== state.last) { state.sequence.add(hit.text.toString().lowercase()); state.last = hit }; true }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        if (event.actionMasked == MotionEvent.ACTION_UP && state.active) {
-                            if (state.sequence.size >= 2) service.currentInputConnection?.commitText(PhormiGlideEngine.resolve(state.sequence.joinToString("")), 1)
-                            else view.performClick()
-                        }
-                        state.active = false; true
-                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { if (event.actionMasked == MotionEvent.ACTION_UP && state.active) { if (state.sequence.size >= 2) service.currentInputConnection?.commitText(PhormiGlideEngine.resolve(state.sequence.joinToString("")), 1) else view.performClick() }; state.active = false; true }
                     else -> true
                 }
             }
@@ -118,13 +90,7 @@ object PhormiKeyboardAiBridge {
         }
     }
 
-    private fun feedback(view: View, action: Int) {
-        if (action == MotionEvent.ACTION_DOWN) {
-            if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK)
-        }
-    }
-
+    private fun feedback(view: View, action: Int) { if (action == MotionEvent.ACTION_DOWN) { if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK) } }
     private class GlideState { var active = false; var last: Button? = null; val sequence = mutableListOf<String>() }
     private fun nearestLetter(buttons: List<Button>, x: Float, y: Float): Button? { var best: Button? = null; var bestDistance = Float.MAX_VALUE; buttons.forEach { b -> val loc = IntArray(2); b.getLocationOnScreen(loc); val dx = x - (loc[0] + b.width / 2f); val dy = y - (loc[1] + b.height / 2f); val d = sqrt(dx * dx + dy * dy); if (d < maxOf(b.width, b.height) * 1.15f && d < bestDistance) { best = b; bestDistance = d } }; return best }
     private fun collectButtons(view: View, out: MutableList<Button>) { if (view is Button) out += view; if (view is android.view.ViewGroup) for (i in 0 until view.childCount) collectButtons(view.getChildAt(i), out) }
@@ -134,14 +100,14 @@ object PhormiKeyboardAiBridge {
 }
 
 object PhormiEmojiSuggester {
-    private val rules = listOf(
-        listOf("love","heart","crush") to listOf("❤️","🥰","😍","😘"), listOf("happy","great","good","awesome") to listOf("😊","😄","🥳","✨"), listOf("sad","sorry","hurt","cry") to listOf("😢","😭","🥺","💔"), listOf("angry","mad","hate","furious") to listOf("😡","🤬","💢","🔥"), listOf("laugh","funny","joke","lol") to listOf("😂","🤣","😆","💀"), listOf("wow","amazing","shock","surprise") to listOf("😮","🤯","😱","✨"), listOf("cool","style","nice") to listOf("😎","🔥","💯","✨"), listOf("tired","sleep","sleepy") to listOf("😴","🥱","😪","🫠"), listOf("confused","what","why") to listOf("🤔","😕","🧐","❓"), listOf("party","birthday","celebrate","congrats") to listOf("🎉","🥳","🎂","🎊"))
+    private val rules = listOf(listOf("love","heart","crush") to listOf("❤️","🥰","😍","😘"), listOf("happy","great","good","awesome") to listOf("😊","😄","🥳","✨"), listOf("sad","sorry","hurt","cry") to listOf("😢","😭","🥺","💔"), listOf("angry","mad","hate","furious") to listOf("😡","🤬","💢","🔥"), listOf("laugh","funny","joke","lol") to listOf("😂","🤣","😆","💀"), listOf("wow","amazing","shock","surprise") to listOf("😮","🤯","😱","✨"), listOf("cool","style","nice") to listOf("😎","🔥","💯","✨"), listOf("tired","sleep","sleepy") to listOf("😴","🥱","😪","🫠"), listOf("confused","what","why") to listOf("🤔","😕","🧐","❓"), listOf("party","birthday","celebrate","congrats") to listOf("🎉","🥳","🎂","🎊"))
     fun suggest(text: String): List<String> { val lower = text.lowercase(); return rules.firstOrNull { (words, _) -> words.any { lower.contains(it) } }?.second ?: when { lower.endsWith("!") -> listOf("😊","😄","🔥","✨"); lower.endsWith("?") -> listOf("🤔","❓","😅","👀"); else -> emptyList() } }
 }
 
 object PhormiLocalPredictionEngine {
     private val words = listOf("the","and","you","your","that","this","with","have","for","are","what","when","where","why","how","can","will","would","could","should","please","thanks","hello","hey","good","great","today","tomorrow","now","later","because","about","from","just","really","very","love","like","want","need","know","think","make","going","come","home","work","friend","family","message","send","open","close","search","download","share","favorite","bookmark","history","keyboard","browser","testing","test","project")
-    fun suggest(text: String): List<String> { val token = text.trimEnd().split(Regex("\\s+")).lastOrNull().orEmpty().lowercase().filter { it.isLetter() }; if (token.length < 2) return emptyList(); return words.filter { it.startsWith(token) && it != token }.take(4) }
+    private val frenchWords = listOf("bonjour","merci","comment","ça","allez","vas","faire","je","suis","vais","peux","veux","pense","aime","nous","sommes","allons","pouvons","devons","avons","vous","êtes","pouvez","avez","voulez","très","bien","heureux","triste","excité","important","bonne","journée","chance","nuit","soirée","demain","bientôt","plus","tard","pour","moi","amour","amis")
+    fun suggest(text: String, locale: java.util.Locale = java.util.Locale.getDefault()): List<String> { val token = text.trimEnd().split(Regex("\\s+")).lastOrNull().orEmpty().lowercase(locale).filter { it.isLetter() }; if (token.length < 2) return emptyList(); val pool = if (locale.language == java.util.Locale.FRENCH) frenchWords else words; return pool.filter { it.startsWith(token) && it != token }.take(4) }
 }
 
 object PhormiGlideEngine {
