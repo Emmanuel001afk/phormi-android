@@ -30,21 +30,18 @@ internal fun PhormiKeyboardServiceV2.render(): View {
     return view
 }
 
-/** Size the whole IME to the actual layout complexity, then apply one global user scale. */
+/** Keep one physical IME viewport. Internal panel content scrolls; it never expands the IME. */
 private fun PhormiKeyboardServiceV2.normalizeViewport(view: View, panelName: String) {
+    val symbolMode = runCatching { javaClass.walkHierarchyFields("symbols")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false }.getOrDefault(false)
+    val childCount = (view as? ViewGroup)?.childCount ?: 0
     val baseDp = when (panelName) {
         "KEYBOARD" -> when {
-            view is ViewGroup && view.childCount >= 9 -> 416 // symbols + suggestions
-            view is ViewGroup && view.childCount >= 8 -> 380 // symbols
-            view is ViewGroup && view.childCount >= 7 -> 316 // suggestions/email/URI
+            symbolMode -> 430
+            childCount >= 8 -> 365
+            childCount >= 7 -> 315
             else -> 280
         }
-        "EMOJI" -> 280
-        "MEDIA" -> 280
-        "TOOLS" -> 280
-        "SETTINGS" -> 280
-        "AI_EMOJI" -> 280
-        "CLIPBOARD" -> 280
+        "EMOJI", "MEDIA", "TOOLS", "SETTINGS", "AI_EMOJI", "CLIPBOARD" -> 280
         else -> 280
     }
     val h = scaledCompat(baseDp)
@@ -53,7 +50,8 @@ private fun PhormiKeyboardServiceV2.normalizeViewport(view: View, panelName: Str
     lp.height = h
     view.layoutParams = lp
     view.minimumHeight = h
-    view.setOnApplyWindowInsetsListener { _, insets -> insets }
+    // Do not add navigation-bar padding here. The IME window owns its bottom inset;
+    // adding another inset at the content level creates the dead area visible in older builds.
     if (Build.VERSION.SDK_INT >= 23) view.requestApplyInsets()
 }
 
