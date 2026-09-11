@@ -88,6 +88,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     override fun onDestroy() {
+        PhormiKeyboardAiBridge.stop()
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboardListener?.let { cm?.removePrimaryClipChangedListener(it) }
         clipboardListener = null
@@ -109,13 +110,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         super.onStartInputView(info, restarting)
         editorInfo = info ?: editorInfo
         panel = Panel.KEYBOARD
+        PhormiKeyboardAiBridge.start()
         setInputView(render())
         applyPendingInput()
         refreshPredictions()
     }
 
-    override fun onFinishInput() { stopRepeat(); stopVoice(); editorInfo = null; completions = emptyList(); lastSuggestions = emptyList(); super.onFinishInput() }
-    override fun onUnbindInput() { stopRepeat(); stopVoice(); editorInfo = null; super.onUnbindInput() }
+    override fun onFinishInput() { PhormiKeyboardAiBridge.stop(); stopRepeat(); stopVoice(); editorInfo = null; completions = emptyList(); lastSuggestions = emptyList(); super.onFinishInput() }
+    override fun onUnbindInput() { PhormiKeyboardAiBridge.stop(); stopRepeat(); stopVoice(); editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) { stopRepeat(); super.onFinishInputView(finishingInput) }
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) { super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd); selectionStart = newSelStart; selectionEnd = newSelEnd; if (panel == Panel.KEYBOARD) refreshPredictions(false) }
     override fun onDisplayCompletions(values: Array<out CompletionInfo>?) { super.onDisplayCompletions(values); completions = values?.filter { !it.text.isNullOrBlank() }?.take(5).orEmpty(); refreshPredictions(false) }
@@ -281,74 +283,78 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (!PhormiKeyboardPreferences.autocorrect(this)) { ic.commitText(" ", 1); refreshPredictions(); return }
         val rawWord = PhormiKeyboardTextEngine.currentWord(ic)
         runCatching {
-            ic.beginBatchEdit()
-            if (PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) && rawWord.isNotBlank()) {
-                val corrected = PhormiKeyboardTextEngine.correctionFor(rawWord)
-                val finalWord = corrected?.let { matchCase(it, rawWord) } ?: rawWord
-                if (corrected != null) { ic.deleteSurroundingText(rawWord.length, 0); ic.commitText(finalWord, 1) }
-                PhormiKeyboardTextEngine.learn(this, finalWord, editorInfo)
-                PhormiKeyboardTextEngine.learnPair(this, PhormiKeyboardTextEngine.previousWord(ic), finalWord, editorInfo)
-            }
-            val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
-            if (before.endsWith("  ")) { ic.deleteSurroundingText(2, 0); ic.commitText(". ", 1) } else ic.commitText(" ", 1)
-        }.also { runCatching { ic.endBatchEdit() } }
+            if (rawWord.isNotBlank()) {
+                val correction = PhormiKeyboardTextEngine.correctionFor(this, rawWord)
+                if (!correction.isNullOrBlank() && correction != rawWord) { ic.deleteSurroundingText(rawWord.length, 0); ic.commitText(correction, 1); PhormiKeyboardTextEngine.learnCorrection(this, rawWord, correction) }
+                else ic.commitText(" ", 1)
+                PhormiKeyboardTextEngine.learn(this, correction ?: rawWord)
+                PhormiKeyboardTextEngine.learnPair(this, PhormiKeyboardTextEngine.previousWord(ic), correction ?: rawWord)
+            } else ic.commitText(" ", 1)
+        }
         refreshPredictions()
-    }
-
-    private fun deleteBackward() { val ic = currentInputConnection ?: return; runCatching { ic.beginBatchEdit(); if (!ic.getSelectedText(0).isNullOrEmpty()) { ic.commitText("", 1); return@runCatching }; val before = ic.getTextBeforeCursor(128, 0)?.toString().orEmpty(); if (before.isEmpty()) return@runCatching; val iterator = android.icu.text.BreakIterator.getCharacterInstance().apply { setText(before) }; val boundary = iterator.preceding(before.length); val count = if (boundary >= 0) before.length - boundary else 1; ic.deleteSurroundingText(count, 0) }.also { runCatching { ic.endBatchEdit() } }; refreshPredictions() }
-    private fun installRepeat(view: View, action: () -> Unit) { view.setOnLongClickListener { stopRepeat(); val r = object : Runnable { override fun run() { if (currentInputConnection == null) { stopRepeat(); return }; action(); repeatHandler.postDelayed(this, 55) } }; repeatRunnable = r; repeatHandler.postDelayed(r, 280); true }; view.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) stopRepeat(); false } }
-    private fun stopRepeat() { repeatRunnable?.let { repeatHandler.removeCallbacks(it) }; repeatRunnable = null }
-    private fun moveCursor(delta: Int) { val ic = currentInputConnection ?: return; val target = (selectionStart + delta).coerceAtLeast(0); if (ic.setSelection(target, target)) { selectionStart = target; selectionEnd = target } }
-    private fun selectAll() { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) }
-    private fun copySelection() { currentInputConnection?.performContextMenuAction(android.R.id.copy) }
-    private fun pasteClipboard() { currentInputConnection?.performContextMenuAction(android.R.id.paste) }
-
-    private fun refreshPredictions(redraw: Boolean = true) {
-        val ic = currentInputConnection ?: return
-        if (!PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) || !PhormiKeyboardPreferences.suggestions(this)) { lastSuggestions = emptyList(); return }
-        val prefix = PhormiKeyboardTextEngine.currentWord(ic)
-        lastSuggestions = if (prefix.isBlank()) PhormiKeyboardTextEngine.nextWordSuggestions(this, PhormiKeyboardTextEngine.previousWord(ic)) else PhormiKeyboardTextEngine.suggestions(this, prefix)
-        if (redraw && panel == Panel.KEYBOARD) setInputView(render())
     }
 
     private fun acceptSuggestion(value: String) {
         val ic = currentInputConnection ?: return
-        val previous = PhormiKeyboardTextEngine.previousWord(ic)
-        val word = PhormiKeyboardTextEngine.currentWord(ic)
-        if (word.isNotBlank()) ic.deleteSurroundingText(word.length, 0)
-        ic.commitText(value, 1)
-        PhormiKeyboardTextEngine.learn(this, value, editorInfo)
-        PhormiKeyboardTextEngine.learnPair(this, previous, value, editorInfo)
+        val current = PhormiKeyboardTextEngine.currentWord(ic)
+        if (current.isNotBlank()) ic.deleteSurroundingText(current.length, 0)
+        ic.commitText(value + " ", 1)
+        PhormiKeyboardTextEngine.learn(this, value)
+        PhormiKeyboardTextEngine.learnPair(this, PhormiKeyboardTextEngine.previousWord(ic), value)
         refreshPredictions()
+        setInputView(render())
     }
 
-    private fun matchCase(value: String, original: String) = if (original.all { !it.isLetter() || it.isUpperCase() }) value.uppercase(Locale.getDefault()) else if (original.firstOrNull()?.isUpperCase() == true) value.replaceFirstChar { it.uppercase() } else value
+    private fun commitTextToEditor(text: String) { currentInputConnection?.commitText(text, 1); refreshPredictions() }
+    private fun commitContentToEditor(uri: Uri): Boolean {
+        val ic = currentInputConnection ?: return false
+        return if (Build.VERSION.SDK_INT >= 25) {
+            val description = contentResolver.getType(uri)?.let { ClipDescription("Phormi media", arrayOf(it)) } ?: ClipDescription("Phormi media", arrayOf("image/*"))
+            val info = InputContentInfo(uri, description, null)
+            runCatching { ic.commitContent(info, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, Bundle()) }.getOrDefault(false)
+        } else false
+    }
+
+    private fun applyPendingInput() {
+        val p = getSharedPreferences(PREFS, MODE_PRIVATE)
+        p.getString(KEY_PENDING_TEXT, null)?.let { commitTextToEditor(it) }
+        p.getString(KEY_PENDING_URI, null)?.let { runCatching { commitContentToEditor(Uri.parse(it)) } }
+        p.edit().remove(KEY_PENDING_TEXT).remove(KEY_PENDING_URI).apply()
+    }
+
+    private fun prepareAiContext() { PhormiKeyboardAiContext.prepare(PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection)) }
+    private fun refreshPredictions(rebuild: Boolean = true) { if (rebuild && panel == Panel.KEYBOARD) setInputView(render()) }
     private fun shouldCapitalize() = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, editorInfo)
-    private fun toggleShift() { if (capsLock) { capsLock = false; shift = false } else if (shift) capsLock = true else shift = true }
-    private fun prepareAiContext() { if (isPrivateEditor() || !PhormiKeyboardPreferences.aiEmoji(this)) return; val text = PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim(); if (text.length >= 3 && !aiGenerating) generateAiEmoji(text) }
+    private fun toggleShift() { if (shift && !capsLock) capsLock = true else if (capsLock) { capsLock = false; shift = false } else shift = true }
+
+    private fun moveCursor(delta: Int) { val ic = currentInputConnection ?: return; val start = selectionStart.coerceAtLeast(0); val end = selectionEnd.coerceAtLeast(0); if (start != end) { val p = if (delta < 0) minOf(start, end) else maxOf(start, end); ic.setSelection(p, p) } else { val p = (start + delta).coerceIn(0, ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0)?.text?.length ?: Int.MAX_VALUE); ic.setSelection(p, p) }; refreshPredictions() }
+    private fun selectAll() { currentInputConnection?.let { val e = it.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0)?.text?.length ?: return; it.setSelection(0, e) } }
+    private fun copySelection() { currentInputConnection?.performContextMenuAction(android.R.id.copy) }
+    private fun pasteClipboard() { currentInputConnection?.performContextMenuAction(android.R.id.paste); refreshPredictions() }
+    private fun deleteBackward() { val ic = currentInputConnection ?: return; if (selectionStart != selectionEnd) { ic.commitText("", 1) } else { val text = ic.getTextBeforeCursor(8, 0)?.toString().orEmpty(); val cp = text.codePointCount(0, text.length); if (cp > 0) ic.deleteSurroundingText(text.length - Character.charCount(text.codePointBefore(text.length)), 1) }; refreshPredictions() }
+
+    private fun installRepeat(view: View, action: () -> Unit) {
+        view.setOnLongClickListener { repeatRunnable = object : Runnable { override fun run() { action(); repeatHandler.postDelayed(this, 55) } }; repeatHandler.post(repeatRunnable!!); true }
+        view.setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) stopRepeat(); false }
+    }
+    private fun stopRepeat() { repeatRunnable?.let(repeatHandler::removeCallbacks); repeatRunnable = null }
 
     private fun startVoice() {
-        if (listening || isPrivateEditor()) return
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) { showToast("Speech recognition is not available on this device"); return }
-        stopVoice(); speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        if (!SpeechRecognizer.isRecognitionAvailable(this) || listening) return
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) { listening = true; setInputView(render()) }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onError(error: Int) { listening = false; setInputView(render()) }
-            override fun onResults(results: Bundle?) { val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull(); if (!text.isNullOrBlank()) commitTextToEditor(text); listening = false; setInputView(render()) }
+            override fun onEndOfSpeech() { listening = false; setInputView(render()) }
+            override fun onError(error: Int) { listening = false; speechRecognizer?.destroy(); speechRecognizer = null; setInputView(render()) }
+            override fun onResults(results: Bundle?) { val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty(); if (text.isNotBlank()) commitTextToEditor(text + " "); listening = false; speechRecognizer?.destroy(); speechRecognizer = null; setInputView(render()) }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag()) }
-        runCatching { speechRecognizer?.startListening(intent) }.onFailure { stopVoice(); showToast("Unable to start voice input") }
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE, PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag()); putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false) }
+        speechRecognizer?.startListening(intent)
     }
-
-    private fun stopVoice() { speechRecognizer?.let { runCatching { it.stopListening() }; it.cancel(); it.destroy() }; speechRecognizer = null; listening = false }
-    private fun applyPendingInput() { val p = getSharedPreferences(PREFS, MODE_PRIVATE); p.getString(KEY_PENDING_TEXT, null)?.let { p.edit().remove(KEY_PENDING_TEXT).apply(); commitTextToEditor(it) }; p.getString(KEY_PENDING_URI, null)?.let { p.edit().remove(KEY_PENDING_URI).apply(); commitContentToEditor(Uri.parse(it)) } }
-    private fun commitTextToEditor(text: String): Boolean { val ok = currentInputConnection?.commitText(text, 1) ?: false; if (ok) refreshPredictions(false); return ok }
-    private fun commitContentToEditor(uri: Uri): Boolean { if (Build.VERSION.SDK_INT < 25) return false; val ic = currentInputConnection ?: return false; val mime = contentResolver.getType(uri) ?: "image/*"; val info = InputContentInfo(uri, ClipDescription("Phormi media", arrayOf(mime))); return runCatching { ic.commitContent(info, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null) }.getOrDefault(false) }
-    private fun showToast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+    private fun stopVoice() { speechRecognizer?.cancel(); speechRecognizer?.destroy(); speechRecognizer = null; listening = false }
 }
