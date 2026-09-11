@@ -286,8 +286,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val root = root(); root.addView(TextView(this).apply { text = "Phormi Keyboard Tools"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD; setTextColor(themeText()); gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), 0, dp(8), 0) }, LinearLayout.LayoutParams(-1, scaled(42)))
         val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun tool(label: String, action: () -> Unit) { list.addView(keyButton(label, 1f, action), LinearLayout.LayoutParams(-1, scaled(48)).apply { setMargins(0, dp(3), 0, dp(3)) }) }
-        tool("⚙  Keyboard Settings") { panel = Panel.SETTINGS; setInputView(render()) }
-        tool("✂  Select all") { selectAll() }; tool("⧉  Copy selection") { copySelection() }; tool("📋  Paste") { pasteClipboard() }
+        tool("⚙  Keyboard Settings") { panel = Panel.SETTINGS; setInputView(render()) }; tool("✂  Select all") { selectAll() }; tool("⧉  Copy selection") { copySelection() }; tool("📋  Paste") { pasteClipboard() }
         tool("↔  Cursor movement") { showToast("Use ← / → or slide on Space") }
         tool("⌨  URL / email shortcuts") { symbols = false; showToast("URL and email shortcuts appear automatically in matching fields") }
         tool("GIF & Stickers") { panel = Panel.MEDIA; setInputView(render()) }; tool("😀  Emoji") { panel = Panel.EMOJI; prepareAiContext(); setInputView(render()) }
@@ -364,10 +363,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val rawWord = PhormiKeyboardTextEngine.currentWord(ic)
         runCatching {
             ic.beginBatchEdit()
-            if (PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) && rawWord.isNotBlank()) {
+            // URLs and email addresses need prediction, but never destructive autocorrection.
+            if (PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) && !PhormiKeyboardTextEngine.isUriLike(editorInfo) && rawWord.isNotBlank()) {
                 val locale = PhormiKeyboardTextEngine.localeFor(editorInfo); val corrected = PhormiKeyboardTextEngine.correctionFor(this,rawWord,locale); val finalWord = corrected?.let { matchCase(it,rawWord) } ?: rawWord
                 if (corrected != null) { ic.deleteSurroundingText(rawWord.length,0); ic.commitText(finalWord,1) }
-                PhormiKeyboardTextEngine.learn(this,finalWord,editorInfo); PhormiKeyboardTextEngine.learnPair(this,PhormiKeyboardTextEngine.previousWord(ic,locale),finalWord,editorInfo)
+                PhormiKeyboardTextEngine.learn(this,finalWord,editorInfo)
+                PhormiKeyboardTextEngine.learnPair(this,PhormiKeyboardTextEngine.previousWord(ic,locale),finalWord,editorInfo)
             }
             val before = ic.getTextBeforeCursor(2,0)?.toString().orEmpty(); if (before.endsWith("  ")) { ic.deleteSurroundingText(2,0); ic.commitText(". ",1) } else ic.commitText(" ",1)
         }.also { runCatching { ic.endBatchEdit() } }
@@ -389,7 +390,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun matchCase(value:String,original:String)=if(original.all{!it.isLetter()||it.isUpperCase()})value.uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else if(original.firstOrNull()?.isUpperCase()==true)value.replaceFirstChar{it.uppercase()} else value
     private fun toggleShift(){ autoShift=false; if(capsLock){capsLock=false;shift=false}else if(shift){capsLock=true;shift=false}else shift=true }
     private fun prepareAiContext(){ if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){val text=PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim();if(text.length>=3&&!aiGenerating)generateAiEmoji(text)} }
-    private fun startVoice(){ if(!PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardTextEngine.isUriLike(editorInfo))return; val locale=PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag(); runCatching{startActivity(Intent(this,PhormiKeyboardVoiceActivity::class.java).putExtra(PhormiKeyboardVoiceActivity.EXTRA_LOCALE,locale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}.onFailure{showToast("Voice input is unavailable")} }
+    private fun startVoice(){ if(PhormiKeyboardTextEngine.isPassword(editorInfo)||PhormiKeyboardTextEngine.isNoPersonalizedLearning(editorInfo))return; val locale=PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag(); runCatching{startActivity(Intent(this,PhormiKeyboardVoiceActivity::class.java).putExtra(PhormiKeyboardVoiceActivity.EXTRA_LOCALE,locale).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}.onFailure{showToast("Voice input is unavailable")} }
     private fun applyPendingInput(){val p=getSharedPreferences(PREFS,MODE_PRIVATE);p.getString(KEY_PENDING_TEXT,null)?.let{p.edit().remove(KEY_PENDING_TEXT).apply();commitTextToEditor(it)};p.getString(KEY_PENDING_URI,null)?.let{p.edit().remove(KEY_PENDING_URI).apply();commitContentToEditor(Uri.parse(it))}}
     private fun commitTextToEditor(text:String):Boolean{val ok=currentInputConnection?.commitText(text,1)?:false;if(ok)syncSelection();return ok}
     private fun commitContentToEditor(uri:Uri):Boolean{if(Build.VERSION.SDK_INT<25)return false;val ic=currentInputConnection?:return false;val mime=contentResolver.getType(uri)?:"image/*";val info=InputContentInfo(uri,ClipDescription("Phormi media",arrayOf(mime)));return runCatching{ic.commitContent(info,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)}.getOrDefault(false)}
