@@ -21,21 +21,22 @@ import kotlin.math.sqrt
 
 /** Local enhancement layer for the Phormi system IME. */
 object PhormiKeyboardAiBridge {
-    private const val TAG_GLIDE = 0x50484731
-    private const val TAG_FEEDBACK = 0x50484631
     private const val TAG_AI_REACTION = 0x50484145
+    private const val POLL_MS = 650L
+    private const val AI_DEBOUNCE_MS = 1200L
     private val handler = Handler(Looper.getMainLooper())
     private var started = false
     private var lastText = ""
     private var lastSuggestions = emptyList<String>()
     private var lastAiText = ""
     private var aiController: PhormiKeyboardAiEmojiController? = null
+    private var aiPending: Runnable? = null
 
     fun start() {
         if (started) return
         started = true
         handler.post(object : Runnable {
-            override fun run() { runCatching { update() }; if (started) handler.postDelayed(this, 650L) }
+            override fun run() { if (!started) return; runCatching { update() }; handler.postDelayed(this, POLL_MS) }
         })
     }
     fun start(@Suppress("UNUSED_PARAMETER") context: Context) = start()
@@ -44,6 +45,8 @@ object PhormiKeyboardAiBridge {
         lastText = ""
         lastSuggestions = emptyList()
         lastAiText = ""
+        aiPending?.let(handler::removeCallbacks)
+        aiPending = null
         aiController?.cancel()
         aiController = null
         handler.removeCallbacksAndMessages(null)
@@ -51,19 +54,17 @@ object PhormiKeyboardAiBridge {
 
     private fun update() {
         val service = currentService(); val info = service?.currentInputEditorInfo
-        if (service == null || info == null) { stop(); return }
+        if (service == null || info == null) return
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass != InputType.TYPE_CLASS_TEXT || (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 || PhormiKeyboardTextEngine.isPrivateEditor(info)) { stop(); return }
+        if (inputClass != InputType.TYPE_CLASS_TEXT || (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 || PhormiKeyboardTextEngine.isPrivateEditor(info)) return
         val text = service.currentInputConnection?.let { PhormiKeyboardTextEngine.contextBeforeCursor(it) }.orEmpty()
-        applyAutocorrect(service, text)
         applyAutoCaps(service)
-        // The system IME renderer already owns touch feedback. Do not replace key
-        // touch handlers here: doing so would make normal taps compete with a
-        // gesture recognizer. Glide typing will be added at the keyboard-row level.
+        // Autocorrect is owned by V2's commit path. Keeping a second space-triggered
+        // autocorrect here could race with commitSpace and produce duplicate edits.
         if (text != lastText) {
             lastText = text
             updateSuggestions(service, info, text)
-            updateAiReaction(service, text)
+            scheduleAiReaction(service, text)
         }
     }
 
@@ -80,24 +81,34 @@ object PhormiKeyboardAiBridge {
         rerender(service)
     }
 
-    private fun updateAiReaction(service: PhormiKeyboardServiceV2, text: String) {
+    private fun scheduleAiReaction(service: PhormiKeyboardServiceV2, text: String) {
         if (!PhormiKeyboardPreferences.aiEmoji(service) || text.trim().length < 3) return
-        if (text == lastAiText) return
-        lastAiText = text
-        if (aiController == null) {
-            aiController = PhormiKeyboardAiEmojiController(service) { files, generating ->
-                if (started) {
-                    val current = currentService()
-                    val file = files.firstOrNull()
-                    if (current != null && file != null && !generating) installAiReaction(current, file)
+        aiPending?.let(handler::removeCallbacks)
+        val snapshot = text.trim().takeLast(240)
+        aiPending = Runnable {
+            if (!started) return@Runnable
+            val current = currentService() ?: return@Runnable
+            val currentInfo = current.currentInputEditorInfo ?: return@Runnable
+            if (PhormiKeyboardTextEngine.isPrivateEditor(currentInfo) || !PhormiKeyboardPreferences.aiEmoji(current)) return@Runnable
+            if (snapshot == lastAiText) return@Runnable
+            lastAiText = snapshot
+            if (aiController == null) {
+                aiController = PhormiKeyboardAiEmojiController(current) { files, generating ->
+                    if (started && !generating) {
+                        val active = currentService()
+                        val file = files.firstOrNull()
+                        if (active != null && file != null) installAiReaction(active, file)
+                    }
                 }
             }
+            aiController?.generate(snapshot)
         }
-        aiController?.generate(text.trim())
+        handler.postDelayed(aiPending!!, AI_DEBOUNCE_MS)
     }
 
     private fun installAiReaction(service: PhormiKeyboardServiceV2, file: java.io.File) {
         val root = service.getInputView() as? ViewGroup ?: return
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
         val density = service.resources.displayMetrics.density
         val rail: HorizontalScrollView
         val row: LinearLayout
@@ -114,7 +125,7 @@ object PhormiKeyboardAiBridge {
         for (i in row.childCount - 1 downTo 0) if (row.getChildAt(i).getTag(TAG_AI_REACTION) == true) row.removeViewAt(i)
         val image = ImageView(service).apply {
             tag = TAG_AI_REACTION
-            setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+            setImageBitmap(bitmap)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setPadding((4 * density).toInt(), (2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt())
             contentDescription = "Phormi custom reaction"
@@ -127,13 +138,6 @@ object PhormiKeyboardAiBridge {
         row.addView(image, 0, LinearLayout.LayoutParams((42 * density).toInt(), (34 * density).toInt()).apply { setMargins((2 * density).toInt(), 0, (4 * density).toInt(), 0) })
     }
 
-    private fun applyAutocorrect(service: PhormiKeyboardServiceV2, text: String) {
-        if (!PhormiKeyboardPreferences.autocorrect(service) || !text.endsWith(" ")) return
-        val word = text.removeSuffix(" ").split(Regex("\\s+")).lastOrNull().orEmpty()
-        val right = PhormiKeyboardTextEngine.correctionFor(service, word, PhormiKeyboardTextEngine.localeFor(service.currentInputEditorInfo)) ?: return
-        service.currentInputConnection?.let { ic -> ic.beginBatchEdit(); runCatching { ic.deleteSurroundingText(word.length + 1, 0); ic.commitText("$right ", 1) }; ic.endBatchEdit() }
-    }
-
     private fun applyAutoCaps(service: PhormiKeyboardServiceV2) {
         if (!PhormiKeyboardPreferences.autoCaps(service)) return
         if (!PhormiKeyboardTextEngine.autoCapitalize(service.currentInputConnection, service.currentInputEditorInfo)) return
@@ -142,16 +146,7 @@ object PhormiKeyboardAiBridge {
         if (!(caps.get(service) as? Boolean ?: false) && !(shift.get(service) as? Boolean ?: false)) { shift.set(service, true); rerender(service) }
     }
 
-    private fun installViewEnhancements(@Suppress("UNUSED_PARAMETER") service: PhormiKeyboardServiceV2) {
-        // Intentionally empty. The V2 renderer owns all touch handling so taps,
-        // long-press/repeat, space cursor movement, and future gesture input remain
-        // coordinated instead of competing for the same MotionEvent stream.
-    }
-
     private fun feedback(view: View, action: Int = MotionEvent.ACTION_DOWN) { if (action == MotionEvent.ACTION_DOWN) { if (PhormiKeyboardPreferences.haptic(view.context)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); if (PhormiKeyboardPreferences.sound(view.context)) view.playSoundEffect(SoundEffectConstants.CLICK) } }
-    private class GlideState { var active = false; var last: Button? = null; val sequence = mutableListOf<String>() }
-    private fun nearestLetter(buttons: List<Button>, x: Float, y: Float): Button? { var best: Button? = null; var bestDistance = Float.MAX_VALUE; buttons.forEach { b -> val loc = IntArray(2); b.getLocationOnScreen(loc); val dx = x - (loc[0] + b.width / 2f); val dy = y - (loc[1] + b.height / 2f); val d = sqrt(dx * dx + dy * dy); if (d < maxOf(b.width, b.height) * 1.15f && d < bestDistance) { best = b; bestDistance = d } }; return best }
-    private fun collectButtons(view: View, out: MutableList<Button>) { if (view is Button) out += view; if (view is ViewGroup) for (i in 0 until view.childCount) collectButtons(view.getChildAt(i), out) }
     private fun rerender(service: PhormiKeyboardServiceV2) { runCatching { service.setInputView(service.render()) } }
     private fun currentService(): PhormiKeyboardServiceV2? { val outer = PhormiKeyboardServiceV2::class.java; val companion = runCatching { outer.getDeclaredField("Companion").apply { isAccessible = true }.get(null) }.getOrNull() ?: return null; val field = findField(companion.javaClass, "instance") ?: return null; field.isAccessible = true; return field.get(companion) as? PhormiKeyboardServiceV2 }
     private fun findField(type: Class<*>, name: String) = generateSequence(type) { it.superclass }.flatMap { it.declaredFields.asSequence() }.firstOrNull { it.name == name }
@@ -166,10 +161,4 @@ object PhormiLocalPredictionEngine {
     private val words = listOf("the","and","you","your","that","this","with","have","for","are","what","when","where","why","how","can","will","would","could","should","please","thanks","hello","hey","good","great","today","tomorrow","now","later","because","about","from","just","really","very","love","like","want","need","know","think","make","going","come","home","work","friend","family","message","send","open","close","search","download","share","favorite","bookmark","history","keyboard","browser","testing","test","project")
     private val frenchWords = listOf("bonjour","merci","comment","ça","allez","vas","faire","je","suis","vais","peux","veux","pense","aime","nous","sommes","allons","pouvons","devons","avons","vous","êtes","pouvez","avez","voulez","très","bien","heureux","triste","excité","important","bonne","journée","chance","nuit","soirée","demain","bientôt","plus","tard","pour","moi","amour","amis")
     fun suggest(text: String, locale: java.util.Locale = java.util.Locale.getDefault()): List<String> { val token = text.trimEnd().split(Regex("\\s+")).lastOrNull().orEmpty().lowercase(locale).filter { it.isLetter() }; if (token.length < 2) return emptyList(); val pool = if (locale.language == java.util.Locale.FRENCH.language) frenchWords else words; return pool.filter { it.startsWith(token) && it != token }.take(4) }
-}
-
-object PhormiGlideEngine {
-    private val dictionary = ("hello help hey hi how what why where when thanks thankyou please sorry love lovely happy happiness sad friend friends family home work good great awesome amazing cool nice okay yes no maybe today tomorrow yesterday morning night now later soon welcome congratulations congrats birthday party celebrate food hungry coffee water music movie phone keyboard browser internet website google youtube github nigeria lagos phormi create emoji sticker download upload share search find open close save favorite bookmark history tab tabs group private ghost settings security password account message messages typing type write writing example testing test android iphone apple computer school student business project time day week month year money free local ai image photo video camera voice call chat whatsapp tiktok instagram facebook twitter").split(" ").toSet()
-    fun resolve(path: String): String { val clean = path.lowercase().filter { it in 'a'..'z' }; if (clean.isBlank()) return clean; dictionary.minByOrNull { distance(clean, it) }?.let { best -> if (distance(clean, best) <= maxOf(1, clean.length / 3)) return best }; return clean }
-    private fun distance(a: String, b: String): Int { val dp = Array(a.length + 1) { IntArray(b.length + 1) }; for (i in 0..a.length) dp[i][0] = i; for (j in 0..b.length) dp[0][j] = j; for (i in 1..a.length) for (j in 1..b.length) dp[i][j] = minOf(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1); return dp[a.length][b.length] }
 }
