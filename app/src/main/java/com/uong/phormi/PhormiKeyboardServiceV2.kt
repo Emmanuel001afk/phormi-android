@@ -127,7 +127,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun density(): Float = resources.displayMetrics.density
     private fun dp(value: Int): Int = (value * density()).roundToInt().coerceAtLeast(1)
     private fun scaled(value: Int, level: Int = PhormiKeyboardPreferences.height(this)): Int = dp((value * PhormiKeyboardPreferences.heightScaleFor(level)).roundToInt())
-    private fun baseHeight(): Int = 420
+    private fun baseHeight(): Int = 360
     private fun theme() = PhormiKeyboardPreferences.theme(this)
     private fun themeBackground() = when (theme()) { 1 -> Color.rgb(20,24,29); 2 -> Color.rgb(7,24,42); 3 -> Color.rgb(242,244,247); else -> Color.rgb(13,18,30) }
     private fun themeKey() = when (theme()) { 1 -> Color.rgb(48,53,61); 2 -> Color.rgb(18,52,79); 3 -> Color.WHITE; else -> Color.rgb(39,48,64) }
