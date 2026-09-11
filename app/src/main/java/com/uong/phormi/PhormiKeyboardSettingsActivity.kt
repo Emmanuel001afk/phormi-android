@@ -26,7 +26,10 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         root.addView(status)
         root.addView(Button(this).apply { text = "Enable Phormi Keyboard"; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }.onFailure { ToastCompat.show(this@PhormiKeyboardSettingsActivity, "Keyboard settings are unavailable") } } })
         root.addView(Button(this).apply { text = "Choose Phormi Keyboard"; setOnClickListener { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker() } })
-        root.addView(Button(this).apply { text = "Language & subtype settings"; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS)) }.onFailure { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) } } })
+        root.addView(TextView(this).apply { text = "Languages"; textSize = 18f; setTextColor(android.graphics.Color.rgb(56, 189, 248)); setPadding(0, 22, 0, 6) })
+        root.addView(TextView(this).apply { text = "English, French, Spanish, Portuguese, German, Italian, Indonesian, Turkish and Yoruba (Nigeria). Each language uses its own local prediction vocabulary where available."; textSize = 13f; setTextColor(android.graphics.Color.rgb(203, 213, 225)); setPadding(0, 0, 0, 8) })
+        root.addView(Button(this).apply { text = "Choose Phormi language"; isAllCaps = false; setOnClickListener { runCatching { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS)) }.onFailure { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) } } })
+        root.addView(TextView(this).apply { text = "Language selection is controlled by Android. Select the Phormi subtype you want; the keyboard then receives that locale and switches its prediction/correction vocabulary."; textSize = 12f; setTextColor(android.graphics.Color.rgb(148, 163, 184)); setPadding(0, 6, 0, 10) })
 
         root.addView(TextView(this).apply { text = "Keyboard size"; gravity = Gravity.CENTER_VERTICAL; setTextColor(android.graphics.Color.rgb(56, 189, 248)); textSize = 16f; setPadding(0, 22, 0, 4) })
         heightValue = TextView(this).apply { setTextColor(android.graphics.Color.rgb(203, 213, 225)); textSize = 13f; setPadding(0, 0, 0, 4) }
