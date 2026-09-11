@@ -22,7 +22,7 @@ internal fun PhormiKeyboardServiceV2.render(): View {
         "SETTINGS" -> invokeBuilder("buildSettings")
         else -> invokeBuilder("buildKeyboard")
     }
-    normalizeViewport(view)
+    normalizeViewport(view, panelName)
     when (panelName) {
         "KEYBOARD" -> { applyLocaleLayout(view); decorateShiftState(view); installGlideCompat(view); installMultilingualLongPress(view) }
         "EMOJI" -> normalizeEmojiGrid(view)
@@ -30,20 +30,36 @@ internal fun PhormiKeyboardServiceV2.render(): View {
     return view
 }
 
-/** Keep one controlled IME viewport. The phone's navigation bar remains outside the IME. */
-private fun PhormiKeyboardServiceV2.normalizeViewport(view: View) {
-    val lp = view.layoutParams ?: LinearLayout.LayoutParams(-1, scaledCompat(280))
+/** Size the whole IME to the actual layout complexity, then apply one global user scale. */
+private fun PhormiKeyboardServiceV2.normalizeViewport(view: View, panelName: String) {
+    val baseDp = when (panelName) {
+        "KEYBOARD" -> when {
+            view is ViewGroup && view.childCount >= 9 -> 416 // symbols + suggestions
+            view is ViewGroup && view.childCount >= 8 -> 380 // symbols
+            view is ViewGroup && view.childCount >= 7 -> 316 // suggestions/email/URI
+            else -> 280
+        }
+        "EMOJI" -> 280
+        "MEDIA" -> 280
+        "TOOLS" -> 280
+        "SETTINGS" -> 280
+        "AI_EMOJI" -> 280
+        "CLIPBOARD" -> 280
+        else -> 280
+    }
+    val h = scaledCompat(baseDp)
+    val lp = view.layoutParams ?: LinearLayout.LayoutParams(-1, h)
     lp.width = ViewGroup.LayoutParams.MATCH_PARENT
-    lp.height = scaledCompat(280)
+    lp.height = h
     view.layoutParams = lp
-    view.minimumHeight = scaledCompat(280)
+    view.minimumHeight = h
     view.setOnApplyWindowInsetsListener { _, insets -> insets }
     if (Build.VERSION.SDK_INT >= 23) view.requestApplyInsets()
 }
 
 private fun PhormiKeyboardServiceV2.scaledCompat(dp: Int): Int = (dp * resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(this)).toInt().coerceAtLeast(1)
 
-/** Emoji cells remain consistent in size; the existing ScrollView owns the vertical scroll. */
+/** Emoji cells remain stable; the existing ScrollView owns vertical movement. */
 private fun PhormiKeyboardServiceV2.normalizeEmojiGrid(root: View) {
     val cell = scaledCompat(44)
     fun visit(v: View) {
@@ -59,7 +75,7 @@ private fun PhormiKeyboardServiceV2.normalizeEmojiGrid(root: View) {
     visit(root)
 }
 
-/** Real layout order for the common non-QWERTY Latin subtypes. */
+/** Real layout order for common non-QWERTY Latin subtypes. */
 private fun PhormiKeyboardServiceV2.applyLocaleLayout(root: View) {
     val language = runCatching { currentInputMethodSubtype?.locale?.replace('_', '-')?.let(Locale::forLanguageTag)?.language }.getOrNull() ?: return
     val rows = when (language) {
@@ -76,33 +92,28 @@ private fun PhormiKeyboardServiceV2.applyLocaleLayout(root: View) {
     if (letters.size < 26) return
     rows.joinToString("").forEachIndexed { index, character ->
         val button = letters[index]
-        button.text = character.toString()
-        button.contentDescription = character.toString()
+        button.text = character.toString(); button.contentDescription = character.toString()
         button.setOnClickListener {
             val shift = javaClass.walkHierarchyFields("shift")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
             val caps = javaClass.walkHierarchyFields("capsLock")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
             val auto = javaClass.walkHierarchyFields("autoShift")?.apply { isAccessible = true }?.get(this) as? Boolean ?: false
             val out = if (shift || caps || auto) character.uppercaseChar().toString() else character.toString()
-            invokePrivate("feedback", button)
-            invokePrivate("commitTextToEditor", out)
+            invokePrivate("feedback", button); invokePrivate("commitTextToEditor", out)
             if (shift && !caps) javaClass.walkHierarchyFields("shift")?.apply { isAccessible = true }?.set(this, false)
             javaClass.walkHierarchyFields("autoShift")?.apply { isAccessible = true }?.set(this, false)
-            invokePrivate("refreshPredictions", true)
-            setInputView(render())
+            invokePrivate("refreshPredictions", true); setInputView(render())
         }
     }
 }
 
 private fun PhormiKeyboardServiceV2.invokeBuilder(name: String): View = runCatching {
     val method = javaClass.walkHierarchyMethods(name, 0) ?: error("Builder $name not found")
-    method.isAccessible = true
-    method.invoke(this) as View
+    method.isAccessible = true; method.invoke(this) as View
 }.getOrElse { throw IllegalStateException("Unable to render Phormi keyboard panel: $name", it) }
 
 private fun PhormiKeyboardServiceV2.invokePrivate(name: String, vararg args: Any?): Any? = runCatching {
     val method = javaClass.walkHierarchyMethods(name, args.size) ?: error("Method $name/${args.size} not found")
-    method.isAccessible = true
-    method.invoke(this, *args)
+    method.isAccessible = true; method.invoke(this, *args)
 }.getOrNull()
 
 private fun PhormiKeyboardServiceV2.decorateShiftState(root: View) {
@@ -140,13 +151,10 @@ private fun PhormiKeyboardServiceV2.installMultilingualLongPress(root: View) {
     fun visit(view: View) {
         if (view is Button) {
             val base = view.text?.toString()?.lowercase(locale).orEmpty()
-            alternatives[base]?.let { chars ->
-                view.setOnLongClickListener {
-                    val options = chars.map(Char::toString).toTypedArray()
-                    AlertDialog.Builder(this).setTitle("$base — ${locale.displayLanguage}").setItems(options) { _, which -> invokePrivate("commitTextToEditor", options[which]); invokePrivate("refreshPredictions", true); setInputView(render()) }.show()
-                    true
-                }
-            }
+            alternatives[base]?.let { chars -> view.setOnLongClickListener {
+                val options = chars.map(Char::toString).toTypedArray()
+                AlertDialog.Builder(this).setTitle("$base — ${locale.displayLanguage}").setItems(options) { _, which -> invokePrivate("commitTextToEditor", options[which]); invokePrivate("refreshPredictions", true); setInputView(render()) }.show(); true
+            } }
         }
         if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
     }
@@ -157,32 +165,19 @@ private fun PhormiKeyboardServiceV2.installGlideCompat(root: View) {
     fun isLetterButton(v: View): Boolean = v is Button && v.text?.toString()?.length == 1 && v.text?.toString()?.firstOrNull()?.isLetter() == true
     fun findLetter(parent: ViewGroup, rawX: Float, rawY: Float): Char? {
         val rect = Rect()
-        for (i in parent.childCount - 1 downTo 0) {
-            val child = parent.getChildAt(i); if (!child.isShown) continue; child.getGlobalVisibleRect(rect)
-            if (!rect.contains(rawX.toInt(), rawY.toInt())) continue
-            if (isLetterButton(child)) return child.text.toString()[0].lowercaseChar()
-            if (child is ViewGroup) findLetter(child, rawX, rawY)?.let { return it }
-        }
+        for (i in parent.childCount - 1 downTo 0) { val child=parent.getChildAt(i); if(!child.isShown) continue; child.getGlobalVisibleRect(rect); if(!rect.contains(rawX.toInt(),rawY.toInt())) continue; if(isLetterButton(child)) return child.text.toString()[0].lowercaseChar(); if(child is ViewGroup) findLetter(child,rawX,rawY)?.let{return it} }
         return null
     }
-    fun commitWord(word: String) { if (word.isNotBlank()) { invokePrivate("commitTextToEditor", word); invokePrivate("refreshPredictions", false); setInputView(render()) } }
+    fun commitWord(word: String) { if(word.isNotBlank()){invokePrivate("commitTextToEditor",word);invokePrivate("refreshPredictions",false);setInputView(render())} }
     fun wire(view: View) {
-        if (view is Button && isLetterButton(view)) {
-            val base = view.text.toString()[0].lowercaseChar(); var downX = 0f; var downY = 0f; var gliding = false; val word = StringBuilder(); var last: Char? = null
-            view.setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; gliding = false; word.setLength(0); word.append(base); last = base; false }
-                    MotionEvent.ACTION_MOVE -> { if (!gliding && (kotlin.math.abs(event.rawX-downX) > 18f*resources.displayMetrics.density || kotlin.math.abs(event.rawY-downY) > 18f*resources.displayMetrics.density)) gliding=true; if (gliding) { findLetter(root,event.rawX,event.rawY)?.let{if(it!=last){word.append(it);last=it}}; true } else false }
-                    MotionEvent.ACTION_UP -> { if (!gliding) view.performClick() else { findLetter(root,event.rawX,event.rawY)?.let{if(it!=last)word.append(it)}; commitWord(word.toString()) }; true }
-                    MotionEvent.ACTION_CANCEL -> { word.setLength(0); gliding=false; true }
-                    else -> false
-                }
-            }
+        if(view is Button && isLetterButton(view)){
+            val base=view.text.toString()[0].lowercaseChar();var downX=0f;var downY=0f;var gliding=false;val word=StringBuilder();var last:Char?=null
+            view.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{downX=event.rawX;downY=event.rawY;gliding=false;word.setLength(0);word.append(base);last=base;false};MotionEvent.ACTION_MOVE->{if(!gliding&&(kotlin.math.abs(event.rawX-downX)>18f*resources.displayMetrics.density||kotlin.math.abs(event.rawY-downY)>18f*resources.displayMetrics.density))gliding=true;if(gliding){findLetter(root,event.rawX,event.rawY)?.let{if(it!=last){word.append(it);last=it}};true}else false};MotionEvent.ACTION_UP->{if(!gliding)view.performClick()else{findLetter(root,event.rawX,event.rawY)?.let{if(it!=last)word.append(it)};commitWord(word.toString())};true};MotionEvent.ACTION_CANCEL->{word.setLength(0);gliding=false;true};else->false}}
         }
-        if (view is ViewGroup) for (i in 0 until view.childCount) wire(view.getChildAt(i))
+        if(view is ViewGroup)for(i in 0 until view.childCount)wire(view.getChildAt(i))
     }
     wire(root)
 }
 
-private fun Class<*>.walkHierarchyFields(name: String): java.lang.reflect.Field? { var type: Class<*>? = this; while (type != null) { type.declaredFields.firstOrNull { it.name == name }?.let { return it }; type=type.superclass }; return null }
-private fun Class<*>.walkHierarchyMethods(name: String, arity: Int): java.lang.reflect.Method? { var type: Class<*>? = this; while (type != null) { type.declaredMethods.firstOrNull { it.name == name && it.parameterTypes.size == arity }?.let { return it }; type=type.superclass }; return null }
+private fun Class<*>.walkHierarchyFields(name: String): java.lang.reflect.Field? { var type:Class<*>?=this;while(type!=null){type.declaredFields.firstOrNull{it.name==name}?.let{return it};type=type.superclass};return null }
+private fun Class<*>.walkHierarchyMethods(name: String,arity:Int):java.lang.reflect.Method?{var type:Class<*>?=this;while(type!=null){type.declaredMethods.firstOrNull{it.name==name&&it.parameterTypes.size==arity}?.let{return it};type=type.superclass};return null}
