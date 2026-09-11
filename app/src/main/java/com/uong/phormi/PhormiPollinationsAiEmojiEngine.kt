@@ -12,25 +12,30 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-/** Anonymous Pollinations-backed image generation for Phormi AI Emoji. */
+/** Local-first AI Emoji pipeline with optional Pollinations enhancement and no embedded API key. */
 object PhormiPollinationsAiEmojiEngine {
     private const val LEGACY_IMAGE_ENDPOINT = "https://image.pollinations.ai/prompt/"
     private val executor = Executors.newSingleThreadExecutor()
     private val client = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
-        .writeTimeout(12, TimeUnit.SECONDS)
-        .callTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(18, TimeUnit.SECONDS)
+        .writeTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(22, TimeUnit.SECONDS)
         .build()
     private val main = Handler(Looper.getMainLooper())
 
     fun generateAsync(context: Context, prompt: String, variant: Int, onComplete: (File?) -> Unit) {
         val safePrompt = buildPrompt(prompt)
         executor.execute {
-            val result = runCatching { download(safePrompt, variant, context) }.getOrNull()
-                ?: runCatching { PhormiAiEmojiEngine.generate(context, safePrompt, variant) }.getOrNull()
-            main.post { onComplete(result) }
+            // Always give the keyboard an immediate, deterministic local reaction first.
+            val local = runCatching { PhormiAiEmojiEngine.generate(context, safePrompt, variant) }.getOrNull()
+            main.post { onComplete(local) }
+
+            // Try the richer remote image in the background. A missing/unauthorized endpoint
+            // never blocks the keyboard and never requires an embedded secret.
+            val remote = runCatching { download(safePrompt, variant + 1, context) }.getOrNull()
+            if (remote != null) main.post { onComplete(remote) }
         }
     }
 
