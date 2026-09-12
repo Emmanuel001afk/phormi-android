@@ -19,6 +19,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
 import android.widget.Button
 import android.widget.HorizontalScrollView
@@ -26,7 +27,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.io.File
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -258,5 +258,5 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun sendEditorAction() { val ic = currentInputConnection ?: return; val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE; if (action != EditorInfo.IME_ACTION_NONE) ic.performEditorAction(action) else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)) } }
     private fun installRepeat(view: View, action: () -> Unit) { view.setOnTouchListener { _, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { action(); repeatRunnable = object : Runnable { override fun run() { action(); repeatHandler.postDelayed(this, 55) } }; repeatHandler.postDelayed(repeatRunnable!!, 320); true }; MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { stopRepeat(); true }; else -> true } } }
     private fun stopRepeat() { repeatRunnable?.let { repeatHandler.removeCallbacks(it) }; repeatRunnable = null }
-    private fun commitContentToEditor(uri: Uri): Boolean { if (Build.VERSION.SDK_INT < 25) return false; val ic = currentInputConnection ?: return false; val info = editorInfo ?: return false; val mimeTypes = info.contentMimeTypes ?: emptyArray(); if (mimeTypes.isEmpty()) { Toast.makeText(this, "This field does not accept images", Toast.LENGTH_SHORT).show(); return false }; val wanted = contentResolver.getType(uri).orEmpty(); val accepted = wanted.isNotBlank() && mimeTypes.any { it == wanted || (it.endsWith("/*") && wanted.startsWith(it.removeSuffix("*"))) }; if (!accepted) { Toast.makeText(this, "This field does not accept that media type", Toast.LENGTH_SHORT).show(); return false }; return runCatching { val description = android.content.ClipDescription("Phormi media", arrayOf(wanted)); val contentInfo = InputContentInfo(uri, description, null); val opts = android.os.Bundle().apply { putBoolean(InputMethodService.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, true) }; ic.commitContent(contentInfo, InputMethodService.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, opts); true }.getOrDefault(false) }
+    private fun commitContentToEditor(uri: Uri): Boolean { if (Build.VERSION.SDK_INT < 25) return false; val ic = currentInputConnection ?: return false; val info = editorInfo ?: return false; val mimeTypes = info.contentMimeTypes ?: emptyArray(); if (mimeTypes.isEmpty()) { Toast.makeText(this, "This field does not accept images", Toast.LENGTH_SHORT).show(); return false }; val wanted = contentResolver.getType(uri).orEmpty(); val accepted = wanted.isNotBlank() && mimeTypes.any { it == wanted || (it.endsWith("/*") && wanted.startsWith(it.removeSuffix("*"))) }; if (!accepted) { Toast.makeText(this, "This field does not accept that media type", Toast.LENGTH_SHORT).show(); return false }; return runCatching { val description = android.content.ClipDescription("Phormi media", arrayOf(wanted)); val contentInfo = InputContentInfo(uri, description, null); val opts = android.os.Bundle().apply { putBoolean(InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, true) }; ic.commitContent(contentInfo, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, opts); true }.getOrDefault(false) }
 }
