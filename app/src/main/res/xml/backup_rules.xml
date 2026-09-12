@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
+    <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
+    <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
+    <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
+    <exclude domain="sharedpref" path="phormi_keyboard_draft_rescue.xml" />
+</full-backup-content>

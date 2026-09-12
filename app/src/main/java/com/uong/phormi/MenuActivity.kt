@@ -56,6 +56,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
         wire(R.id.menu_disposable_email) { startActivity(Intent(this, PhormiDisposableEmailActivity::class.java)) }
         wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
+        wire(R.id.menu_capsule) { startActivity(Intent(this, PhormiCapsuleActivity::class.java)) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }
         wire(R.id.menu_browser_lock) { finishWith(ACTION_BROWSER_LOCK) }
         wire(R.id.menu_security) { startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }
