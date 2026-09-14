@@ -336,7 +336,7 @@ class PhormiDownloadService : Service() {
             }
             updateNotification()
         } catch (e: Throwable) {
-            PhormiDownloadStore.update(this, id) { it.copy(state = STATE_FAILED, downloadedBytes = temp.length(), error = e.message ?: "Download failed") }
+            PhormiDownloadStore.update(this, id) { it.copy(state = PhormiDownloadStore.STATE_FAILED, downloadedBytes = temp.length(), error = e.message ?: "Download failed") }
             updateNotification()
         } finally {
             calls.remove(id)
