@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.webkit.CookieManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
@@ -19,14 +20,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 object PhormiDownloadStore {
     const val STATE_QUEUED = "queued"
@@ -199,6 +202,7 @@ class PhormiDownloadService : Service() {
         OkHttpClient.Builder()
             .followRedirects(true)
             .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
             .build()
     }
 
@@ -214,7 +218,10 @@ class PhormiDownloadService : Service() {
             ACTION_PAUSE -> intent.getLongExtra(EXTRA_ID, -1L).takeIf { it > 0 }?.let { pauseInternal(it) }
             ACTION_RESUME -> {
                 val id = intent.getLongExtra(EXTRA_ID, -1L)
-                if (id > 0) launchDownload(id) else PhormiDownloadStore.all(this).filter { it.state == PhormiDownloadStore.STATE_QUEUED || it.state == PhormiDownloadStore.STATE_DOWNLOADING }.forEach { launchDownload(it.id) }
+                if (id > 0) launchDownload(id)
+                else PhormiDownloadStore.all(this)
+                    .filter { it.state == PhormiDownloadStore.STATE_QUEUED || it.state == PhormiDownloadStore.STATE_DOWNLOADING }
+                    .forEach { launchDownload(it.id) }
             }
             ACTION_DELETE -> intent.getLongExtra(EXTRA_ID, -1L).takeIf { it > 0 }?.let { deleteInternal(it) }
         }
@@ -224,7 +231,9 @@ class PhormiDownloadService : Service() {
     private fun launchDownload(id: Long) {
         if (jobs[id]?.isActive == true) return
         paused.remove(id)
-        jobs[id] = scope.launch { runDownload(id) }.also { job -> job.invokeOnCompletion { jobs.remove(id); calls.remove(id); maybeStop() } }
+        jobs[id] = scope.launch { runDownload(id) }.also { job ->
+            job.invokeOnCompletion { jobs.remove(id); calls.remove(id); maybeStop() }
+        }
     }
 
     private fun pauseInternal(id: Long) {
@@ -257,18 +266,19 @@ class PhormiDownloadService : Service() {
         val temp = File(record.tempPath)
         temp.parentFile?.mkdirs()
         var existing = temp.length().coerceAtLeast(0L)
-        var requestBuilder = Request.Builder().url(record.url)
-        record.userAgent?.takeIf { it.isNotBlank() }?.let { requestBuilder.header("User-Agent", it) }
-        record.referer?.takeIf { it.isNotBlank() }?.let { requestBuilder.header("Referer", it) }
-        record.cookies?.takeIf { it.isNotBlank() }?.let { requestBuilder.header("Cookie", it) }
-        if (existing > 0) requestBuilder.header("Range", "bytes=$existing-")
 
         try {
-            val call = client.newCall(requestBuilder.build())
-            calls[id] = call
-            val response = call.execute()
+            val response = executeDownloadRequest(record, existing)
             response.use { res ->
-                if (!res.isSuccessful && res.code != 206) throw IllegalStateException("HTTP ${res.code}")
+                if (!res.isSuccessful && res.code != 206) {
+                    val message = when (res.code) {
+                        401, 403 -> "Server refused the download (HTTP ${res.code}). The link may require the page's current session, referer, or an unexpired signed URL."
+                        404 -> "File not found (HTTP 404)"
+                        416 -> "Resume range is no longer valid (HTTP 416)"
+                        else -> "HTTP ${res.code}"
+                    }
+                    throw IllegalStateException(message)
+                }
                 val append = existing > 0 && res.code == 206
                 if (!append) {
                     existing = 0L
@@ -305,7 +315,15 @@ class PhormiDownloadService : Service() {
                 return
             }
             val localUri = publishToDownloads(temp, record.fileName, record.mimeType)
-            PhormiDownloadStore.update(this, id) { it.copy(state = PhormiDownloadStore.STATE_COMPLETED, downloadedBytes = existing, totalBytes = if (it.totalBytes > 0) it.totalBytes else existing, localUri = localUri, error = null) }
+            PhormiDownloadStore.update(this, id) {
+                it.copy(
+                    state = PhormiDownloadStore.STATE_COMPLETED,
+                    downloadedBytes = existing,
+                    totalBytes = if (it.totalBytes > 0) it.totalBytes else existing,
+                    localUri = localUri,
+                    error = null
+                )
+            }
             updateNotification()
         } catch (e: PauseCancellation) {
             PhormiDownloadStore.update(this, id) { it.copy(state = PhormiDownloadStore.STATE_PAUSED, downloadedBytes = temp.length()) }
@@ -318,12 +336,78 @@ class PhormiDownloadService : Service() {
             }
             updateNotification()
         } catch (e: Throwable) {
-            PhormiDownloadStore.update(this, id) { it.copy(state = PhormiDownloadStore.STATE_FAILED, downloadedBytes = temp.length(), error = e.message ?: "Download failed") }
+            PhormiDownloadStore.update(this, id) { it.copy(state = STATE_FAILED, downloadedBytes = temp.length(), error = e.message ?: "Download failed") }
             updateNotification()
         } finally {
             calls.remove(id)
         }
     }
+
+    private fun executeDownloadRequest(record: PhormiDownloadStore.Record, existing: Long): Response {
+        val cookieFromWebView = runCatching { CookieManager.getInstance().getCookie(record.url) }.getOrNull()
+        val cookies = cookieFromWebView?.takeIf { it.isNotBlank() } ?: record.cookies
+        val referer = record.referer?.takeIf { it.isNotBlank() }
+        val userAgent = record.userAgent?.takeIf { it.isNotBlank() }
+            ?: "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
+
+        fun buildRequest(range: Long?, browserHeaders: Boolean): Request {
+            val b = Request.Builder().url(record.url)
+                .header("User-Agent", userAgent)
+                .header("Accept", acceptFor(record.mimeType))
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Accept-Encoding", "identity")
+                .header("Connection", "keep-alive")
+            referer?.let { b.header("Referer", it) }
+            cookies?.takeIf { it.isNotBlank() }?.let { b.header("Cookie", it) }
+            if (browserHeaders) {
+                val origin = originOf(referer)
+                if (!origin.isNullOrBlank()) b.header("Origin", origin)
+                b.header("Sec-Fetch-Dest", fetchDest(record.mimeType))
+                b.header("Sec-Fetch-Mode", "navigate")
+                b.header("Sec-Fetch-Site", if (origin != null) "same-site" else "none")
+                b.header("Upgrade-Insecure-Requests", "1")
+            }
+            if (range != null && range > 0) b.header("Range", "bytes=$range-")
+            return b.build()
+        }
+
+        fun call(request: Request): Response {
+            val c = client.newCall(request)
+            calls[record.id] = c
+            return c.execute()
+        }
+
+        var response = call(buildRequest(if (existing > 0) existing else null, true))
+        if (response.code == 416 && existing > 0) {
+            response.close()
+            response = call(buildRequest(null, true))
+        } else if ((response.code == 401 || response.code == 403) && existing > 0) {
+            response.close()
+            response = call(buildRequest(null, true))
+        }
+        return response
+    }
+
+    private fun acceptFor(mime: String): String = when {
+        mime.startsWith("video/") -> "video/*,*/*;q=0.8"
+        mime.startsWith("audio/") -> "audio/*,*/*;q=0.8"
+        mime.startsWith("image/") -> "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+        mime == "application/pdf" -> "application/pdf,*/*;q=0.8"
+        mime.contains("zip") || mime.contains("rar") || mime.contains("7z") || mime.contains("tar") -> "application/octet-stream,*/*;q=0.8"
+        else -> "*/*"
+    }
+
+    private fun fetchDest(mime: String): String = when {
+        mime.startsWith("image/") -> "image"
+        mime.startsWith("video/") -> "video"
+        mime.startsWith("audio/") -> "audio"
+        else -> "document"
+    }
+
+    private fun originOf(url: String?): String? = runCatching {
+        val u = URI(url ?: return@runCatching null)
+        if (u.scheme.isNullOrBlank() || u.host.isNullOrBlank()) null else "${u.scheme}://${u.host}${if (u.port > 0) ":${u.port}" else ""}"
+    }.getOrNull()
 
     private fun publishToDownloads(temp: File, fileName: String, mimeType: String): String {
         if (Build.VERSION.SDK_INT >= 29) {
