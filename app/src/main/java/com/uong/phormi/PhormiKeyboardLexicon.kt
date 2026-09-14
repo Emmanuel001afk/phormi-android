@@ -32,26 +32,22 @@ object PhormiKeyboardLexicon {
     )).map { it.lowercase() }.distinct().toSet()
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
     fun learnedWords(context: Context): Set<String> = prefs(context).getStringSet(WORDS, emptySet()).orEmpty()
 
     fun learn(context: Context, raw: String) {
         val word = raw.trim().lowercase(Locale.getDefault())
         if (!isLearnable(word)) return
         val current = learnedWords(context).toMutableSet()
-        current.remove(word)
-        current.add(word)
-        prefs(context).edit().putStringSet(WORDS, current.takeLast(MAX_WORDS).toSet()).apply()
+        current.remove(word); current.add(word)
+        prefs(context).edit().putStringSet(WORDS, current.toList().takeLast(MAX_WORDS).toSet()).apply()
     }
 
     fun addShortcut(context: Context, shortcut: String, phrase: String) {
-        val s = shortcut.trim().lowercase(Locale.getDefault())
-        val p = phrase.trim()
+        val s = shortcut.trim().lowercase(Locale.getDefault()); val p = phrase.trim()
         if (!isLearnable(s) || p.isBlank()) return
         val current = prefs(context).getStringSet(SHORTCUTS, emptySet()).orEmpty().toMutableSet()
-        current.removeIf { it.startsWith("$s=") }
-        current.add("$s=$p")
-        prefs(context).edit().putStringSet(SHORTCUTS, current.takeLast(MAX_SHORTCUTS).toSet()).apply()
+        current.removeIf { it.startsWith("$s=") }; current.add("$s=$p")
+        prefs(context).edit().putStringSet(SHORTCUTS, current.toList().takeLast(MAX_SHORTCUTS).toSet()).apply()
     }
 
     fun clear(context: Context) = prefs(context).edit().clear().apply()
@@ -62,44 +58,27 @@ object PhormiKeyboardLexicon {
         val direct = corrections[lower]
         if (direct != null) return direct
         val all = (words + learnedWords(context)).filter { isLearnable(it) && it != lower }
-        val maxDistance = when {
-            lower.length <= 4 -> 1
-            lower.length <= 8 -> 2
-            else -> 2
-        }
-        return all.asSequence()
-            .filter { min(it.length, lower.length) >= 3 }
+        val maxDistance = if (lower.length <= 4) 1 else 2
+        return all.asSequence().filter { min(it.length, lower.length) >= 3 }
             .map { it to distance(lower, it.lowercase(Locale.getDefault())) }
             .filter { it.second <= maxDistance }
-            .sortedWith(compareBy<Pair<String, Int>> { it.second }.thenBy { it.first.length })
+            .sortedWith(compareBy<Pair<String,Int>> { it.second }.thenBy { it.first.length })
             .firstOrNull()?.first
     }
 
     fun suggestions(context: Context, prefix: String, limit: Int = 6): List<String> {
-        val p = prefix.trim().lowercase(Locale.getDefault())
-        if (p.isBlank()) return emptyList()
+        val p = prefix.trim().lowercase(Locale.getDefault()); if (p.isBlank()) return emptyList()
         val shortcutMatches = prefs(context).getStringSet(SHORTCUTS, emptySet()).orEmpty().mapNotNull { entry ->
-            val i = entry.indexOf('=')
-            if (i > 0 && entry.substring(0, i).startsWith(p)) entry.substring(i + 1) else null
+            val i = entry.indexOf('='); if (i > 0 && entry.substring(0,i).startsWith(p)) entry.substring(i+1) else null
         }
         return (shortcutMatches + learnedWords(context).filter { it.startsWith(p) } + words.filter { it.startsWith(p) })
             .distinct().filter { it != p }.take(limit)
     }
 
-    private fun isLearnable(word: String): Boolean =
-        word.length in 2..40 && word.any { it.isLetter() } && !word.any { it.isDigit() }
-
-    private fun distance(a: String, b: String): Int {
-        val previous = IntArray(b.length + 1) { it }
-        val current = IntArray(b.length + 1)
-        for (i in a.indices) {
-            current[0] = i + 1
-            for (j in b.indices) {
-                val cost = if (a[i] == b[j]) 0 else 1
-                current[j + 1] = min(min(current[j] + 1, previous[j + 1] + 1), previous[j] + cost)
-            }
-            for (j in previous.indices) previous[j] = current[j]
-        }
+    private fun isLearnable(word:String) = word.length in 2..40 && word.any{it.isLetter()} && !word.any{it.isDigit()}
+    private fun distance(a:String,b:String):Int {
+        val previous=IntArray(b.length+1){it}; val current=IntArray(b.length+1)
+        for(i in a.indices){current[0]=i+1;for(j in b.indices){val cost=if(a[i]==b[j])0 else 1;current[j+1]=min(min(current[j]+1,previous[j+1]+1),previous[j]+cost)};for(j in previous.indices)previous[j]=current[j]}
         return previous[b.length]
     }
 }
