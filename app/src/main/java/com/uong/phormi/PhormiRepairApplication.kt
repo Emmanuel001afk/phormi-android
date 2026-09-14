@@ -7,19 +7,21 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.lang.reflect.Method
+import java.util.WeakHashMap
 
-/** Runtime bridge for nested browser surfaces, safe environment lifecycle work, and browser AI handoff. */
+/** Runtime bridge for nested browser surfaces, safe environment lifecycle work, browser AI handoff, and downloads. */
 class PhormiRepairApplication : Application() {
     private val handler = Handler(Looper.getMainLooper())
     private var resumedMain: MainActivity? = null
     private var lastEnvironmentCleanup = 0L
     private var aiTaskRunning = false
+    private val interceptedDownloads = WeakHashMap<WebView, Boolean>()
     private val poll = object : Runnable {
         override fun run() {
             resumedMain?.let { process(it) }
@@ -31,6 +33,7 @@ class PhormiRepairApplication : Application() {
         super.onCreate()
         runCatching { PhormiEnvironmentManager.cleanupExpired(this, emptySet()) }
         PhormiKeyboardAiBridge.start(this)
+        PhormiDownloadService.resumePending(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 if (activity is MainActivity) {
@@ -49,6 +52,8 @@ class PhormiRepairApplication : Application() {
     }
 
     private fun process(activity: MainActivity) {
+        installDownloadInterceptors(activity)
+
         val activeProfiles = mutableSetOf<String>()
         (getField(activity, "tabs") as? MutableList<*>)?.forEach { tab ->
             (getField(tab, "profileName") as? String)?.let { activeProfiles += it }
@@ -60,6 +65,39 @@ class PhormiRepairApplication : Application() {
         }
         PhormiCommandBus.drain(activity).forEach { command -> runCatching { dispatch(activity, command.action, command.extras) } }
         startPendingAiTask(activity)
+    }
+
+    /** Replace the built-in DownloadManager listener with Phormi's resumable downloader. */
+    private fun installDownloadInterceptors(activity: MainActivity) {
+        val tabs = getField(activity, "tabs") as? Iterable<*> ?: return
+        tabs.forEach { tab ->
+            val webView = getField(tab, "webView") as? WebView ?: return@forEach
+            if (interceptedDownloads.containsKey(webView)) return@forEach
+            interceptedDownloads[webView] = true
+            webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                if (url.isNullOrBlank()) return@setDownloadListener
+                when {
+                    url.startsWith("blob:", true) -> {
+                        invoke(activity, "downloadBlobUrl", url, contentDisposition, mimeType)
+                    }
+                    url.startsWith("data:", true) -> {
+                        invoke(activity, "downloadDataUrl", url, contentDisposition, mimeType)
+                    }
+                    else -> {
+                        val effectiveAgent = userAgent?.takeIf { it.isNotBlank() } ?: webView.settings.userAgentString
+                        val referer = webView.url ?: url
+                        val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
+                        val info = runCatching {
+                            PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, effectiveAgent, referer, cookies)
+                        }.getOrNull()
+                        if (info != null) {
+                            PhormiDownloadService.enqueue(applicationContext, info)
+                            android.widget.Toast.makeText(applicationContext, "Downloading ${info.fileName}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun startPendingAiTask(activity: MainActivity) {
