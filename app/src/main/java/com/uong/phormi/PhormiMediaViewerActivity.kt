@@ -77,9 +77,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 }
                 root.addView(image, FrameLayout.LayoutParams(-1, -1))
             }
-            mime.startsWith("video/") -> {
-                setupVideo(root, uri)
-            }
+            mime.startsWith("video/") -> setupVideo(root, uri)
             mime.startsWith("audio/") -> {
                 val label = TextView(this).apply {
                     text = "Audio playback"
@@ -117,10 +115,12 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         root.addView(brightnessZone, FrameLayout.LayoutParams(0, -1).apply {
             gravity = Gravity.START
             width = (resources.displayMetrics.widthPixels * 0.30f).toInt()
+            topMargin = 70.dp()
         })
         root.addView(volumeZone, FrameLayout.LayoutParams(0, -1).apply {
             gravity = Gravity.END
             width = (resources.displayMetrics.widthPixels * 0.30f).toInt()
+            topMargin = 70.dp()
         })
 
         val hint = TextView(this).apply {
@@ -141,18 +141,15 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private fun sideGestureZone(brightness: Boolean): View = object : View(this) {
         private var startY = 0f
         private var lastY = 0f
-        private var moved = false
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startY = event.y
                     lastY = event.y
-                    moved = false
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dy = event.y - lastY
-                    if (kotlin.math.abs(event.y - startY) > 10f) moved = true
                     if (kotlin.math.abs(dy) > 1f) {
                         if (brightness) adjustBrightness(-dy / height.coerceAtLeast(1).toFloat())
                         else adjustVolume(-dy / height.coerceAtLeast(1).toFloat())
@@ -224,7 +221,6 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Keep the current video surface alive while automatic rotation changes orientation.
         video?.requestLayout()
     }
 
