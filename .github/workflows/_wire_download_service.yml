@@ -1,0 +1,59 @@
+name: Wire download service
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch browser download entry point
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/uong/phormi/MainActivity.kt')
+          s=p.read_text(encoding='utf-8')
+          start=s.find('    private fun startDownload(')
+          end=s.find('    private fun downloadBlobUrl(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('download function boundaries not found')
+          replacement='''    private fun startDownload(url: String, contentDisposition: String?, mimeType: String?) {
+        if (url.isBlank()) {
+            Toast.makeText(this, "Cannot download this link", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (url.startsWith("blob:", ignoreCase = true)) {
+            downloadBlobUrl(url, contentDisposition, mimeType)
+            return
+        }
+        if (url.startsWith("data:", ignoreCase = true)) {
+            downloadDataUrl(url, contentDisposition, mimeType)
+            return
+        }
+        try {
+            val webView = activeWebView()
+            val userAgent = webView?.settings?.userAgentString ?: WebSettings.getDefaultUserAgent(this)
+            val referer = webView?.url?.takeIf { it.isNotBlank() } ?: url
+            val cookies = CookieManager.getInstance().getCookie(url) ?: CookieManager.getInstance().getCookie(referer)
+            val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
+            PhormiDownloadService.enqueue(this, info)
+            Toast.makeText(this, "Downloading ${info.fileName}", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+'''
+          p.write_text(s[:start]+replacement+s[end:], encoding='utf-8')
+          PY
+      - name: Commit and remove one-time workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/_wire_download_service.yml
+          git add app/src/main/java/com/uong/phormi/MainActivity.kt
+          git commit -m "Connect browser downloads to Phormi download manager" || exit 0
+          git push
