@@ -14,8 +14,8 @@ class PhormiAiEmojiActivity : Activity() {
     companion object {
         const val EXTRA_CONTEXT = "ai_emoji_context"
         const val EXTRA_AUTOMATIC = "ai_emoji_automatic"
+        const val EXTRA_CONFIG_ONLY = "ai_emoji_config_only"
     }
-
     private lateinit var prompt: EditText
     private lateinit var grid: GridLayout
     private val generated = mutableListOf<java.io.File>()
@@ -24,6 +24,10 @@ class PhormiAiEmojiActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         render()
+        if (intent.getBooleanExtra(EXTRA_CONFIG_ONLY, false)) {
+            showKeyDialog()
+            return
+        }
         val automatic = intent.getBooleanExtra(EXTRA_AUTOMATIC, false)
         val context = intent.getStringExtra(EXTRA_CONTEXT).orEmpty().trim()
         if (automatic && context.isNotBlank()) {
@@ -49,9 +53,33 @@ class PhormiAiEmojiActivity : Activity() {
             text = "Generate 4"
             setOnClickListener { generate(false) }
         })
+        root.addView(android.widget.Button(this).apply {
+            text = if (PhormiKeyboardPreferences.pollinationsKey(this@PhormiAiEmojiActivity).isBlank()) "Set Pollinations AI key" else "Pollinations AI key ✓"
+            setOnClickListener { showKeyDialog() }
+        })
         grid = GridLayout(this).apply { columnCount = 2 }
         root.addView(grid, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+    }
+
+    private fun showKeyDialog() {
+        val input = EditText(this).apply {
+            hint = "pk_…"
+            setSingleLine(true)
+            setText(PhormiKeyboardPreferences.pollinationsKey(this@PhormiAiEmojiActivity))
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Pollinations AI key")
+            .setMessage("Use your Pollinations publishable key. It stays in this device's private app preferences.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                PhormiKeyboardPreferences.setPollinationsKey(this@PhormiAiEmojiActivity, input.text.toString())
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                PhormiKeyboardPreferences.setPollinationsKey(this@PhormiAiEmojiActivity, "")
+            }
+            .show()
     }
 
     private fun generate(automatic: Boolean) {
@@ -86,8 +114,7 @@ class PhormiAiEmojiActivity : Activity() {
                 setOnLongClickListener { saveToPack(file); true }
             }
             grid.addView(image, GridLayout.LayoutParams().apply {
-                width = 0
-                height = 230
+                width = 0; height = 230
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
             })
@@ -96,9 +123,7 @@ class PhormiAiEmojiActivity : Activity() {
     }
 
     private fun insert(file: java.io.File) {
-        val ok = runCatching {
-            PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
-        }.getOrDefault(false)
+        val ok = runCatching { PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file)) }.getOrDefault(false)
         if (!ok) Toast.makeText(this, "The current editor does not accept image content", Toast.LENGTH_SHORT).show()
     }
 
