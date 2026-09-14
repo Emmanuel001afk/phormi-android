@@ -1,0 +1,29 @@
+name: Fix download service compile reference
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix state reference
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/uong/phormi/PhormiDownloadService.kt')
+          s=p.read_text()
+          s=s.replace('it.copy(state = STATE_FAILED, downloadedBytes = temp.length(), error = e.message ?: "Download failed")', 'it.copy(state = PhormiDownloadStore.STATE_FAILED, downloadedBytes = temp.length(), error = e.message ?: "Download failed")')
+          p.write_text(s)
+          PY
+      - name: Commit and remove helper
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/_fix_download_compile.yml
+          git add app/src/main/java/com/uong/phormi/PhormiDownloadService.kt
+          git commit -m "Fix download service compile reference" || exit 0
+          git push
