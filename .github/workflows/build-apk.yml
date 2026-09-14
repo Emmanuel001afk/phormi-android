@@ -25,6 +25,55 @@ jobs:
           gradle-version: '8.7'
       - name: Show Gradle version
         run: gradle --version
+      - name: Patch browser download runtime for build
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/uong/phormi/MainActivity.kt')
+          text = path.read_text(encoding='utf-8')
+          start = text.find('    private fun startDownload(')
+          end = text.find('    private fun downloadBlobUrl(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('Could not locate startDownload boundaries')
+
+          replacement = '''    private fun startDownload(url: String, contentDisposition: String?, mimeType: String?) {
+          if (url.isBlank()) {
+              Toast.makeText(this, "Cannot download this link", Toast.LENGTH_SHORT).show()
+              return
+          }
+
+          if (url.startsWith("blob:", ignoreCase = true)) {
+              downloadBlobUrl(url, contentDisposition, mimeType)
+              return
+          }
+
+          if (url.startsWith("data:", ignoreCase = true)) {
+              downloadDataUrl(url, contentDisposition, mimeType)
+              return
+          }
+
+          try {
+              val webView = activeWebView()
+              val userAgent = webView?.settings?.userAgentString
+                  ?: WebSettings.getDefaultUserAgent(this)
+              val referer = webView?.url?.takeIf { it.isNotBlank() } ?: url
+              val cookies = CookieManager.getInstance().getCookie(url)
+                  ?: CookieManager.getInstance().getCookie(referer)
+              val info = PhormiDownloadSupport.resolve(
+                  url, contentDisposition, mimeType, userAgent, referer, cookies
+              )
+              val downloadId = PhormiDownloadService.enqueue(this, info)
+              Toast.makeText(this, "Download started: ${info.fileName}", Toast.LENGTH_SHORT).show()
+              android.util.Log.d("PhormiDownload", "Enqueued download $downloadId: ${info.fileName}")
+          } catch (e: Exception) {
+              Toast.makeText(this, "Download failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+          }
+      }
+
+'''
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          print('MainActivity.startDownload() patched for this build')
       - name: Android lint
         run: |
           set +e
