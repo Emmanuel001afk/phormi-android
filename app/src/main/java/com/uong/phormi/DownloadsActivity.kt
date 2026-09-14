@@ -1,6 +1,5 @@
 package com.uong.phormi
 
-import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
@@ -9,25 +8,16 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
+import android.widget.Button
 import android.widget.ListView
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
-/** In-app view of downloads created through Android DownloadManager, with live progress. */
+/** Polished in-app download manager with real pause/resume/delete controls. */
 class DownloadsActivity : AppCompatActivity() {
-    data class DownloadItem(
-        val id: Long,
-        val title: String,
-        val status: Int,
-        val reason: Int,
-        val localUri: String?,
-        val sourceUrl: String?,
-        val size: Long,
-        val downloaded: Long,
-        val mimeType: String?
-    )
-    private val items = mutableListOf<DownloadItem>()
+    private val items = mutableListOf<PhormiDownloadStore.Record>()
     private lateinit var adapter: BaseAdapter
     private lateinit var empty: TextView
     private val handler = Handler(Looper.getMainLooper())
@@ -35,7 +25,7 @@ class DownloadsActivity : AppCompatActivity() {
         override fun run() {
             if (!isFinishing && !isDestroyed) {
                 loadDownloads()
-                handler.postDelayed(this, 700L)
+                handler.postDelayed(this, 500L)
             }
         }
     }
@@ -45,126 +35,93 @@ class DownloadsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_downloads)
         findViewById<TextView>(R.id.btn_downloads_back).setOnClickListener { finish() }
         empty = findViewById(R.id.downloads_empty)
+
         adapter = object : BaseAdapter() {
             override fun getCount() = items.size
             override fun getItem(position: Int) = items[position]
             override fun getItemId(position: Int) = items[position].id
             override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
                 val view = convertView ?: layoutInflater.inflate(R.layout.item_download, parent, false)
-                val item = items[position]
-                view.findViewById<TextView>(R.id.download_title).text = item.title
-                view.findViewById<TextView>(R.id.download_status).text = statusText(item)
-                view.setOnClickListener { openDownload(item) }
-                view.setOnLongClickListener { cancelDownload(item); true }
+                bind(view, items[position])
                 return view
             }
         }
         findViewById<ListView>(R.id.downloads_list).adapter = adapter
         PhormiNotificationCenter.ensureChannels(this)
+        PhormiDownloadService.resumePending(this)
         loadDownloads()
     }
 
-    override fun onResume() { super.onResume(); handler.removeCallbacks(poll); handler.post(poll) }
-    override fun onPause() { handler.removeCallbacks(poll); super.onPause() }
+    override fun onResume() {
+        super.onResume()
+        handler.removeCallbacks(poll)
+        handler.post(poll)
+    }
+
+    override fun onPause() {
+        handler.removeCallbacks(poll)
+        super.onPause()
+    }
 
     private fun loadDownloads() {
         items.clear()
-        val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        try {
-            manager.query(DownloadManager.Query()).use { cursor ->
-                val idCol = cursor.getColumnIndex(DownloadManager.COLUMN_ID)
-                val titleCol = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
-                val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                val reasonCol = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                val uriCol = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                val sourceCol = cursor.getColumnIndex(DownloadManager.COLUMN_URI)
-                val sizeCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                val doneCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                val mimeCol = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
-                while (cursor.moveToNext()) {
-                    val local = if (uriCol >= 0) cursor.getString(uriCol) else null
-                    val item = DownloadItem(
-                        cursor.getLong(idCol),
-                        cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
-                            ?: local?.let { PhormiFileOpener.displayName(this, Uri.parse(it), "Download") }
-                            ?: "Download",
-                        cursor.getInt(statusCol),
-                        if (reasonCol >= 0) cursor.getInt(reasonCol) else 0,
-                        local,
-                        if (sourceCol >= 0) cursor.getString(sourceCol) else null,
-                        if (sizeCol >= 0) cursor.getLong(sizeCol) else -1L,
-                        if (doneCol >= 0) cursor.getLong(doneCol) else 0L,
-                        if (mimeCol >= 0) cursor.getString(mimeCol) else null
-                    )
-                    items += item
-                    if (item.status == DownloadManager.STATUS_SUCCESSFUL) PhormiNotificationCenter.postDownloadEvent(this, item.id, item.title, true)
-                    else if (item.status == DownloadManager.STATUS_FAILED) PhormiNotificationCenter.postDownloadEvent(this, item.id, item.title, false)
-                }
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Could not read downloads: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
+        items += PhormiDownloadStore.all(this)
         empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         adapter.notifyDataSetChanged()
     }
 
-    private fun statusText(item: DownloadItem): String {
-        val source = item.sourceUrl?.takeIf { it.startsWith("http", true) }?.let { "\n$it" }.orEmpty()
-        return when (item.status) {
-            DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)} · ${formatBytes(item.downloaded)} of ${if (item.size > 0) formatBytes(item.size) else "unknown size"}$source"
-            DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)} · ${formatBytes(item.downloaded)}$source"
-            DownloadManager.STATUS_PENDING -> "Waiting to download$source"
-            DownloadManager.STATUS_SUCCESSFUL -> "${category(item)} · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}$source"
-            DownloadManager.STATUS_FAILED -> "Download failed · ${failureReason(item.reason)}$source"
-            else -> "${category(item)} · Status unavailable$source"
+    private fun bind(view: View, item: PhormiDownloadStore.Record) {
+        val title = view.findViewById<TextView>(R.id.download_title)
+        val status = view.findViewById<TextView>(R.id.download_status)
+        val progress = view.findViewById<ProgressBar>(R.id.download_progress)
+        val action = view.findViewById<Button>(R.id.download_action)
+        val delete = view.findViewById<Button>(R.id.download_delete)
+        val open = view.findViewById<Button>(R.id.download_open)
+
+        title.text = item.fileName
+        val percent = if (item.totalBytes > 0) ((item.downloadedBytes * 100L) / item.totalBytes).toInt().coerceIn(0, 100) else 0
+        progress.progress = percent
+        progress.visibility = if (item.state == PhormiDownloadStore.STATE_COMPLETED) View.GONE else View.VISIBLE
+
+        status.text = when (item.state) {
+            PhormiDownloadStore.STATE_DOWNLOADING -> if (item.totalBytes > 0) "${item.category} · Downloading · $percent% · ${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}" else "${item.category} · Downloading · ${formatBytes(item.downloadedBytes)}"
+            PhormiDownloadStore.STATE_QUEUED -> "${item.category} · Waiting to download"
+            PhormiDownloadStore.STATE_PAUSED -> if (item.totalBytes > 0) "${item.category} · Paused · $percent% · ${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}" else "${item.category} · Paused · ${formatBytes(item.downloadedBytes)}"
+            PhormiDownloadStore.STATE_COMPLETED -> "${item.category} · Completed · ${formatBytes(item.downloadedBytes)}"
+            PhormiDownloadStore.STATE_FAILED -> "${item.category} · Download failed${item.error?.let { " · $it" }.orEmpty()}"
+            else -> item.category
         }
-    }
 
-    private fun failureReason(reason: Int): String = when (reason) {
-        DownloadManager.ERROR_CANNOT_RESUME -> "cannot resume"
-        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "storage unavailable"
-        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "file already exists"
-        DownloadManager.ERROR_FILE_ERROR -> "file error"
-        DownloadManager.ERROR_HTTP_DATA_ERROR -> "HTTP data error"
-        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "not enough storage"
-        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "too many redirects"
-        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "server HTTP error"
-        DownloadManager.ERROR_UNKNOWN -> "unknown error"
-        else -> if (reason in 400..599) "server HTTP $reason" else "error $reason"
-    }
-
-    private fun category(item: DownloadItem): String {
-        val mime = item.mimeType.orEmpty().lowercase()
-        val name = item.title.lowercase()
-        return when {
-            mime.startsWith("video/") || listOf(".mp4", ".webm", ".mkv", ".mov").any(name::endsWith) -> "Video"
-            mime.startsWith("image/") -> "Image"
-            mime.startsWith("audio/") -> "Audio"
-            mime == "application/pdf" || name.endsWith(".pdf") -> "PDF"
-            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || mime.contains("zip") -> "Archive"
-            mime.startsWith("text/") || listOf(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx").any(name::endsWith) -> "Document"
-            else -> "Other"
-        }
-    }
-
-    private fun formatProgress(item: DownloadItem): String = if (item.size <= 0) "Progress unavailable" else "${((item.downloaded * 100L) / item.size).coerceIn(0L, 100L)}%"
-    private fun formatBytes(value: Long): String = when { value < 1024 -> "$value B"; value < 1024 * 1024 -> "${value / 1024} KB"; value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"; else -> "${value / (1024 * 1024 * 1024)} GB" }
-
-    private fun openDownload(item: DownloadItem) {
-        if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) {
-            Toast.makeText(this, statusText(item), Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (!PhormiFileOpener.open(this, Uri.parse(item.localUri), item.mimeType)) {
-            Toast.makeText(this, "No installed app can open ${item.title}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun cancelDownload(item: DownloadItem) {
-        if (item.status == DownloadManager.STATUS_RUNNING || item.status == DownloadManager.STATUS_PENDING || item.status == DownloadManager.STATUS_PAUSED) {
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(item.id)
-            Toast.makeText(this, "Download removed", Toast.LENGTH_SHORT).show()
+        action.visibility = if (item.state == PhormiDownloadStore.STATE_COMPLETED || item.state == PhormiDownloadStore.STATE_FAILED) View.GONE else View.VISIBLE
+        action.text = if (item.state == PhormiDownloadStore.STATE_PAUSED) "Resume" else "Pause"
+        action.setOnClickListener {
+            if (item.state == PhormiDownloadStore.STATE_PAUSED || item.state == PhormiDownloadStore.STATE_FAILED) {
+                PhormiDownloadService.resume(this, item.id)
+            } else {
+                PhormiDownloadService.pause(this, item.id)
+            }
             loadDownloads()
         }
+
+        delete.setOnClickListener {
+            PhormiDownloadService.delete(this, item.id)
+            loadDownloads()
+            Toast.makeText(this, "Download deleted", Toast.LENGTH_SHORT).show()
+        }
+
+        open.visibility = if (item.state == PhormiDownloadStore.STATE_COMPLETED && !item.localUri.isNullOrBlank()) View.VISIBLE else View.GONE
+        open.setOnClickListener {
+            val uri = item.localUri?.let(Uri::parse) ?: return@setOnClickListener
+            if (!PhormiFileOpener.open(this, uri, item.mimeType)) {
+                Toast.makeText(this, "No installed app can open ${item.fileName}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun formatBytes(value: Long): String = when {
+        value < 1024 -> "$value B"
+        value < 1024 * 1024 -> "${value / 1024} KB"
+        value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"
+        else -> "${value / (1024 * 1024 * 1024)} GB"
     }
 }
