@@ -14,8 +14,10 @@ object PhormiKeyboardPreferences {
     private const val AI_EMOJI = "ai_emoji"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
+    private const val POLLINATIONS_KEY = "pollinations_api_key"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
     fun suggestions(context: Context) = prefs(context).getBoolean(SUGGESTIONS, true)
     fun autocorrect(context: Context) = prefs(context).getBoolean(AUTOCORRECT, true)
     fun autoCaps(context: Context) = prefs(context).getBoolean(AUTO_CAPS, true)
@@ -23,16 +25,30 @@ object PhormiKeyboardPreferences {
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
     fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
 
+    fun pollinationsKey(context: Context): String =
+        prefs(context).getString(POLLINATIONS_KEY, "").orEmpty()
+
+    fun setPollinationsKey(context: Context, value: String?) =
+        prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
+
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
     fun heightScale(context: Context): Float = heightScaleFor(height(context))
     fun heightScaleFor(level: Int): Float = when (level.coerceIn(0, 6)) {
-        0 -> 0.85f; 1 -> 0.92f; 2 -> 0.97f; 3 -> 1.00f; 4 -> 1.08f; 5 -> 1.17f; else -> 1.27f
+        0 -> 0.85f
+        1 -> 0.92f
+        2 -> 0.97f
+        3 -> 1.00f
+        4 -> 1.08f
+        5 -> 1.17f
+        else -> 1.27f
     }
 
     fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
     fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
     fun wallpaperUri(context: Context): String? = prefs(context).getString(WALLPAPER_URI, null)
-    fun setWallpaperUri(context: Context, value: String?) = prefs(context).edit().apply { if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value) }.apply()
+    fun setWallpaperUri(context: Context, value: String?) = prefs(context).edit().apply {
+        if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
+    }.apply()
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
     fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).apply()
 
