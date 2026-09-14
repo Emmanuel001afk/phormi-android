@@ -26,32 +26,43 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Production IME surface with a fixed docked viewport. Panels scroll inside that viewport. */
+/** Phormi IME. Every panel uses one fixed viewport; long content scrolls inside it. */
 class PhormiKeyboardServiceV2 : InputMethodService() {
     companion object {
         private const val PREFS = "phormi_keyboard_pending"
         private const val KEY_PENDING_URI = "pending_uri"
         private const val KEY_PENDING_TEXT = "pending_text"
         private var instance: PhormiKeyboardServiceV2? = null
+
         fun commitPickedContent(context: Context, uri: Uri): Boolean {
             val service = instance
-            if (service?.currentInputConnection != null) { service.commitContentToEditor(uri); return true }
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_URI, uri.toString()).apply(); return false
+            if (service?.currentInputConnection != null) return service.commitContentToEditor(uri)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_PENDING_URI, uri.toString()).apply()
+            return false
         }
+
         fun commitExternalText(context: Context, text: String): Boolean {
             if (text.isBlank()) return false
             val service = instance
-            if (service?.currentInputConnection != null) { service.commitTextToEditor(text); return true }
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_TEXT, text.take(4000)).apply(); return false
+            if (service?.currentInputConnection != null) {
+                service.commitTextToEditor(text)
+                return true
+            }
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_PENDING_TEXT, text.take(4000)).apply()
+            return false
         }
     }
+
     enum class Panel { KEYBOARD, EMOJI, CLIPBOARD, AI_EMOJI, TOOLS, MEDIA, SETTINGS }
+    private enum class KeyboardPage { LETTERS, NUMBERS, SYMBOLS }
+
     private var panel = Panel.KEYBOARD
-    private var symbols = false
+    private var page = KeyboardPage.LETTERS
     private var shift = false
     private var capsLock = false
     private var autoShift = false
@@ -63,56 +74,669 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var resizePreviewLevel = 3
     private var spaceDownX = 0f
     private var spaceMoved = false
+    private var aiEmojiContext = ""
+    private var aiEmojiFile: java.io.File? = null
+    private var aiEmojiLoading = false
+    private var aiEmojiRunnable: Runnable? = null
     private val repeatHandler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
-    override fun onCreate() { super.onCreate(); instance = this; val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager; clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { PhormiKeyboardClipboardStore.capturePrimaryClipboard(this) }; clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) } }
-    override fun onDestroy() { stopRepeat(); val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager; clipboardListener?.let { cm?.removePrimaryClipChangedListener(it) }; clipboardListener = null; if (instance === this) instance = null; super.onDestroy() }
-    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) { super.onStartInput(attribute, restarting); editorInfo = attribute; symbols = false; capsLock = false; shift = false; autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute); panel = Panel.KEYBOARD }
-    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); editorInfo = info ?: editorInfo; panel = Panel.KEYBOARD; setInputView(render()); applyPendingInput() }
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+            PhormiKeyboardClipboardStore.capturePrimaryClipboard(this)
+        }
+        clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
+    }
+
+    override fun onDestroy() {
+        stopRepeat()
+        aiEmojiRunnable?.let { repeatHandler.removeCallbacks(it) }
+        aiEmojiRunnable = null
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboardListener?.let { cm?.removePrimaryClipChangedListener(it) }
+        clipboardListener = null
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        editorInfo = attribute
+        page = KeyboardPage.LETTERS
+        capsLock = false
+        shift = false
+        autoShift = PhormiKeyboardPreferences.autoCaps(this) &&
+            PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute)
+        panel = Panel.KEYBOARD
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        editorInfo = info ?: editorInfo
+        panel = Panel.KEYBOARD
+        setInputView(render())
+        applyPendingInput()
+    }
+
     override fun onFinishInput() { stopRepeat(); editorInfo = null; super.onFinishInput() }
     override fun onUnbindInput() { stopRepeat(); editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) { stopRepeat(); super.onFinishInputView(finishingInput) }
     override fun onEvaluateFullscreenMode(): Boolean = false
     override fun onCreateInputView(): View = render()
+
     private fun density(): Float = resources.displayMetrics.density
     private fun dp(value: Int): Int = (value * density()).roundToInt().coerceAtLeast(1)
     private fun baseHeight(): Int = 360
-    private fun scale(level: Int = PhormiKeyboardPreferences.height(this)): Float = PhormiKeyboardPreferences.heightScaleFor(level)
-    private fun scaled(value: Int, level: Int = PhormiKeyboardPreferences.height(this)): Int = dp((value * scale(level)).roundToInt())
+    private fun scale(level: Int = PhormiKeyboardPreferences.height(this)): Float =
+        PhormiKeyboardPreferences.heightScaleFor(level)
+    private fun scaled(value: Int, level: Int = PhormiKeyboardPreferences.height(this)): Int =
+        dp((value * scale(level)).roundToInt())
+
     private fun theme(): Int = PhormiKeyboardPreferences.theme(this)
-    private fun themeBackground(): Int = when (theme()) { 1 -> Color.rgb(20,24,29); 2 -> Color.rgb(7,24,42); 3 -> Color.rgb(242,244,247); else -> Color.rgb(13,18,30) }
-    private fun themeKey(): Int = when (theme()) { 1 -> Color.rgb(48,53,61); 2 -> Color.rgb(18,52,79); 3 -> Color.WHITE; else -> Color.rgb(39,48,64) }
-    private fun themePill(): Int = when (theme()) { 1 -> Color.rgb(37,42,49); 2 -> Color.rgb(15,45,69); 3 -> Color.rgb(224,228,234); else -> Color.rgb(31,41,55) }
-    private fun themeText(): Int = if (theme() == 3) Color.rgb(20,27,36) else Color.WHITE
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = radius.toFloat() }
-    private fun root(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(2)); setBackgroundColor(themeBackground()); layoutParams = LinearLayout.LayoutParams(-1, scaled(baseHeight())); minimumHeight = scaled(baseHeight()); applyWallpaper(this); addResizeGrip(this) }
-    private fun applyWallpaper(root: View) { val value = PhormiKeyboardPreferences.wallpaperUri(this) ?: return; runCatching { contentResolver.openInputStream(Uri.parse(value))?.use { BitmapFactory.decodeStream(it) }?.let { root.background = BitmapDrawable(resources, it).apply { alpha = 72 } } } }
-    private fun feedback(view: View) { if (PhormiKeyboardPreferences.haptic(this)) view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); if (PhormiKeyboardPreferences.sound(this)) view.playSoundEffect(android.view.SoundEffectConstants.CLICK) }
-    private fun pill(label: String, action: () -> Unit): Button = Button(this).apply { text = label; textSize = 13f * scale().coerceIn(0.92f, 1.15f); setTextColor(themeText()); typeface = Typeface.DEFAULT_BOLD; minWidth = 0; minHeight = 0; isAllCaps = false; stateListAnimator = null; setPadding(dp(7), 0, dp(7), 0); background = rounded(themePill(), dp(13)); contentDescription = label; setOnClickListener { feedback(this); action() } }
-    private fun keyButton(label: String, weight: Float = 1f, action: () -> Unit): Button = Button(this).apply { text = label; textSize = (if (label.codePointCount(0, label.length) == 1) 20f else 12f) * scale().coerceIn(0.92f, 1.16f); setTextColor(themeText()); minWidth = 0; minHeight = 0; isAllCaps = false; stateListAnimator = null; setPadding(dp(2), 0, dp(2), 0); background = rounded(themeKey(), dp(9)); contentDescription = label; setOnClickListener { feedback(this); action() }; layoutParams = LinearLayout.LayoutParams(0, scaled(46), weight).apply { setMargins(dp(2), dp(2), dp(2), dp(2)) } }
-    private fun addResizeGrip(root: LinearLayout) { val grip = TextView(this).apply { text = "↕"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148,163,184)); background = rounded(themePill(), dp(10)); contentDescription = "Resize Phormi Keyboard"; isClickable = true; setOnTouchListener { _, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { resizeStartY = event.rawY; resizeStartLevel = PhormiKeyboardPreferences.height(this@PhormiKeyboardServiceV2); resizePreviewLevel = resizeStartLevel; true }; MotionEvent.ACTION_MOVE -> { val delta = ((resizeStartY - event.rawY) / (26f * density())).roundToInt(); resizePreviewLevel = (resizeStartLevel + delta).coerceIn(0,6); root.layoutParams = (root.layoutParams ?: LinearLayout.LayoutParams(-1, scaled(baseHeight(), resizePreviewLevel))).apply { height = scaled(baseHeight(), resizePreviewLevel) }; root.minimumHeight = scaled(baseHeight(), resizePreviewLevel); root.requestLayout(); true }; MotionEvent.ACTION_UP -> { PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardServiceV2, resizePreviewLevel); setInputView(render()); true }; MotionEvent.ACTION_CANCEL -> { setInputView(render()); true }; else -> true } } }; root.addView(grip, 0, LinearLayout.LayoutParams(dp(54), dp(26)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(2) }) }
-    private fun toolbar(root: LinearLayout) { val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }; val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }; fun add(label: String, width: Int = 58, action: () -> Unit) { row.addView(pill(label, action), LinearLayout.LayoutParams(dp(width), scaled(36)).apply { setMargins(dp(2),0,dp(2),0) }) }; add("😀") { panel = Panel.EMOJI; setInputView(render()) }; if (PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo) && PhormiKeyboardPreferences.aiEmoji(this)) add("✨",52) { panel = Panel.AI_EMOJI; setInputView(render()) }; add("📋") { panel = Panel.CLIPBOARD; PhormiKeyboardClipboardStore.capturePrimaryClipboard(this); setInputView(render()) }; add("▦ Tools",70) { panel = Panel.TOOLS; setInputView(render()) }; add("GIF",52) { panel = Panel.MEDIA; setInputView(render()) }; add("Sticker",68) { panel = Panel.MEDIA; setInputView(render()) }; if (Build.VERSION.SDK_INT >= 28 && shouldOfferSwitchingToNextInputMethod()) add("🌐",52) { runCatching { switchToNextInputMethod(false) } }; scroll.addView(row); root.addView(scroll, LinearLayout.LayoutParams(-1, scaled(40))) }
-    private fun buildKeyboard(): View { val root = root(); toolbar(root); val type = editorInfo?.inputType ?: InputType.TYPE_CLASS_TEXT; val clazz = type and InputType.TYPE_MASK_CLASS; val variation = type and InputType.TYPE_MASK_VARIATION; val number = clazz == InputType.TYPE_CLASS_NUMBER; val phone = clazz == InputType.TYPE_CLASS_PHONE; val dateTime = clazz == InputType.TYPE_CLASS_DATETIME; val email = variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS; val uri = variation == InputType.TYPE_TEXT_VARIATION_URI; when { phone -> addRows(root, listOf("1234567890", "*#+-", "().")); number -> addRows(root, listOf("1234567890", "789456123", "0.,+-")); dateTime -> addRows(root, listOf("1234567890", "4567891230", ":/-")); symbols -> addRows(root, listOf("1234567890", "-=[]\\;',./", "!@#\$%^&*()", "_+{}|:\"<>?", "€£₦¥₹₽₩₺₴₫₱₪¢‰§±×÷≤≥≠≈")); else -> addRows(root, listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")) }; if (email || uri) { val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }; val tokens = if (email) listOf("@", ".com", ".net", ".org") else listOf("/", ".com", "https://", ".org"); tokens.forEach { token -> row.addView(keyButton(token) { commitTextToEditor(token) }) }; root.addView(row, LinearLayout.LayoutParams(-1, scaled(50))) }; val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }; if (!number && !phone && !dateTime) { bottom.addView(keyButton(if (symbols) "ABC" else "123") { symbols = !symbols; setInputView(render()) }); bottom.addView(keyButton(when { capsLock -> "⇧"; shift -> "⇧·"; autoShift -> "⇧A"; else -> "⇧" }) { toggleShift(); setInputView(render()) }) }; val space = keyButton("Space", 3.25f) { commitSpace() }; space.setOnTouchListener { _, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { spaceDownX = event.x; spaceMoved = false; true }; MotionEvent.ACTION_MOVE -> { if (!spaceMoved && abs(event.x - spaceDownX) > dp(28)) { spaceMoved = true; moveCursor(if (event.x > spaceDownX) 1 else -1) }; true }; MotionEvent.ACTION_UP -> { if (!spaceMoved) commitSpace(); true }; MotionEvent.ACTION_CANCEL -> { spaceMoved = false; true }; else -> true } }; bottom.addView(space); bottom.addView(keyButton("←") { moveCursor(-1) }); bottom.addView(keyButton("→") { moveCursor(1) }); val back = keyButton("⌫") { deleteBackward() }; installRepeat(back) { deleteBackward() }; bottom.addView(back); bottom.addView(keyButton(actionLabel()) { sendEditorAction() }); root.addView(bottom, LinearLayout.LayoutParams(-1, scaled(52))); return root }
-    private fun addRows(root: LinearLayout, rows: List<String>) { rows.forEach { chars -> val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }; chars.forEach { ch -> row.addView(keyButton(ch.toString()) { val out = if (shift || capsLock || autoShift) ch.uppercaseChar().toString() else ch.toString(); commitTextToEditor(out); if (shift && !capsLock) shift = false; autoShift = false }) }; root.addView(row, LinearLayout.LayoutParams(-1, scaled(50))) } }
-    private fun buildEmoji(): View { val root = root(); val nav = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }; val categories = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; PhormiKeyboardEmoji.categories.keys.forEachIndexed { index, icon -> categories.addView(pill(icon) { emojiCategory = index; setInputView(render()) }, LinearLayout.LayoutParams(dp(48), scaled(36)).apply { setMargins(dp(2),0,dp(2),0) }) }; categories.addView(pill("ABC") { panel = Panel.KEYBOARD; setInputView(render()) }, LinearLayout.LayoutParams(dp(58), scaled(36))); nav.addView(categories); root.addView(nav, LinearLayout.LayoutParams(-1, scaled(40))); val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = true }; val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; PhormiKeyboardEmoji.categories.values.elementAtOrNull(emojiCategory).orEmpty().chunked(8).forEach { group -> val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }; group.forEach { emoji -> row.addView(keyButton(emoji) { commitTextToEditor(emoji) }, LinearLayout.LayoutParams(0, scaled(46), 1f)) }; repeat(8 - group.size) { row.addView(View(this), LinearLayout.LayoutParams(0, scaled(46), 1f)) }; grid.addView(row, LinearLayout.LayoutParams(-1, scaled(48))) }; scroll.addView(grid); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root }
-    private fun buildClipboard(): View { val root = root(); val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }; header.addView(pill("← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }); header.addView(pill("Clear") { PhormiKeyboardClipboardStore.clearUnpinned(this); setInputView(render()) }); root.addView(header, LinearLayout.LayoutParams(-1, scaled(40))); val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; val items = PhormiKeyboardClipboardStore.list(this); if (items.isEmpty()) list.addView(TextView(this).apply { text = "Your copied text, screenshots and images will appear here."; setTextColor(themeText()); textSize = 14f; setPadding(dp(12),dp(18),dp(12),dp(18)) }); items.forEach { item -> val label = item.text.take(60).ifBlank { "Copied item" }; list.addView(pill(label) { if (item.text.isNotBlank()) commitTextToEditor(item.text) else item.uri?.let { commitContentToEditor(Uri.parse(it)) } }, LinearLayout.LayoutParams(-1, scaled(44))) }; scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root }
-    private fun buildAiEmoji(): View { val root = root(); root.addView(pill("← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(40))); val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; list.addView(TextView(this).apply { text = "Phormi custom reaction"; textSize = 18f; setTextColor(themeText()); gravity = Gravity.CENTER; setPadding(0,dp(16),0,dp(8)) }); list.addView(TextView(this).apply { text = "Choose a reaction based on the current text"; textSize = 14f; setTextColor(themeText()); gravity = Gravity.CENTER; setPadding(dp(12),0,dp(12),dp(12)) }); val reactions = listOf("❤️","😂","👍","🔥","🎉","🥹","🙏","✨","😎","💯","🙌","🤔"); reactions.forEach { reaction -> list.addView(pill(reaction) { commitTextToEditor(reaction) }, LinearLayout.LayoutParams(-1, scaled(42)).apply { setMargins(dp(12),dp(2),dp(12),dp(2)) }) }; scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root }
-    private fun buildMedia(): View { val root = root(); root.addView(pill("← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(40))); val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; list.addView(pill("Import GIF / Image") { launchMedia("gif") }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Import Sticker") { launchMedia("sticker") }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Create AI Emoji") { panel = Panel.AI_EMOJI; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(TextView(this).apply { text = "Use media-capable text fields to insert images directly."; setTextColor(themeText()); textSize = 13f; setPadding(dp(12),dp(12),dp(12),dp(12)) }); scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root }
-    private fun buildTools(): View { val root = root(); root.addView(pill("← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(40))); val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; list.addView(pill("Settings") { panel = Panel.SETTINGS; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Voice typing") { launchVoice() }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Select all") { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Copy") { currentInputConnection?.performContextMenuAction(android.R.id.copy) }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Paste") { currentInputConnection?.performContextMenuAction(android.R.id.paste) }, LinearLayout.LayoutParams(-1, scaled(46))); list.addView(pill("Share text") { shareSelectedText() }, LinearLayout.LayoutParams(-1, scaled(46))); scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root }
-    private fun buildSettings(): View { val root = root(); root.addView(pill("← Tools") { panel = Panel.TOOLS; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(40))); val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10),dp(8),dp(10),dp(8)) }; val current = PhormiKeyboardPreferences.height(this); list.addView(TextView(this).apply { text = "Keyboard size"; textSize = 16f; setTextColor(themeText()); setPadding(0,dp(6),0,dp(6)) }); val labels = listOf("85%","92%","97%","100%","108%","117%","127%"); labels.forEachIndexed { index, sizeLabel -> list.addView(pill(if (index == current) "✓ $sizeLabel" else sizeLabel) { PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardServiceV2, index); setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(40)).apply { setMargins(0,dp(2),0,dp(2)) }) }; fun toggle(title: String, enabled: Boolean, action: () -> Unit) { list.addView(pill(if (enabled) "✓ $title" else title, action), LinearLayout.LayoutParams(-1, scaled(42)).apply { setMargins(0,dp(3),0,dp(3)) }) }; toggle("Suggestions", PhormiKeyboardPreferences.suggestions(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_SUGGESTIONS, !PhormiKeyboardPreferences.suggestions(this)); setInputView(render()) }; toggle("Autocorrect", PhormiKeyboardPreferences.autocorrect(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_AUTOCORRECT, !PhormiKeyboardPreferences.autocorrect(this)); setInputView(render()) }; toggle("Auto-capitalization", PhormiKeyboardPreferences.autoCaps(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_AUTO_CAPS, !PhormiKeyboardPreferences.autoCaps(this)); setInputView(render()) }; toggle("Haptic feedback", PhormiKeyboardPreferences.haptic(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_HAPTIC, !PhormiKeyboardPreferences.haptic(this)); setInputView(render()) }; toggle("Key sounds", PhormiKeyboardPreferences.sound(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_SOUND, !PhormiKeyboardPreferences.sound(this)); setInputView(render()) }; scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root }
-    private fun render(): View = when (panel) { Panel.EMOJI -> buildEmoji(); Panel.CLIPBOARD -> buildClipboard(); Panel.AI_EMOJI -> buildAiEmoji(); Panel.TOOLS -> buildTools(); Panel.MEDIA -> buildMedia(); Panel.SETTINGS -> buildSettings(); Panel.KEYBOARD -> buildKeyboard() }
+    private fun themeBackground(): Int = when (theme()) {
+        1 -> Color.rgb(20, 24, 29)
+        2 -> Color.rgb(7, 24, 42)
+        3 -> Color.rgb(242, 244, 247)
+        else -> Color.rgb(13, 18, 30)
+    }
+    private fun themeKey(): Int = when (theme()) {
+        1 -> Color.rgb(48, 53, 61)
+        2 -> Color.rgb(18, 52, 79)
+        3 -> Color.WHITE
+        else -> Color.rgb(39, 48, 64)
+    }
+    private fun themePill(): Int = when (theme()) {
+        1 -> Color.rgb(37, 42, 49)
+        2 -> Color.rgb(15, 45, 69)
+        3 -> Color.rgb(224, 228, 234)
+        else -> Color.rgb(31, 41, 55)
+    }
+    private fun themeText(): Int = if (theme() == 3) Color.rgb(20, 27, 36) else Color.WHITE
+    private fun accent(): Int = when (theme()) {
+        2 -> Color.rgb(65, 135, 220)
+        3 -> Color.rgb(98, 72, 220)
+        else -> Color.rgb(112, 75, 255)
+    }
+
+    private fun rounded(color: Int, radius: Int) =
+        GradientDrawable().apply { setColor(color); cornerRadius = radius.toFloat() }
+
+    /** The only outer size. Every panel receives exactly this height. */
+    private fun root(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(6), dp(2), dp(6), dp(2))
+        setBackgroundColor(themeBackground())
+        layoutParams = LinearLayout.LayoutParams(-1, scaled(baseHeight()))
+        minimumHeight = scaled(baseHeight())
+        applyWallpaper(this)
+        addResizeGrip(this)
+    }
+
+    private fun applyWallpaper(root: View) {
+        val value = PhormiKeyboardPreferences.wallpaperUri(this) ?: return
+        runCatching {
+            contentResolver.openInputStream(Uri.parse(value))?.use { BitmapFactory.decodeStream(it) }
+                ?.let { root.background = BitmapDrawable(resources, it).apply { alpha = 72 } }
+        }
+    }
+
+    private fun feedback(view: View) {
+        if (PhormiKeyboardPreferences.haptic(this)) {
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+        }
+        if (PhormiKeyboardPreferences.sound(this)) {
+            view.playSoundEffect(android.view.SoundEffectConstants.CLICK)
+        }
+    }
+
+    private fun pill(label: String, action: () -> Unit): Button = Button(this).apply {
+        text = label
+        textSize = 13f
+        setTextColor(themeText())
+        typeface = Typeface.DEFAULT_BOLD
+        minWidth = 0
+        minHeight = 0
+        isAllCaps = false
+        stateListAnimator = null
+        setPadding(dp(7), 0, dp(7), 0)
+        background = rounded(themePill(), dp(13))
+        contentDescription = label
+        setOnClickListener { feedback(this); action() }
+    }
+
+    private fun keyButton(label: String, weight: Float = 1f, action: () -> Unit): Button =
+        Button(this).apply {
+            text = label
+            textSize = when {
+                label.codePointCount(0, label.length) == 1 -> 20f
+                label == "Space" -> 13f
+                else -> 12f
+            }
+            setTextColor(themeText())
+            minWidth = 0
+            minHeight = 0
+            isAllCaps = false
+            stateListAnimator = null
+            setPadding(dp(2), 0, dp(2), 0)
+            background = rounded(themeKey(), dp(9))
+            contentDescription = label
+            setOnClickListener { feedback(this); action() }
+            layoutParams = LinearLayout.LayoutParams(0, scaled(46), weight).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            }
+        }
+
+    private fun shiftButton(action: () -> Unit): Button {
+        val state = when {
+            capsLock -> 2
+            shift || autoShift -> 1
+            else -> 0
+        }
+        return keyButton(if (state == 0) "⇧" else "⇧A", action = action).apply {
+            background = rounded(
+                when (state) {
+                    2 -> Color.rgb(220, 38, 38)
+                    1 -> accent()
+                    else -> themeKey()
+                }, dp(9)
+            )
+            setTextColor(Color.WHITE)
+            contentDescription = when (state) {
+                2 -> "Caps lock"
+                1 -> "One-letter capitalization"
+                else -> "Shift"
+            }
+        }
+    }
+
+    private fun addResizeGrip(root: LinearLayout) {
+        val grip = TextView(this).apply {
+            text = "↕"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148, 163, 184))
+            background = rounded(themePill(), dp(10))
+            contentDescription = "Resize Phormi Keyboard"
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        resizeStartY = event.rawY
+                        resizeStartLevel = PhormiKeyboardPreferences.height(this@PhormiKeyboardServiceV2)
+                        resizePreviewLevel = resizeStartLevel
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val delta = ((resizeStartY - event.rawY) / (26f * density())).roundToInt()
+                        resizePreviewLevel = (resizeStartLevel + delta).coerceIn(0, 6)
+                        root.layoutParams = (root.layoutParams as? LinearLayout.LayoutParams
+                            ?: LinearLayout.LayoutParams(-1, scaled(baseHeight())))
+                            .apply { height = scaled(baseHeight(), resizePreviewLevel) }
+                        root.minimumHeight = scaled(baseHeight(), resizePreviewLevel)
+                        root.requestLayout()
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardServiceV2, resizePreviewLevel)
+                        setInputView(render())
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> { setInputView(render()); true }
+                    else -> true
+                }
+            }
+        }
+        root.addView(grip, 0, LinearLayout.LayoutParams(dp(54), dp(26)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(2)
+        })
+    }
+
+    private fun toolbar(root: LinearLayout) {
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun add(label: String, width: Int = 58, action: () -> Unit) {
+            row.addView(pill(label, action), LinearLayout.LayoutParams(dp(width), scaled(36)).apply {
+                setMargins(dp(2), 0, dp(2), 0)
+            })
+        }
+        add("😀") { panel = Panel.EMOJI; setInputView(render()) }
+        if (PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo) && PhormiKeyboardPreferences.aiEmoji(this)) {
+            add("✨", 52) { panel = Panel.AI_EMOJI; setInputView(render()) }
+        }
+        add("📋") { panel = Panel.CLIPBOARD; PhormiKeyboardClipboardStore.capturePrimaryClipboard(this); setInputView(render()) }
+        add("▦ Tools", 70) { panel = Panel.TOOLS; setInputView(render()) }
+        add("GIF", 52) { panel = Panel.MEDIA; setInputView(render()) }
+        add("Sticker", 68) { panel = Panel.MEDIA; setInputView(render()) }
+        if (Build.VERSION.SDK_INT >= 28 && shouldOfferSwitchingToNextInputMethod()) {
+            add("🌐", 52) { runCatching { switchToNextInputMethod(false) } }
+        }
+        scroll.addView(row)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, scaled(40)))
+    }
+
+    private fun predictionStrip(root: LinearLayout) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        if (PhormiKeyboardPreferences.suggestions(this) && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) {
+            val ic = currentInputConnection
+            val word = PhormiKeyboardTextEngine.currentWord(ic)
+            val previous = PhormiKeyboardTextEngine.previousWord(ic, PhormiKeyboardTextEngine.localeFor(editorInfo))
+            val suggestions = if (word.isNotBlank()) {
+                PhormiKeyboardTextEngine.suggestions(this, word, PhormiKeyboardTextEngine.localeFor(editorInfo))
+            } else {
+                PhormiKeyboardTextEngine.nextWordSuggestions(this, previous, PhormiKeyboardTextEngine.localeFor(editorInfo))
+            }
+            suggestions.take(4).forEach { value ->
+                val button = pill(value)
+                button.setOnClickListener {
+                    feedback(button)
+                    if (word.isNotBlank()) {
+                        currentInputConnection?.deleteSurroundingText(word.length, 0)
+                        commitTextToEditor(value)
+                    } else commitTextToEditor("$value ")
+                    refreshAfterTextKey()
+                }
+                row.addView(button, LinearLayout.LayoutParams(0, scaled(32), 1f).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                })
+            }
+        }
+
+        if (PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo) && PhormiKeyboardPreferences.aiEmoji(this)) {
+            val context = PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim().takeLast(240)
+            if (context.isNotBlank() && context != aiEmojiContext) {
+                aiEmojiContext = context
+                aiEmojiFile = null
+                aiEmojiLoading = false
+                aiEmojiRunnable?.let { repeatHandler.removeCallbacks(it) }
+                val requestedContext = context
+                aiEmojiRunnable = Runnable {
+                    if (panel != Panel.KEYBOARD || requestedContext != aiEmojiContext) return@Runnable
+                    aiEmojiLoading = true
+                    PhormiPollinationsAiEmojiEngine.generateAsync(this, requestedContext, 0) { file ->
+                        aiEmojiLoading = false
+                        if (file != null) aiEmojiFile = file
+                        if (panel == Panel.KEYBOARD && requestedContext == aiEmojiContext) setInputView(render())
+                    }
+                }
+                repeatHandler.postDelayed(aiEmojiRunnable!!, 650)
+            }
+            val file = aiEmojiFile
+            if (file != null && file.exists()) {
+                val image = android.widget.ImageView(this).apply {
+                    setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                    contentDescription = "Automatic AI emoji reaction"
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(2), dp(2), dp(2), dp(2))
+                    background = rounded(themePill(), dp(10))
+                    setOnClickListener {
+                        feedback(this)
+                        commitContentToEditor(PhormiKeyboardStickerStore.contentUri(this@PhormiKeyboardServiceV2, file))
+                    }
+                }
+                row.addView(image, LinearLayout.LayoutParams(dp(42), scaled(32)).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                })
+            } else if (aiEmojiLoading) {
+                row.addView(pill("✨") { }, LinearLayout.LayoutParams(dp(42), scaled(32)).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                })
+            }
+        }
+        if (row.childCount > 0) root.addView(row, LinearLayout.LayoutParams(-1, scaled(34)))
+    }
+
+    private fun buildKeyboard(): View {
+        val root = root()
+        toolbar(root)
+        if (page == KeyboardPage.LETTERS) predictionStrip(root)
+
+        val type = editorInfo?.inputType ?: InputType.TYPE_CLASS_TEXT
+        val clazz = type and InputType.TYPE_MASK_CLASS
+        val variation = type and InputType.TYPE_MASK_VARIATION
+        val number = clazz == InputType.TYPE_CLASS_NUMBER
+        val phone = clazz == InputType.TYPE_CLASS_PHONE
+        val dateTime = clazz == InputType.TYPE_CLASS_DATETIME
+        val email = variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+        val uri = variation == InputType.TYPE_TEXT_VARIATION_URI
+
+        if ((number || phone || dateTime) && page == KeyboardPage.LETTERS) page = KeyboardPage.NUMBERS
+
+        when {
+            phone -> fixedScrollableRows(root, listOf("1234567890", "*#+", "()-"))
+            dateTime -> fixedScrollableRows(root, listOf("1234567890", "4567890", ":/-"))
+            number && page == KeyboardPage.SYMBOLS -> buildSymbolPage(root)
+            number -> buildNumberPage(root)
+            page == KeyboardPage.LETTERS -> buildLetterPage(root, email, uri)
+            page == KeyboardPage.NUMBERS -> buildNumberPage(root)
+            else -> buildSymbolPage(root)
+        }
+        return root
+    }
+
+    private fun buildLetterPage(root: LinearLayout, email: Boolean, uri: Boolean) {
+        fixedScrollableRows(root, listOf("qwertyuiop", "asdfghjkl", "zxcvbnm"))
+        if (email || uri) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            val tokens = if (email) listOf("@", ".com", ".net", ".org") else listOf("/", ".com", "https://", ".org")
+            tokens.forEach { token -> row.addView(keyButton(token) { commitTextToEditor(token); refreshAfterTextKey() }) }
+            root.addView(row, LinearLayout.LayoutParams(-1, scaled(50)))
+        }
+        addBottomRow(root, KeyboardPage.LETTERS)
+    }
+
+    private fun buildNumberPage(root: LinearLayout) {
+        fixedScrollableRows(root, listOf("1234567890", "789456123", "0.,"))
+        root.addView(keyButton("Symbols", action = { page = KeyboardPage.SYMBOLS; setInputView(render()) }).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, scaled(44)).apply { setMargins(dp(2), dp(2), dp(2), dp(2)) }
+        })
+        addBottomRow(root, KeyboardPage.NUMBERS)
+    }
+
+    private fun buildSymbolPage(root: LinearLayout) {
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            clipToPadding = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val symbols = listOf(
+            "!@#$%^&*()", "-+=_[]{}\\|;:'\",.<>/?",
+            "€£₦¥₹₽₩₺₴₫₱₪₲₵₡₭₮₸₾₼៛฿₨₳₥₰₢₣₤₧₯₠₻₿",
+            "©®™ℹ↔↕↩↪⤴⤵↻↺▶⏸⏹⏺⏭⏮🔀🔇🔊🔔♻⚕☢☣⚛✳❇✴✔✖➕➖➗🟰♾",
+            "§¶†‡•°′″№‰±×÷≤≥≠≈√∑∏∫∆πµΩαβγλθ∞~^`"
+        )
+        symbols.forEach { line ->
+            grid.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                line.forEach { ch ->
+                    addView(keyButton(ch.toString()) { commitTextToEditor(ch.toString()); refreshAfterTextKey() },
+                        LinearLayout.LayoutParams(0, scaled(46), 1f).apply { setMargins(dp(2), dp(2), dp(2), dp(2)) })
+                }
+            }, LinearLayout.LayoutParams(-1, scaled(50)))
+        }
+        scroll.addView(grid)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        addBottomRow(root, KeyboardPage.SYMBOLS)
+    }
+
+    private fun fixedScrollableRows(root: LinearLayout, rows: List<String>) {
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP }
+        rows.forEach { chars ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            chars.forEach { ch ->
+                row.addView(keyButton(ch.toString()) {
+                    val out = if (shift || capsLock || autoShift) ch.uppercaseChar().toString() else ch.toString()
+                    commitTextToEditor(out)
+                    if (shift && !capsLock) shift = false
+                    autoShift = false
+                    refreshAfterTextKey()
+                })
+            }
+            list.addView(row, LinearLayout.LayoutParams(-1, scaled(50)))
+        }
+        scroll.addView(list)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun addBottomRow(root: LinearLayout, currentPage: KeyboardPage) {
+        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        when (currentPage) {
+            KeyboardPage.LETTERS -> {
+                bottom.addView(keyButton("123") { page = KeyboardPage.NUMBERS; setInputView(render()) })
+                bottom.addView(shiftButton { toggleShift(); setInputView(render()) })
+            }
+            KeyboardPage.NUMBERS -> {
+                bottom.addView(keyButton("ABC") { page = KeyboardPage.LETTERS; setInputView(render()) })
+                bottom.addView(keyButton("⇧") { toggleShift(); setInputView(render()) })
+            }
+            KeyboardPage.SYMBOLS -> {
+                bottom.addView(keyButton("123") { page = KeyboardPage.NUMBERS; setInputView(render()) })
+                bottom.addView(keyButton("ABC") { page = KeyboardPage.LETTERS; setInputView(render()) })
+            }
+        }
+
+        val space = keyButton("Space", 3.25f) { commitSpace() }
+        space.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { spaceDownX = event.x; spaceMoved = false; true }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!spaceMoved && abs(event.x - spaceDownX) > dp(28)) {
+                        spaceMoved = true
+                        moveCursor(if (event.x > spaceDownX) 1 else -1)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> { if (!spaceMoved) commitSpace(); true }
+                MotionEvent.ACTION_CANCEL -> { spaceMoved = false; true }
+                else -> true
+            }
+        }
+        bottom.addView(space)
+        bottom.addView(keyButton("←") { moveCursor(-1) })
+        bottom.addView(keyButton("→") { moveCursor(1) })
+        val back = keyButton("⌫") { deleteBackward(); refreshAfterTextKey() }
+        installRepeat(back) { deleteBackward(); refreshAfterTextKey() }
+        bottom.addView(back)
+        bottom.addView(keyButton(actionLabel()) { sendEditorAction() })
+        root.addView(bottom, LinearLayout.LayoutParams(-1, scaled(52)))
+    }
+
+    private fun buildEmoji(): View {
+        val root = root()
+        val nav = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        val categories = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        PhormiKeyboardEmoji.categories.keys.forEachIndexed { index, icon ->
+            categories.addView(pill(icon) { emojiCategory = index; setInputView(render()) },
+                LinearLayout.LayoutParams(dp(48), scaled(36)).apply { setMargins(dp(2), 0, dp(2), 0) })
+        }
+        categories.addView(pill("ABC") { panel = Panel.KEYBOARD; page = KeyboardPage.LETTERS; setInputView(render()) },
+            LinearLayout.LayoutParams(dp(58), scaled(36)))
+        nav.addView(categories)
+        root.addView(nav, LinearLayout.LayoutParams(-1, scaled(40)))
+
+        val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = true; overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        PhormiKeyboardEmoji.categories.values.elementAtOrNull(emojiCategory).orEmpty().chunked(8).forEach { group ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            group.forEach { emoji -> row.addView(keyButton(emoji) { commitTextToEditor(emoji) }, LinearLayout.LayoutParams(0, scaled(46), 1f)) }
+            repeat(8 - group.size) { row.addView(View(this), LinearLayout.LayoutParams(0, scaled(46), 1f)) }
+            grid.addView(row, LinearLayout.LayoutParams(-1, scaled(48)))
+        }
+        scroll.addView(grid)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
+
+    private fun buildClipboard(): View {
+        val root = root(); addBackHeader(root, "← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }
+        val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val items = PhormiKeyboardClipboardStore.list(this)
+        if (items.isEmpty()) list.addView(TextView(this).apply { text = "Your copied text, screenshots and images will appear here."; setTextColor(themeText()); textSize = 14f; setPadding(dp(12), dp(18), dp(12), dp(18)) })
+        items.forEach { item ->
+            val label = item.text.take(60).ifBlank { "Copied item" }
+            list.addView(pill(label) { if (item.text.isNotBlank()) commitTextToEditor(item.text) else item.uri?.let { commitContentToEditor(Uri.parse(it)) } }, LinearLayout.LayoutParams(-1, scaled(44)))
+        }
+        scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root
+    }
+
+    private fun buildAiEmoji(): View {
+        val root = root(); addBackHeader(root, "← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }
+        val scroll = ScrollView(this).apply { isFillViewport = true; overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        list.addView(TextView(this).apply { text = "Phormi AI Emoji"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD; setTextColor(themeText()); gravity = Gravity.CENTER })
+        list.addView(TextView(this).apply { text = "Automatic contextual reaction. Phormi uses the text you are typing to create one original fused emoji-style reaction."; textSize = 13f; setTextColor(themeText()); gravity = Gravity.CENTER; setPadding(dp(8), dp(6), dp(8), dp(10)) })
+        list.addView(pill("Generate from current text") {
+            val context = PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection)
+            startActivity(Intent(this, PhormiAiEmojiActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); putExtra(PhormiAiEmojiActivity.EXTRA_CONTEXT, context); putExtra(PhormiAiEmojiActivity.EXTRA_AUTOMATIC, true) })
+        }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Create manually") { startActivity(Intent(this, PhormiAiEmojiActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, LinearLayout.LayoutParams(-1, scaled(46)))
+        scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root
+    }
+
+    private fun buildMedia(): View {
+        val root = root(); addBackHeader(root, "← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }
+        val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        list.addView(pill("Import GIF / Image") { launchMedia("gif") }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Import Sticker") { launchMedia("sticker") }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Create AI Emoji") { panel = Panel.AI_EMOJI; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(TextView(this).apply { text = "Images/GIFs are inserted only when the focused field accepts the requested MIME type."; setTextColor(themeText()); textSize = 13f; setPadding(dp(8), dp(12), dp(8), dp(12)) })
+        scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root
+    }
+
+    private fun buildTools(): View {
+        val root = root(); addBackHeader(root, "← Keyboard") { panel = Panel.KEYBOARD; setInputView(render()) }
+        val scroll = ScrollView(this); val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        list.addView(pill("Settings") { panel = Panel.SETTINGS; setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Voice typing") { launchVoice() }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Select all") { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Copy") { currentInputConnection?.performContextMenuAction(android.R.id.copy) }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Paste") { currentInputConnection?.performContextMenuAction(android.R.id.paste) }, LinearLayout.LayoutParams(-1, scaled(46)))
+        list.addView(pill("Share text") { shareSelectedText() }, LinearLayout.LayoutParams(-1, scaled(46)))
+        scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root
+    }
+
+    private fun buildSettings(): View {
+        val root = root(); addBackHeader(root, "← Tools") { panel = Panel.TOOLS; setInputView(render()) }
+        val scroll = ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(6), dp(10), dp(8)) }
+        list.addView(TextView(this).apply { text = "Keyboard size (applies identically to every panel)"; textSize = 15f; setTextColor(themeText()); setPadding(0, dp(4), 0, dp(4)) })
+        val labels = listOf("85%", "92%", "97%", "100%", "108%", "117%", "127%"); val current = PhormiKeyboardPreferences.height(this)
+        labels.forEachIndexed { index, sizeLabel -> list.addView(pill(if (index == current) "✓ $sizeLabel" else sizeLabel) { PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardServiceV2, index); setInputView(render()) }, LinearLayout.LayoutParams(-1, scaled(38)).apply { setMargins(0, dp(2), 0, dp(2)) }) }
+        fun toggle(title: String, enabled: Boolean, action: () -> Unit) { list.addView(pill(if (enabled) "✓ $title" else title, action), LinearLayout.LayoutParams(-1, scaled(40)).apply { setMargins(0, dp(3), 0, dp(3)) }) }
+        toggle("Suggestions", PhormiKeyboardPreferences.suggestions(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_SUGGESTIONS, !PhormiKeyboardPreferences.suggestions(this)); setInputView(render()) }
+        toggle("Autocorrect", PhormiKeyboardPreferences.autocorrect(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_AUTOCORRECT, !PhormiKeyboardPreferences.autocorrect(this)); setInputView(render()) }
+        toggle("Auto-capitalization", PhormiKeyboardPreferences.autoCaps(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_AUTO_CAPS, !PhormiKeyboardPreferences.autoCaps(this)); setInputView(render()) }
+        toggle("Haptic feedback", PhormiKeyboardPreferences.haptic(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_HAPTIC, !PhormiKeyboardPreferences.haptic(this)); setInputView(render()) }
+        toggle("Key sounds", PhormiKeyboardPreferences.sound(this)) { PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2, PhormiKeyboardPreferences.KEY_SOUND, !PhormiKeyboardPreferences.sound(this)); setInputView(render()) }
+        list.addView(pill(if (PhormiKeyboardPreferences.pollinationsKey(this).isBlank()) "Set Pollinations AI key" else "Pollinations AI key ✓") {
+            val input = android.widget.EditText(this@PhormiKeyboardServiceV2).apply { hint = "pk_…"; setSingleLine(true); setText(PhormiKeyboardPreferences.pollinationsKey(this@PhormiKeyboardServiceV2)) }
+            android.app.AlertDialog.Builder(this@PhormiKeyboardServiceV2).setTitle("Pollinations AI key").setMessage("Use your Pollinations publishable key. It stays in this device's private app preferences.").setView(input).setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ -> PhormiKeyboardPreferences.setPollinationsKey(this@PhormiKeyboardServiceV2, input.text.toString()) }.setNeutralButton("Clear") { _, _ -> PhormiKeyboardPreferences.setPollinationsKey(this@PhormiKeyboardServiceV2, "") }.show()
+        }, LinearLayout.LayoutParams(-1, scaled(40)).apply { setMargins(0, dp(3), 0, dp(3)) })
+        scroll.addView(list); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f)); return root
+    }
+
+    private fun addBackHeader(root: LinearLayout, label: String, action: () -> Unit) { root.addView(pill(label, action), LinearLayout.LayoutParams(-1, scaled(40))) }
+    private fun render(): View = when (panel) {
+        Panel.EMOJI -> buildEmoji()
+        Panel.CLIPBOARD -> buildClipboard()
+        Panel.AI_EMOJI -> buildAiEmoji()
+        Panel.TOOLS -> buildTools()
+        Panel.MEDIA -> buildMedia()
+        Panel.SETTINGS -> buildSettings()
+        Panel.KEYBOARD -> buildKeyboard()
+    }
+
+    private fun refreshAfterTextKey() { if (panel == Panel.KEYBOARD) setInputView(render()) }
     private fun launchMedia(mode: String) { startActivity(Intent(this, PhormiKeyboardMediaActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); putExtra(PhormiKeyboardMediaActivity.EXTRA_MODE, mode) }) }
     private fun launchVoice() { startActivity(Intent(this, PhormiKeyboardVoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-    private fun shareSelectedText() { val text = currentInputConnection?.getSelectedText(0)?.toString().orEmpty(); if (text.isBlank()) { Toast.makeText(this, "Select text first", Toast.LENGTH_SHORT).show(); return }; startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-    private fun applyPendingInput() { val prefs = getSharedPreferences(PREFS, MODE_PRIVATE); prefs.getString(KEY_PENDING_TEXT, null)?.takeIf { it.isNotBlank() }?.let { commitTextToEditor(it) }; prefs.edit().remove(KEY_PENDING_TEXT).apply(); prefs.getString(KEY_PENDING_URI, null)?.let { runCatching { commitContentToEditor(Uri.parse(it)) } }; prefs.edit().remove(KEY_PENDING_URI).apply() }
+    private fun shareSelectedText() {
+        val text = currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
+        if (text.isBlank()) { android.widget.Toast.makeText(this, "Select text first", android.widget.Toast.LENGTH_SHORT).show(); return }
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun applyPendingInput() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        prefs.getString(KEY_PENDING_TEXT, null)?.takeIf { it.isNotBlank() }?.let { commitTextToEditor(it) }
+        prefs.edit().remove(KEY_PENDING_TEXT).apply()
+        prefs.getString(KEY_PENDING_URI, null)?.let { runCatching { commitContentToEditor(Uri.parse(it)) } }
+        prefs.edit().remove(KEY_PENDING_URI).apply()
+    }
+
     private fun commitTextToEditor(text: String) { currentInputConnection?.commitText(text, 1) }
-    private fun commitSpace() { val ic = currentInputConnection ?: return; ic.commitText(" ", 1); if (PhormiKeyboardPreferences.autoCaps(this)) autoShift = PhormiKeyboardTextEngine.autoCapitalize(ic, editorInfo) }
-    private fun deleteBackward() { val ic = currentInputConnection ?: return; val selected = ic.getSelectedText(0)?.toString(); if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0) }
-    private fun moveCursor(delta: Int) { val ic = currentInputConnection ?: return; val code = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT; ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code)) }
-    private fun toggleShift() { if (capsLock) { capsLock = false; shift = false } else if (shift) { capsLock = true; shift = false } else shift = true }
-    private fun actionLabel(): String = when (editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)) { EditorInfo.IME_ACTION_GO -> "Go"; EditorInfo.IME_ACTION_SEARCH -> "Search"; EditorInfo.IME_ACTION_SEND -> "Send"; EditorInfo.IME_ACTION_NEXT -> "Next"; EditorInfo.IME_ACTION_DONE -> "Done"; else -> "Enter" }
-    private fun sendEditorAction() { val ic = currentInputConnection ?: return; val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE; if (action != EditorInfo.IME_ACTION_NONE) ic.performEditorAction(action) else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)) } }
-    private fun installRepeat(view: View, action: () -> Unit) { view.setOnTouchListener { _, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { action(); repeatRunnable = object : Runnable { override fun run() { action(); repeatHandler.postDelayed(this, 55) } }; repeatHandler.postDelayed(repeatRunnable!!, 320); true }; MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { stopRepeat(); true }; else -> true } } }
+
+    private fun commitSpace() {
+        val ic = currentInputConnection ?: return
+        val current = PhormiKeyboardTextEngine.currentWord(ic)
+        if (PhormiKeyboardPreferences.autocorrect(this) && current.isNotBlank()) {
+            PhormiKeyboardTextEngine.correctionFor(this, current)?.let { correction ->
+                ic.deleteSurroundingText(current.length, 0)
+                ic.commitText(correction, 1)
+                PhormiKeyboardTextEngine.learnCorrection(this, current, correction, editorInfo)
+            }
+        }
+        val previous = PhormiKeyboardTextEngine.previousWord(ic, PhormiKeyboardTextEngine.localeFor(editorInfo))
+        val corrected = PhormiKeyboardTextEngine.currentWord(ic)
+        ic.commitText(" ", 1)
+        if (previous.isNotBlank() && corrected.isNotBlank()) PhormiKeyboardTextEngine.learnPair(this, previous, corrected, editorInfo)
+        if (PhormiKeyboardPreferences.autoCaps(this)) autoShift = PhormiKeyboardTextEngine.autoCapitalize(ic, editorInfo)
+        refreshAfterTextKey()
+    }
+
+    private fun deleteBackward() {
+        val ic = currentInputConnection ?: return
+        val selected = ic.getSelectedText(0)?.toString()
+        if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
+    }
+
+    private fun moveCursor(delta: Int) {
+        val ic = currentInputConnection ?: return
+        val code = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code)); refreshAfterTextKey()
+    }
+
+    private fun toggleShift() {
+        if (capsLock) { capsLock = false; shift = false; autoShift = false }
+        else if (shift || autoShift) { capsLock = true; shift = false; autoShift = false }
+        else shift = true
+    }
+
+    private fun actionLabel(): String = when (editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)) {
+        EditorInfo.IME_ACTION_GO -> "Go"
+        EditorInfo.IME_ACTION_SEARCH -> "Search"
+        EditorInfo.IME_ACTION_SEND -> "Send"
+        EditorInfo.IME_ACTION_NEXT -> "Next"
+        EditorInfo.IME_ACTION_DONE -> "Done"
+        else -> "Enter"
+    }
+
+    private fun sendEditorAction() {
+        val ic = currentInputConnection ?: return
+        val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
+        if (action != EditorInfo.IME_ACTION_NONE) ic.performEditorAction(action) else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)) }
+    }
+
+    private fun installRepeat(view: View, action: () -> Unit) {
+        view.setOnTouchListener { _, event -> when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { action(); repeatRunnable = object : Runnable { override fun run() { action(); repeatHandler.postDelayed(this, 55) } }; repeatHandler.postDelayed(repeatRunnable!!, 320); true }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { stopRepeat(); true }
+            else -> true
+        } }
+    }
     private fun stopRepeat() { repeatRunnable?.let { repeatHandler.removeCallbacks(it) }; repeatRunnable = null }
-    private fun commitContentToEditor(uri: Uri): Boolean { if (Build.VERSION.SDK_INT < 25) return false; val ic = currentInputConnection ?: return false; val info = editorInfo ?: return false; val mimeTypes = info.contentMimeTypes ?: emptyArray(); if (mimeTypes.isEmpty()) { Toast.makeText(this, "This field does not accept images", Toast.LENGTH_SHORT).show(); return false }; val wanted = contentResolver.getType(uri).orEmpty(); val accepted = wanted.isNotBlank() && mimeTypes.any { it == wanted || (it.endsWith("/*") && wanted.startsWith(it.removeSuffix("*"))) }; if (!accepted) { Toast.makeText(this, "This field does not accept that media type", Toast.LENGTH_SHORT).show(); return false }; return runCatching { val description = android.content.ClipDescription("Phormi media", arrayOf(wanted)); val contentInfo = InputContentInfo(uri, description, null); ic.commitContent(contentInfo, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null) }.getOrDefault(false) }
+
+    private fun commitContentToEditor(uri: Uri): Boolean {
+        if (Build.VERSION.SDK_INT < 25) return false
+        val ic = currentInputConnection ?: return false
+        val info = editorInfo ?: return false
+        val mimeTypes = info.contentMimeTypes ?: emptyArray()
+        if (mimeTypes.isEmpty()) { android.widget.Toast.makeText(this, "This field does not accept images", android.widget.Toast.LENGTH_SHORT).show(); return false }
+        val wanted = contentResolver.getType(uri).orEmpty()
+        val accepted = wanted.isNotBlank() && mimeTypes.any { it == wanted || (it.endsWith("/*") && wanted.startsWith(it.removeSuffix("*"))) }
+        if (!accepted) { android.widget.Toast.makeText(this, "This field does not accept that media type", android.widget.Toast.LENGTH_SHORT).show(); return false }
+        return runCatching {
+            val description = android.content.ClipDescription("Phormi media", arrayOf(wanted))
+            val contentInfo = InputContentInfo(uri, description, null)
+            ic.commitContent(contentInfo, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+        }.getOrDefault(false)
+    }
 }
