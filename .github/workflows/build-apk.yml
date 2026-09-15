@@ -53,14 +53,14 @@ jobs:
           zip -qr phormi-final-project.zip phormi-android
           sha256sum phormi-final-project.zip > phormi-final-project.sha256
       - name: Upload final project ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: phormi-final-project
           path: |
             dist/phormi-final-project.zip
             dist/phormi-final-project.sha256
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: phormi-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
