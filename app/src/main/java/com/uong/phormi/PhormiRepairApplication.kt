@@ -4,33 +4,22 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
-import android.webkit.CookieManager
 import android.webkit.WebView
-import android.widget.FrameLayout
-import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.lang.reflect.Method
-import java.util.WeakHashMap
 
-/** Runtime bridge for nested browser surfaces, safe environment lifecycle work, browser AI handoff, downloads, and fullscreen media controls. */
+/** Runtime bridge for nested browser surfaces, safe environment lifecycle work, and browser AI handoff. */
 class PhormiRepairApplication : Application() {
     private val handler = Handler(Looper.getMainLooper())
     private var resumedMain: MainActivity? = null
     private var lastEnvironmentCleanup = 0L
     private var aiTaskRunning = false
-    private val interceptedDownloads = WeakHashMap<WebView, Boolean>()
-    private val mediaHosts = WeakHashMap<FrameLayout, Boolean>()
-    private val mediaTouchInstalled = WeakHashMap<View, Boolean>()
-    private val mediaBrightness = WeakHashMap<Activity, Float>()
     private val poll = object : Runnable {
         override fun run() {
             resumedMain?.let { process(it) }
@@ -42,7 +31,6 @@ class PhormiRepairApplication : Application() {
         super.onCreate()
         runCatching { PhormiEnvironmentManager.cleanupExpired(this, emptySet()) }
         PhormiKeyboardAiBridge.start(this)
-        PhormiDownloadService.resumePending(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 if (activity is MainActivity) {
@@ -61,9 +49,6 @@ class PhormiRepairApplication : Application() {
     }
 
     private fun process(activity: MainActivity) {
-        installDownloadInterceptors(activity)
-        installFullscreenMediaControls(activity)
-
         val activeProfiles = mutableSetOf<String>()
         (getField(activity, "tabs") as? MutableList<*>)?.forEach { tab ->
             (getField(tab, "profileName") as? String)?.let { activeProfiles += it }
@@ -76,158 +61,6 @@ class PhormiRepairApplication : Application() {
         PhormiCommandBus.drain(activity).forEach { command -> runCatching { dispatch(activity, command.action, command.extras) } }
         startPendingAiTask(activity)
     }
-
-    /** Replace the built-in DownloadManager listener with Phormi's resumable downloader. */
-    private fun installDownloadInterceptors(activity: MainActivity) {
-        val tabs = getField(activity, "tabs") as? Iterable<*> ?: return
-        tabs.forEach { tab ->
-            val webView = getField(tab, "webView") as? WebView ?: return@forEach
-            if (interceptedDownloads.containsKey(webView)) return@forEach
-            interceptedDownloads[webView] = true
-            webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-                if (url.isNullOrBlank()) return@setDownloadListener
-                when {
-                    url.startsWith("blob:", true) -> {
-                        invoke(activity, "downloadBlobUrl", url, contentDisposition, mimeType)
-                    }
-                    url.startsWith("data:", true) -> {
-                        invoke(activity, "downloadDataUrl", url, contentDisposition, mimeType)
-                    }
-                    else -> {
-                        val effectiveAgent = userAgent?.takeIf { it.isNotBlank() } ?: webView.settings.userAgentString
-                        val referer = webView.url ?: url
-                        val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
-                        val info = runCatching {
-                            PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, effectiveAgent, referer, cookies)
-                        }.getOrNull()
-                        if (info != null) {
-                            PhormiDownloadService.enqueue(applicationContext, info)
-                            android.widget.Toast.makeText(applicationContext, "Downloading ${info.fileName}", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * MainActivity's WebChromeClient owns fullscreen web-video views. The standalone
-     * PhormiMediaViewerActivity cannot control those views, so install the requested
-     * controls directly on the real fullscreen container once it appears.
-     */
-    private fun installFullscreenMediaControls(activity: MainActivity) {
-        val container = getField(activity, "fullscreenContainer") as? FrameLayout ?: return
-        if (mediaHosts.containsKey(container)) return
-        mediaHosts[container] = true
-
-        // MainActivity currently forces landscape when entering a web video's fullscreen
-        // mode. Override that to sensor orientation so the viewer genuinely auto-rotates.
-        runCatching { activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR }
-
-        val auto = TextView(activity).apply {
-            text = "↻ AUTO"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setPadding(dp(activity, 14), dp(activity, 8), dp(activity, 14), dp(activity, 8))
-            setBackgroundColor(0x88000000.toInt())
-            contentDescription = "Toggle automatic rotation"
-            setOnClickListener {
-                val enabled = text.toString().contains("AUTO")
-                if (enabled) {
-                    activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                    text = "↻ LOCK"
-                } else {
-                    activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
-                    text = "↻ AUTO"
-                }
-            }
-        }
-        container.addView(auto, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dp(activity, 48)).apply {
-            gravity = Gravity.TOP or Gravity.END
-            topMargin = dp(activity, 10)
-            rightMargin = dp(activity, 10)
-        })
-
-        val hint = TextView(activity).apply {
-            text = "Left: brightness  •  Right: volume"
-            textSize = 11f
-            gravity = Gravity.CENTER
-            setTextColor(0xDDFFFFFF.toInt())
-            setPadding(dp(activity, 14), dp(activity, 7), dp(activity, 14), dp(activity, 7))
-            setBackgroundColor(0x66000000.toInt())
-        }
-        container.addView(hint, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dp(activity, 38)).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            bottomMargin = dp(activity, 14)
-        })
-        handler.postDelayed({ hint.visibility = View.GONE }, 3500L)
-
-        val customView = getField(activity, "customView") as? View ?: return
-        if (!mediaTouchInstalled.containsKey(customView)) {
-            mediaTouchInstalled[customView] = true
-            val state = floatArrayOf(0f, 0f, 0f, 0f)
-            customView.setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        state[0] = event.x
-                        state[1] = event.y
-                        state[2] = event.y
-                        state[3] = 0f
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val dy = event.y - state[2]
-                        if (kotlin.math.abs(dy) > 1f && view.height > 0) {
-                            val leftSide = state[0] < view.width * 0.5f
-                            if (leftSide) adjustActivityBrightness(activity, -dy / view.height.toFloat())
-                            else adjustActivityVolume(activity, -dy / view.height.toFloat())
-                            state[3] = 1f
-                        }
-                        state[2] = event.y
-                    }
-                }
-                // Return false so the site's native video controls still receive taps and
-                // the browser's existing custom-view handling remains intact.
-                false
-            }
-        }
-    }
-
-    private fun adjustActivityBrightness(activity: Activity, delta: Float) {
-        val current = mediaBrightness[activity] ?: activity.window.attributes.screenBrightness.takeIf { it >= 0f } ?: 0.5f
-        val next = (current + delta).coerceIn(0.02f, 1f)
-        mediaBrightness[activity] = next
-        activity.window.attributes = activity.window.attributes.apply { screenBrightness = next }
-        showMediaIndicator(activity, "☀ ${((next * 100).toInt())}%")
-    }
-
-    private fun adjustActivityVolume(activity: Activity, delta: Float) {
-        val audio = activity.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-        val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val current = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-        val next = (current + delta * max).toInt().coerceIn(0, max)
-        audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, next, 0)
-        showMediaIndicator(activity, "🔊 ${((next * 100f) / max).toInt()}%")
-    }
-
-    private fun showMediaIndicator(activity: Activity, text: String) {
-        val root = getField(activity, "fullscreenContainer") as? FrameLayout ?: return
-        val existing = root.findViewWithTag<TextView>("phormi_browser_media_indicator")
-        val indicator = existing ?: TextView(activity).apply {
-            tag = "phormi_browser_media_indicator"
-            textSize = 18f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setPadding(dp(activity, 24), dp(activity, 14), dp(activity, 24), dp(activity, 14))
-            setBackgroundColor(0xDD111827.toInt())
-            root.addView(this, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER })
-        }
-        indicator.text = text
-        indicator.visibility = View.VISIBLE
-        handler.postDelayed({ indicator.visibility = View.GONE }, 850L)
-    }
-
-    private fun dp(activity: Activity, value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
 
     private fun startPendingAiTask(activity: MainActivity) {
         if (aiTaskRunning) return

@@ -54,25 +54,12 @@ object PhormiDownloadSupport {
 
     private fun guessMime(url: String): String? {
         val ext = runCatching { URL(url).path.substringAfterLast('.', "").lowercase() }.getOrNull()
-        return when (ext) {
-            "apk" -> "application/vnd.android.package-archive"
-            "pdf" -> "application/pdf"
-            "zip" -> "application/zip"
-            "rar" -> "application/vnd.rar"
-            "7z" -> "application/x-7z-compressed"
-            "tar" -> "application/x-tar"
-            "gz" -> "application/gzip"
-            "mp4" -> "video/mp4"
-            "mkv" -> "video/x-matroska"
-            "webm" -> "video/webm"
-            "mov" -> "video/quicktime"
-            else -> ext?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
-        }
+        return ext?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
     }
 
     private fun improveGenericName(name: String, url: String, mime: String): String {
         var result = name.trim()
-        val ext = extensionForMime(mime)
+        val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
         if (result.isBlank() || result.equals("downloadfile", true) || result.equals("download", true) || result.endsWith(".bin", true)) {
             val pathName = runCatching {
                 URLDecoder.decode(URL(url).path.substringAfterLast('/'), "UTF-8")
@@ -84,17 +71,6 @@ object PhormiDownloadSupport {
         }
         if (!result.contains('.') && !ext.isNullOrBlank()) result += ".${ext}"
         return result
-    }
-
-    private fun extensionForMime(mime: String): String? = when (mime.lowercase()) {
-        "application/vnd.android.package-archive" -> "apk"
-        "application/pdf" -> "pdf"
-        "application/zip" -> "zip"
-        "application/vnd.rar" -> "rar"
-        "application/x-7z-compressed" -> "7z"
-        "application/x-tar" -> "tar"
-        "application/gzip" -> "gz"
-        else -> MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
     }
 
     private fun sanitizeFileName(name: String): String {
@@ -110,7 +86,6 @@ object PhormiDownloadSupport {
             m.startsWith("image/") -> "Image"
             m.startsWith("audio/") -> "Audio"
             m == "application/pdf" || n.endsWith(".pdf") -> "PDF"
-            m == "application/vnd.android.package-archive" || n.endsWith(".apk") -> "APK"
             n.endsWith(".zip") || n.endsWith(".rar") || n.endsWith(".7z") || n.endsWith(".tar") || m.contains("zip") -> "Archive"
             m.startsWith("text/") || listOf(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx").any(n::endsWith) -> "Document"
             else -> "Other"

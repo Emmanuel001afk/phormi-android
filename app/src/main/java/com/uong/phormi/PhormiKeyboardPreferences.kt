@@ -2,36 +2,60 @@ package com.uong.phormi
 
 import android.content.Context
 
-/** Persistent keyboard configuration. The keyboard remains independent from the browser UI. */
+/** Local-only keyboard preferences. */
 object PhormiKeyboardPreferences {
     private const val PREFS = "phormi_keyboard"
-    const val KEY_SUGGESTIONS = "suggestions"
-    const val KEY_AUTOCORRECT = "autocorrect"
-    const val KEY_AUTO_CAPS = "auto_caps"
-    const val KEY_HAPTIC = "haptic"
-    const val KEY_SOUND = "sound"
-    const val KEY_AI_EMOJI = "ai_emoji"
-    const val KEY_LANGUAGE = "language"
-    const val KEY_HEIGHT = "height"
-    const val KEY_KEY_WIDTH = "key_width"
-    const val KEY_THEME = "theme"
-    const val KEY_WALLPAPER = "wallpaper"
-    const val KEY_AI_KEY = "pollinations_key"
+    private const val SUGGESTIONS = "suggestions"
+    private const val AUTOCORRECT = "autocorrect"
+    private const val AUTO_CAPS = "auto_caps"
+    private const val HAPTIC = "haptic"
+    private const val SOUND = "sound"
+    private const val HEIGHT = "keyboard_height"
+    private const val AI_EMOJI = "ai_emoji"
+    private const val THEME = "keyboard_theme"
+    private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
+    private const val POLLINATIONS_KEY = "pollinations_api_key"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    fun suggestions(c: Context) = prefs(c).getBoolean(KEY_SUGGESTIONS, true)
-    fun autocorrect(c: Context) = prefs(c).getBoolean(KEY_AUTOCORRECT, true)
-    fun autoCaps(c: Context) = prefs(c).getBoolean(KEY_AUTO_CAPS, true)
-    fun haptic(c: Context) = prefs(c).getBoolean(KEY_HAPTIC, true)
-    fun sound(c: Context) = prefs(c).getBoolean(KEY_SOUND, false)
-    fun aiEmoji(c: Context) = prefs(c).getBoolean(KEY_AI_EMOJI, true)
-    fun language(c: Context) = prefs(c).getString(KEY_LANGUAGE, "English (US) + Yoruba") ?: "English (US) + Yoruba"
-    fun height(c: Context) = prefs(c).getInt(KEY_HEIGHT, 100)
-    fun keyWidth(c: Context) = prefs(c).getInt(KEY_KEY_WIDTH, 100)
-    fun theme(c: Context) = prefs(c).getString(KEY_THEME, "system") ?: "system"
-    fun wallpaper(c: Context) = prefs(c).getString(KEY_WALLPAPER, "") ?: ""
-    fun pollinationsKey(c: Context) = prefs(c).getString(KEY_AI_KEY, "") ?: ""
-    fun set(c: Context, key: String, value: Boolean) = prefs(c).edit().putBoolean(key, value).apply()
-    fun setInt(c: Context, key: String, value: Int) = prefs(c).edit().putInt(key, value.coerceIn(75, 135)).apply()
-    fun setString(c: Context, key: String, value: String) = prefs(c).edit().putString(key, value).apply()
+
+    fun suggestions(context: Context) = prefs(context).getBoolean(SUGGESTIONS, true)
+    fun autocorrect(context: Context) = prefs(context).getBoolean(AUTOCORRECT, true)
+    fun autoCaps(context: Context) = prefs(context).getBoolean(AUTO_CAPS, true)
+    fun haptic(context: Context) = prefs(context).getBoolean(HAPTIC, true)
+    fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
+    fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
+
+    fun pollinationsKey(context: Context): String =
+        prefs(context).getString(POLLINATIONS_KEY, "").orEmpty()
+
+    fun setPollinationsKey(context: Context, value: String?) =
+        prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
+
+    fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
+    fun heightScale(context: Context): Float = heightScaleFor(height(context))
+    fun heightScaleFor(level: Int): Float = when (level.coerceIn(0, 6)) {
+        0 -> 0.85f
+        1 -> 0.92f
+        2 -> 0.97f
+        3 -> 1.00f
+        4 -> 1.08f
+        5 -> 1.17f
+        else -> 1.27f
+    }
+
+    fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
+    fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
+    fun wallpaperUri(context: Context): String? = prefs(context).getString(WALLPAPER_URI, null)
+    fun setWallpaperUri(context: Context, value: String?) = prefs(context).edit().apply {
+        if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
+    }.apply()
+    fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
+    fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).apply()
+
+    const val KEY_SUGGESTIONS = SUGGESTIONS
+    const val KEY_AUTOCORRECT = AUTOCORRECT
+    const val KEY_AUTO_CAPS = AUTO_CAPS
+    const val KEY_HAPTIC = HAPTIC
+    const val KEY_SOUND = SOUND
+    const val KEY_AI_EMOJI = AI_EMOJI
 }
