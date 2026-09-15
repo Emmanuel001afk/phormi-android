@@ -1,19 +1,20 @@
-name: Direct download runtime repair
+name: One-time Phormi download migration
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
 permissions:
   contents: write
 
 jobs:
-  repair:
+  migrate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Replace only startDownload implementation
+      - name: Checkout committed source
+        uses: actions/checkout@v4
+      - name: Migrate browser downloads to the in-app download service
         shell: python
         run: |
           from pathlib import Path
@@ -56,15 +57,15 @@ jobs:
 
 '''
           p.write_text(s[:start] + new_fn + s[end:], encoding='utf-8')
-      - name: Verify source
+      - name: Verify migration
         run: |
           grep -q 'PhormiDownloadService.enqueue(this, info)' app/src/main/java/com/uong/phormi/MainActivity.kt
           ! grep -q '(getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)' app/src/main/java/com/uong/phormi/MainActivity.kt
-      - name: Commit direct fix and remove repair workflow
+      - name: Commit migration and remove this temporary workflow
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/com/uong/phormi/MainActivity.kt
           git rm .github/workflows/_direct_fix_download_runtime.yml
-          git commit -m 'Fix browser downloads to use PhormiDownloadService'
+          git commit -m 'Wire browser downloads into Phormi download manager'
           git push
