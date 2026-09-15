@@ -6,9 +6,8 @@ import android.os.Build
 import java.util.Locale
 
 /**
- * Broad Unicode emoji palette. Android 9+ ICU exposes the Unicode Emoji
- * property, so the keyboard can enumerate the platform emoji set instead of
- * maintaining a short hand-written list. Long content is scrolled in-place.
+ * Broad Unicode emoji palette with standard, non-overlapping emoji sectors.
+ * The keyboard renders each sector inside its own fixed scrolling viewport.
  */
 object PhormiKeyboardEmoji {
     private val unicode17Additions = listOf("🫪", "🫯", "🫝", "🫍", "🫈", "🪊", "🛘", "🪎", "🧑‍🩰")
@@ -68,21 +67,33 @@ object PhormiKeyboardEmoji {
         result.toList()
     }
 
-    private fun category(start: Int, end: Int): List<String> = all.filter { it.codePointAt(0) in start..end }
+    private fun inRange(emoji: String, start: Int, end: Int): Boolean {
+        val cp = emoji.codePointAt(0)
+        return cp in start..end
+    }
+
+    private fun flagsOnly(): List<String> = countryFlags()
 
     val categories: LinkedHashMap<String, List<String>> by lazy {
+        val people = all.filter { inRange(it, 0x1F440, 0x1F9FF) }
+        val animals = all.filter { inRange(it, 0x1F400, 0x1F43F) || inRange(it, 0x1F980, 0x1F9AE) }
+        val food = all.filter { inRange(it, 0x1F32D, 0x1F37F) }
+        val travel = all.filter { inRange(it, 0x1F680, 0x1F6FF) || inRange(it, 0x1F5FB, 0x1F5FF) }
+        val activities = all.filter { inRange(it, 0x1F3A0, 0x1F3FF) }
+        val objects = all.filter { inRange(it, 0x1F4A0, 0x1F4FF) || inRange(it, 0x1F9F0, 0x1FAFF) }
+        val symbols = all.filter { val cp = it.codePointAt(0); cp in 0x2000..0x2BFF || cp in 0x1F100..0x1F2FF }
+        val emotion = all.filter { inRange(it, 0x1F600, 0x1F64F) || inRange(it, 0x1F910, 0x1F92F) || inRange(it, 0x1F970, 0x1F979) }
         linkedMapOf(
-            "✨" to all,
-            "😀" to category(0x1F600, 0x1F64F),
-            "👤" to category(0x1F440, 0x1F9FF),
-            "🐾" to category(0x1F400, 0x1F43F),
-            "🍔" to category(0x1F32D, 0x1F37F),
-            "⚽" to category(0x1F3A0, 0x1F3FF),
-            "🚗" to category(0x1F680, 0x1F6FF),
-            "💻" to category(0x1F4A0, 0x1F4FF),
-            "🎉" to category(0x1F300, 0x1F5FF),
-            "🔣" to all.filter { val cp = it.codePointAt(0); cp in 0x2000..0x2BFF || cp in 0x1F100..0x1F2FF },
-            "🇳🇬" to countryFlags()
+            "🕘" to all.take(60),
+            "😀" to emotion,
+            "🧑" to people,
+            "🐾" to animals,
+            "🍔" to food,
+            "🚗" to travel,
+            "⚽" to activities,
+            "💡" to objects,
+            "🔣" to symbols,
+            "🇳🇬" to flagsOnly()
         )
     }
 }
