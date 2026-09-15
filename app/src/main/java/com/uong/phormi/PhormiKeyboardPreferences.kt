@@ -11,6 +11,8 @@ object PhormiKeyboardPreferences {
     private const val HAPTIC = "haptic"
     private const val SOUND = "sound"
     private const val HEIGHT = "keyboard_height"
+    private const val HEIGHT_PERCENT = "keyboard_height_percent"
+    private const val WIDTH_PERCENT = "keyboard_width_percent"
     private const val AI_EMOJI = "ai_emoji"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
@@ -25,14 +27,11 @@ object PhormiKeyboardPreferences {
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
     fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
 
-    fun pollinationsKey(context: Context): String =
-        prefs(context).getString(POLLINATIONS_KEY, "").orEmpty()
-
-    fun setPollinationsKey(context: Context, value: String?) =
-        prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
+    fun pollinationsKey(context: Context): String = prefs(context).getString(POLLINATIONS_KEY, "").orEmpty()
+    fun setPollinationsKey(context: Context, value: String?) = prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
 
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
-    fun heightScale(context: Context): Float = heightScaleFor(height(context))
+    fun heightScale(context: Context): Float = heightPercent(context) / 100f
     fun heightScaleFor(level: Int): Float = when (level.coerceIn(0, 6)) {
         0 -> 0.85f
         1 -> 0.92f
@@ -42,6 +41,12 @@ object PhormiKeyboardPreferences {
         5 -> 1.17f
         else -> 1.27f
     }
+    fun heightPercent(context: Context): Int = prefs(context).getInt(HEIGHT_PERCENT, 100).coerceIn(70, 140)
+    fun setHeightPercent(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT_PERCENT, value.coerceIn(70, 140)).apply()
+
+    /** 100% means full available keyboard width; smaller values keep the keyboard centered. */
+    fun widthPercent(context: Context): Int = prefs(context).getInt(WIDTH_PERCENT, 100).coerceIn(70, 100)
+    fun setWidthPercent(context: Context, value: Int) = prefs(context).edit().putInt(WIDTH_PERCENT, value.coerceIn(70, 100)).apply()
 
     fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
     fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
@@ -50,7 +55,12 @@ object PhormiKeyboardPreferences {
         if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
     }.apply()
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
-    fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).apply()
+    fun setHeight(context: Context, value: Int) {
+        val level = value.coerceIn(0, 6)
+        prefs(context).edit().putInt(HEIGHT, level).putInt(HEIGHT_PERCENT, (heightScaleFor(level) * 100).roundToInt()).apply()
+    }
+
+    private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
 
     const val KEY_SUGGESTIONS = SUGGESTIONS
     const val KEY_AUTOCORRECT = AUTOCORRECT
