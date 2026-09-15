@@ -8,13 +8,16 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebSettings
 import android.widget.BaseAdapter
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import java.net.URL
 
-/** In-app view of downloads created through Android DownloadManager, with live progress. */
+/** In-app view of browser downloads with live progress and explicit actions. */
 class DownloadsActivity : AppCompatActivity() {
     data class DownloadItem(
         val id: Long,
@@ -27,6 +30,7 @@ class DownloadsActivity : AppCompatActivity() {
         val downloaded: Long,
         val mimeType: String?
     )
+
     private val items = mutableListOf<DownloadItem>()
     private lateinit var adapter: BaseAdapter
     private lateinit var empty: TextView
@@ -54,8 +58,45 @@ class DownloadsActivity : AppCompatActivity() {
                 val item = items[position]
                 view.findViewById<TextView>(R.id.download_title).text = item.title
                 view.findViewById<TextView>(R.id.download_status).text = statusText(item)
-                view.setOnClickListener { openDownload(item) }
-                view.setOnLongClickListener { cancelDownload(item); true }
+                val primary = view.findViewById<TextView>(R.id.download_action_primary)
+                val remove = view.findViewById<TextView>(R.id.download_action_remove)
+
+                when (item.status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        primary.text = "Open"
+                        primary.visibility = View.VISIBLE
+                        primary.setOnClickListener { openDownload(item) }
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        primary.text = "Retry"
+                        primary.visibility = View.VISIBLE
+                        primary.setOnClickListener { retryDownload(item) }
+                    }
+                    DownloadManager.STATUS_RUNNING -> {
+                        primary.text = "Running"
+                        primary.visibility = View.VISIBLE
+                        primary.setOnClickListener {
+                            Toast.makeText(this@DownloadsActivity, "Download is running. Android DownloadManager controls automatic pause/resume when the network changes.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    DownloadManager.STATUS_PAUSED -> {
+                        primary.text = "Resume"
+                        primary.visibility = View.VISIBLE
+                        primary.setOnClickListener { resumeDownload(item) }
+                    }
+                    DownloadManager.STATUS_PENDING -> {
+                        primary.text = "Waiting"
+                        primary.visibility = View.VISIBLE
+                        primary.setOnClickListener {
+                            Toast.makeText(this@DownloadsActivity, "Waiting for DownloadManager", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    else -> primary.visibility = View.GONE
+                }
+                remove.text = if (item.status == DownloadManager.STATUS_SUCCESSFUL || item.status == DownloadManager.STATUS_FAILED) "Delete" else "Cancel"
+                remove.visibility = View.VISIBLE
+                remove.setOnClickListener { removeDownload(item) }
+                view.setOnClickListener { if (item.status == DownloadManager.STATUS_SUCCESSFUL) openDownload(item) }
                 return view
             }
         }
@@ -113,7 +154,7 @@ class DownloadsActivity : AppCompatActivity() {
         return when (item.status) {
             DownloadManager.STATUS_RUNNING -> "Downloading · ${formatProgress(item)} · ${formatBytes(item.downloaded)} of ${if (item.size > 0) formatBytes(item.size) else "unknown size"}$source"
             DownloadManager.STATUS_PAUSED -> "Paused · ${formatProgress(item)} · ${formatBytes(item.downloaded)}$source"
-            DownloadManager.STATUS_PENDING -> "Waiting to download$source"
+            DownloadManager.STATUS_PENDING -> "Waiting to download · ${formatProgress(item)}$source"
             DownloadManager.STATUS_SUCCESSFUL -> "${category(item)} · Completed · ${if (item.size > 0) formatBytes(item.size) else "Completed"}$source"
             DownloadManager.STATUS_FAILED -> "Download failed · ${failureReason(item.reason)}$source"
             else -> "${category(item)} · Status unavailable$source"
@@ -133,22 +174,15 @@ class DownloadsActivity : AppCompatActivity() {
         else -> if (reason in 400..599) "server HTTP $reason" else "error $reason"
     }
 
-    private fun category(item: DownloadItem): String {
-        val mime = item.mimeType.orEmpty().lowercase()
-        val name = item.title.lowercase()
-        return when {
-            mime.startsWith("video/") || listOf(".mp4", ".webm", ".mkv", ".mov").any(name::endsWith) -> "Video"
-            mime.startsWith("image/") -> "Image"
-            mime.startsWith("audio/") -> "Audio"
-            mime == "application/pdf" || name.endsWith(".pdf") -> "PDF"
-            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || mime.contains("zip") -> "Archive"
-            mime.startsWith("text/") || listOf(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx").any(name::endsWith) -> "Document"
-            else -> "Other"
-        }
-    }
+    private fun category(item: DownloadItem): String = PhormiDownloadSupport.category(item.title, item.mimeType.orEmpty())
 
     private fun formatProgress(item: DownloadItem): String = if (item.size <= 0) "Progress unavailable" else "${((item.downloaded * 100L) / item.size).coerceIn(0L, 100L)}%"
-    private fun formatBytes(value: Long): String = when { value < 1024 -> "$value B"; value < 1024 * 1024 -> "${value / 1024} KB"; value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"; else -> "${value / (1024 * 1024 * 1024)} GB" }
+    private fun formatBytes(value: Long): String = when {
+        value < 1024 -> "$value B"
+        value < 1024 * 1024 -> "${value / 1024} KB"
+        value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"
+        else -> "${value / (1024 * 1024 * 1024)} GB"
+    }
 
     private fun openDownload(item: DownloadItem) {
         if (item.status != DownloadManager.STATUS_SUCCESSFUL || item.localUri.isNullOrBlank()) {
@@ -160,11 +194,46 @@ class DownloadsActivity : AppCompatActivity() {
         }
     }
 
-    private fun cancelDownload(item: DownloadItem) {
-        if (item.status == DownloadManager.STATUS_RUNNING || item.status == DownloadManager.STATUS_PENDING || item.status == DownloadManager.STATUS_PAUSED) {
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(item.id)
-            Toast.makeText(this, "Download removed", Toast.LENGTH_SHORT).show()
-            loadDownloads()
+    private fun retryDownload(item: DownloadItem) {
+        val url = item.sourceUrl?.trim().orEmpty()
+        if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
+            Toast.makeText(this, "The original download URL is no longer available.", Toast.LENGTH_SHORT).show()
+            return
         }
+        val mime = item.mimeType.orEmpty().ifBlank { "application/octet-stream" }
+        val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
+        val ua = runCatching { WebSettings.getDefaultUserAgent(this) }.getOrNull()
+        val info = PhormiDownloadSupport.resolve(url, null, mime, ua, url, cookies)
+        val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        runCatching {
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setMimeType(info.mimeType)
+                setTitle(item.title.ifBlank { info.fileName })
+                setDescription("Phormi · manual retry · $url")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, info.fileName)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+                info.headers.forEach { (key, value) -> addRequestHeader(key, value) }
+            }
+            manager.remove(item.id)
+            manager.enqueue(request)
+            Toast.makeText(this, "Retry started", Toast.LENGTH_SHORT).show()
+            loadDownloads()
+        }.onFailure {
+            Toast.makeText(this, "Retry failed: ${it.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun resumeDownload(item: DownloadItem) {
+        // DownloadManager exposes paused state but not a public pause/resume method.
+        // Triggering a new request is safer than pretending a removed download can be resumed.
+        retryDownload(item)
+    }
+
+    private fun removeDownload(item: DownloadItem) {
+        (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(item.id)
+        Toast.makeText(this, if (item.status == DownloadManager.STATUS_SUCCESSFUL || item.status == DownloadManager.STATUS_FAILED) "Download deleted" else "Download cancelled", Toast.LENGTH_SHORT).show()
+        loadDownloads()
     }
 }
