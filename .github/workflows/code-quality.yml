@@ -36,7 +36,7 @@ jobs:
       - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Publish debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: phormi-debug-apk-codeql
           path: app/build/outputs/apk/debug/*.apk
