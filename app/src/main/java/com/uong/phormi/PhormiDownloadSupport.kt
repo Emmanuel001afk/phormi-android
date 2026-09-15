@@ -5,7 +5,7 @@ import android.webkit.URLUtil
 import java.net.URL
 import java.net.URLDecoder
 
-/** Centralizes filename, MIME, source-link, and authenticated download headers. */
+/** Centralizes filename, MIME, source-link, and browser-session download headers. */
 object PhormiDownloadSupport {
     data class RequestInfo(
         val sourceUrl: String,
@@ -32,12 +32,43 @@ object PhormiDownloadSupport {
         val fileName = sanitizeFileName(improveGenericName(suggested, cleanUrl, resolvedMime))
         val headers = linkedMapOf<String, String>()
         if (!userAgent.isNullOrBlank()) headers["User-Agent"] = userAgent
-        if (!referer.isNullOrBlank()) headers["Referer"] = referer
+        if (!referer.isNullOrBlank() && referer != cleanUrl) headers["Referer"] = referer
         if (!cookies.isNullOrBlank()) headers["Cookie"] = cookies
+
+        // These headers make direct downloads look like the resource request made by
+        // the WebView rather than a bare background client. They are especially useful
+        // for CDNs that require a browser-style Accept header or hot-link protection.
+        headers["Accept"] = acceptFor(resolvedMime)
+        headers["Accept-Language"] = "en-US,en;q=0.9"
+        headers["Cache-Control"] = "no-cache"
+        headers["Pragma"] = "no-cache"
+        if (!referer.isNullOrBlank()) {
+            val origin = runCatching {
+                val u = URL(referer)
+                "${u.protocol}://${u.authority}"
+            }.getOrNull()
+            if (!origin.isNullOrBlank() && origin != originOf(cleanUrl)) {
+                headers["Origin"] = origin
+            }
+        }
+
         return RequestInfo(cleanUrl, fileName, resolvedMime, headers, category(fileName, resolvedMime))
     }
 
-    /** Handles both filename="..." and RFC 5987 filename*=UTF-8''... forms. */
+    private fun acceptFor(mime: String): String = when {
+        mime.startsWith("video/") -> "video/*,*/*;q=0.8"
+        mime.startsWith("audio/") -> "audio/*,*/*;q=0.8"
+        mime.startsWith("image/") -> "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        mime == "application/pdf" -> "application/pdf,*/*;q=0.8"
+        else -> "*/*"
+    }
+
+    private fun originOf(value: String): String? = runCatching {
+        val u = URL(value)
+        "${u.protocol}://${u.authority}"
+    }.getOrNull()
+
+    /** Handles filename="..." and RFC 5987 filename*=UTF-8''... forms. */
     private fun contentDispositionFileName(value: String?): String? {
         if (value.isNullOrBlank()) return null
         val encoded = Regex("(?i)filename\\s*\\*\\s*=\\s*(?:UTF-8''|[^']*'[^']*')?([^;]+)").find(value)?.groupValues?.getOrNull(1)
@@ -82,12 +113,13 @@ object PhormiDownloadSupport {
         val n = fileName.lowercase()
         val m = mime.lowercase()
         return when {
-            m.startsWith("video/") || n.endsWith(".mp4") || n.endsWith(".webm") || n.endsWith(".mkv") || n.endsWith(".mov") -> "Video"
+            m.startsWith("video/") || listOf(".mp4", ".webm", ".mkv", ".mov", ".m4v", ".ts").any(n::endsWith) -> "Video"
             m.startsWith("image/") -> "Image"
             m.startsWith("audio/") -> "Audio"
             m == "application/pdf" || n.endsWith(".pdf") -> "PDF"
-            n.endsWith(".zip") || n.endsWith(".rar") || n.endsWith(".7z") || n.endsWith(".tar") || m.contains("zip") -> "Archive"
-            m.startsWith("text/") || listOf(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx").any(n::endsWith) -> "Document"
+            n.endsWith(".apk") || m == "application/vnd.android.package-archive" -> "APK"
+            n.endsWith(".zip") || n.endsWith(".rar") || n.endsWith(".7z") || n.endsWith(".tar") || n.endsWith(".gz") || m.contains("zip") -> "Archive"
+            m.startsWith("text/") || listOf(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".epub").any(n::endsWith) -> "Document"
             else -> "Other"
         }
     }
