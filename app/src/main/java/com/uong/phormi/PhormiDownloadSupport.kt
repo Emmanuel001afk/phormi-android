@@ -27,9 +27,9 @@ object PhormiDownloadSupport {
         val resolvedMime = (mimeType?.substringBefore(';')?.trim().takeIf { !it.isNullOrBlank() }
             ?: guessMime(cleanUrl)
             ?: "application/octet-stream")
-        val suggested = contentDispositionFileName(contentDisposition)
-            ?: URLUtil.guessFileName(cleanUrl, contentDisposition, resolvedMime)
-        val fileName = sanitizeFileName(improveGenericName(suggested, cleanUrl, resolvedMime))
+        val explicitName = contentDispositionFileName(contentDisposition)
+        val suggested = explicitName ?: URLUtil.guessFileName(cleanUrl, contentDisposition, resolvedMime)
+        val fileName = sanitizeFileName(improveGenericName(suggested, cleanUrl, resolvedMime, explicitName != null))
         val headers = linkedMapOf<String, String>()
         if (!userAgent.isNullOrBlank()) headers["User-Agent"] = userAgent
         if (!referer.isNullOrBlank()) headers["Referer"] = referer
@@ -57,17 +57,24 @@ object PhormiDownloadSupport {
         return ext?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
     }
 
-    private fun improveGenericName(name: String, url: String, mime: String): String {
+    private fun improveGenericName(name: String, url: String, mime: String, explicitName: Boolean): String {
         var result = name.trim()
         val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
-        if (result.isBlank() || result.equals("downloadfile", true) || result.equals("download", true) || result.endsWith(".bin", true)) {
-            val pathName = runCatching {
-                URLDecoder.decode(URL(url).path.substringAfterLast('/'), "UTF-8")
-            }.getOrNull().orEmpty()
+        val pathName = runCatching {
+            URLDecoder.decode(URL(url).path.substringAfterLast('/'), "UTF-8")
+        }.getOrNull().orEmpty()
+        val urlReallyEndsInBin = pathName.endsWith(".bin", true)
+
+        // Do not invent a .bin filename just because the server supplied a generic
+        // application/octet-stream response. Preserve a real .bin URL or an explicit
+        // Content-Disposition filename because those can be intentional binary files.
+        val syntheticBin = result.endsWith(".bin", true) && !explicitName && !urlReallyEndsInBin
+        if (result.isBlank() || result.equals("downloadfile", true) || result.equals("download", true) || syntheticBin) {
             if (pathName.isNotBlank() && pathName != "/") result = pathName.substringAfterLast('/')
-            if ((result.isBlank() || result.endsWith(".bin", true)) && !ext.isNullOrBlank()) {
+            if ((result.isBlank() || (result.endsWith(".bin", true) && !urlReallyEndsInBin)) && !ext.isNullOrBlank()) {
                 result = result.removeSuffix(".bin").removeSuffix(".BIN").ifBlank { "phormi_download" } + "." + ext
             }
+            if (result.isBlank() || result.equals("downloadfile", true)) result = "phormi_download"
         }
         if (!result.contains('.') && !ext.isNullOrBlank()) result += ".${ext}"
         return result
