@@ -9,17 +9,19 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.lang.reflect.Method
+import java.util.WeakHashMap
 
-/** Runtime bridge for nested browser surfaces, safe environment lifecycle work, and browser AI handoff. */
+/** Runtime bridge for browser surfaces, environment lifecycle work, AI handoff, and downloads. */
 class PhormiRepairApplication : Application() {
     private val handler = Handler(Looper.getMainLooper())
     private var resumedMain: MainActivity? = null
     private var lastEnvironmentCleanup = 0L
     private var aiTaskRunning = false
+    private val downloadListeners = WeakHashMap<WebView, Boolean>()
+
     private val poll = object : Runnable {
         override fun run() {
             resumedMain?.let { process(it) }
@@ -49,10 +51,13 @@ class PhormiRepairApplication : Application() {
     }
 
     private fun process(activity: MainActivity) {
+        val tabs = getField(activity, "tabs") as? Iterable<*> ?: emptyList<Any>()
         val activeProfiles = mutableSetOf<String>()
-        (getField(activity, "tabs") as? MutableList<*>)?.forEach { tab ->
+        tabs.forEach { tab ->
             (getField(tab, "profileName") as? String)?.let { activeProfiles += it }
+            installDownloadListener(activity, getField(tab, "webView") as? WebView)
         }
+
         val now = System.currentTimeMillis()
         if (now - lastEnvironmentCleanup >= 60_000L) {
             lastEnvironmentCleanup = now
@@ -60,6 +65,14 @@ class PhormiRepairApplication : Application() {
         }
         PhormiCommandBus.drain(activity).forEach { command -> runCatching { dispatch(activity, command.action, command.extras) } }
         startPendingAiTask(activity)
+    }
+
+    private fun installDownloadListener(activity: MainActivity, webView: WebView?) {
+        if (webView == null || downloadListeners.containsKey(webView)) return
+        downloadListeners[webView] = true
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            PhormiDownloadEngine.enqueue(activity, webView, url, contentDisposition, mimeType)
+        }
     }
 
     private fun startPendingAiTask(activity: MainActivity) {
