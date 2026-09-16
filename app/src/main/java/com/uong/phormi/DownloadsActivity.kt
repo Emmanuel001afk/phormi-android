@@ -9,7 +9,6 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.Button
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -35,6 +34,7 @@ class DownloadsActivity : AppCompatActivity() {
     private val rows = mutableListOf<Row>()
     private lateinit var adapter: BaseAdapter
     private lateinit var empty: TextView
+    private lateinit var list: ListView
     private val handler = Handler(Looper.getMainLooper())
     private val poll = object : Runnable {
         override fun run() {
@@ -50,6 +50,7 @@ class DownloadsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_downloads)
         findViewById<TextView>(R.id.btn_downloads_back).setOnClickListener { finish() }
         empty = findViewById(R.id.downloads_empty)
+        list = findViewById(R.id.downloads_list)
         adapter = object : BaseAdapter() {
             override fun getCount() = rows.size
             override fun getItem(position: Int) = rows[position]
@@ -84,7 +85,7 @@ class DownloadsActivity : AppCompatActivity() {
                 return view
             }
         }
-        findViewById<ListView>(R.id.downloads_list).adapter = adapter
+        list.adapter = adapter
         loadDownloads()
     }
 
@@ -102,7 +103,7 @@ class DownloadsActivity : AppCompatActivity() {
                 PhormiDownloadEngine.State.COMPLETED -> "${item.category} · Completed · ${formatBytes(item.total.coerceAtLeast(item.downloaded))}"
                 PhormiDownloadEngine.State.FAILED -> item.error ?: "Download failed"
             }
-            rows += Row("p:${item.id}", item.title, status, progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false)
+            rows += Row("p:${item.id}", item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false)
         }
 
         // Preserve already-completed downloads created by the older DownloadManager path.
@@ -141,6 +142,7 @@ class DownloadsActivity : AppCompatActivity() {
         }
         rows.sortByDescending { it.id }
         empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
         adapter.notifyDataSetChanged()
     }
 
