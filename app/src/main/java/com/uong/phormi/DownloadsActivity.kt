@@ -107,8 +107,8 @@ class DownloadsActivity : AppCompatActivity() {
             val progress = if (item.total > 0L) ((item.downloaded * 100L) / item.total).toInt().coerceIn(0, 100) else 0
             val status = when (item.state) {
                 PhormiDownloadEngine.State.RUNNING -> "Downloading · $progress% · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}"
-                PhormiDownloadEngine.State.QUEUED -> if (item.error.isNullOrBlank()) "Waiting to download · ${formatBytes(item.downloaded)}" else item.error
-                PhormiDownloadEngine.State.PAUSED -> "Paused · $progress% · ${formatBytes(item.downloaded)}"
+                PhormiDownloadEngine.State.QUEUED -> if (item.error.isNullOrBlank()) "Waiting to download · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}" else item.error
+                PhormiDownloadEngine.State.PAUSED -> "Paused · $progress% · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}"
                 PhormiDownloadEngine.State.COMPLETED -> "${item.category} · Completed · ${formatBytes(item.total.coerceAtLeast(item.downloaded))}"
                 PhormiDownloadEngine.State.FAILED -> "Failed · ${item.error ?: "Download failed"}"
             }
