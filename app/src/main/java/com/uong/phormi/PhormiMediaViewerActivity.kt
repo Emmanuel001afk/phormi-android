@@ -146,7 +146,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 return true
             }
         })
-        playerView.setOnTouchListener { _, event -> detector.onTouchEvent(event); true }
+        playerView.setOnTouchListener { _, event -> detector.onTouchEvent(event); false }
     }
 
     private fun setLocked(value: Boolean) {
