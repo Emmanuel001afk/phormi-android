@@ -66,13 +66,22 @@ class DownloadsActivity : AppCompatActivity() {
 
                 val action = view.findViewById<TextView>(R.id.download_action)
                 val delete = view.findViewById<TextView>(R.id.download_delete)
-                action.visibility = if (!row.legacy && row.state in setOf("RUNNING", "PAUSED", "QUEUED")) View.VISIBLE else View.GONE
-                action.text = if (row.state == "PAUSED" || row.state == "QUEUED") "▶" else "Ⅱ"
-                action.contentDescription = if (row.state == "PAUSED" || row.state == "QUEUED") "Resume download" else "Pause download"
+                action.visibility = if (!row.legacy && row.state != "COMPLETED") View.VISIBLE else View.GONE
+                action.text = when (row.state) {
+                    "RUNNING" -> "Ⅱ"
+                    "PAUSED", "QUEUED" -> "▶"
+                    "FAILED" -> "↻"
+                    else -> "▶"
+                }
+                action.contentDescription = when (row.state) {
+                    "RUNNING" -> "Pause download"
+                    "FAILED" -> "Retry download"
+                    else -> "Resume download"
+                }
                 action.setOnClickListener {
                     when (row.state) {
                         "RUNNING" -> PhormiDownloadEngine.pause(this@DownloadsActivity, row.id)
-                        "PAUSED", "QUEUED" -> PhormiDownloadEngine.resume(this@DownloadsActivity, row.id)
+                        "PAUSED", "QUEUED", "FAILED" -> PhormiDownloadEngine.resume(this@DownloadsActivity, row.id)
                     }
                 }
                 delete.visibility = if (!row.legacy) View.VISIBLE else View.GONE
@@ -101,7 +110,7 @@ class DownloadsActivity : AppCompatActivity() {
                 PhormiDownloadEngine.State.QUEUED -> if (item.error.isNullOrBlank()) "Waiting to download · ${formatBytes(item.downloaded)}" else item.error
                 PhormiDownloadEngine.State.PAUSED -> "Paused · $progress% · ${formatBytes(item.downloaded)}"
                 PhormiDownloadEngine.State.COMPLETED -> "${item.category} · Completed · ${formatBytes(item.total.coerceAtLeast(item.downloaded))}"
-                PhormiDownloadEngine.State.FAILED -> item.error ?: "Download failed"
+                PhormiDownloadEngine.State.FAILED -> "Failed · ${item.error ?: "Download failed"}"
             }
             rows += Row("p:${item.id}", item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false)
         }
