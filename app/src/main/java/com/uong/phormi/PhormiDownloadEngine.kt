@@ -26,6 +26,9 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Call
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -233,6 +236,14 @@ object PhormiDownloadEngine {
 class PhormiDownloadService : Service() {
     private val executor = Executors.newCachedThreadPool()
     private val running = ConcurrentHashMap<String, Boolean>()
+    private val activeCalls = ConcurrentHashMap<String, Call>()
+    private val httpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
     private enum class Control { NONE, PAUSE, CANCEL }
     private val cancelSignals = ConcurrentHashMap<String, Control>()
 
@@ -282,6 +293,7 @@ class PhormiDownloadService : Service() {
 
     private fun pause(id: String) {
         cancelSignals[id] = Control.PAUSE
+        activeCalls[id]?.cancel()
         if (!running.containsKey(id)) PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
     }
 
@@ -306,6 +318,7 @@ class PhormiDownloadService : Service() {
 
     private fun cancel(id: String) {
         cancelSignals[id] = Control.CANCEL
+        activeCalls[id]?.cancel()
         val record = PhormiDownloadEngine.record(this, id)
         record?.localUri?.let { deleteUri(it) }
         PhormiDownloadEngine.remove(this, id)
@@ -365,74 +378,81 @@ class PhormiDownloadService : Service() {
 
     private fun performRequest(record: PhormiDownloadEngine.Record): Boolean {
         val existing = record.downloaded.coerceAtLeast(0L)
-        val connection = (URL(record.sourceUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15000
-            readTimeout = 30000
-            instanceFollowRedirects = true
-            useCaches = false
-            setRequestProperty("Accept-Encoding", "identity")
-            record.headers.forEach { (key, value) -> if (key.isNotBlank() && value.isNotBlank()) setRequestProperty(key, value) }
-            setRequestProperty("Accept", acceptFor(record.mimeType))
-            setRequestProperty("Accept-Language", java.util.Locale.getDefault().toLanguageTag() + ",en;q=0.8")
-            if (existing > 0L) setRequestProperty("Range", "bytes=$existing-")
+        val requestBuilder = Request.Builder().url(record.sourceUrl).get()
+        record.headers.forEach { (key, value) ->
+            if (key.isNotBlank() && value.isNotBlank()) requestBuilder.header(key, value)
         }
+        requestBuilder.header("Accept", acceptFor(record.mimeType))
+        requestBuilder.header("Accept-Language", java.util.Locale.getDefault().toLanguageTag() + ",en;q=0.8")
+        requestBuilder.header("Accept-Encoding", "identity")
+        if (existing > 0L) requestBuilder.header("Range", "bytes=$existing-")
+
+        val call = httpClient.newCall(requestBuilder.build())
+        activeCalls[record.id] = call
         try {
-            connection.connect()
-            val code = connection.responseCode
-            if (code !in 200..299 && code != 206) throw HttpFailure(code)
-
-            val append = existing > 0L && code == HttpURLConnection.HTTP_PARTIAL
-            val total = when {
-                code == HttpURLConnection.HTTP_PARTIAL -> {
-                    val remaining = connection.getHeaderFieldLong("Content-Length", -1L)
-                    if (remaining >= 0L) existing + remaining else connection.getHeaderFieldLong("Content-Range", -1L)
+            call.execute().use { response ->
+                val code = response.code
+                if (code == 416 && existing > 0L) {
+                    // The saved partial byte range is no longer valid. Restart the same download
+                    // cleanly instead of leaving a permanently broken resume state.
+                    PhormiDownloadEngine.updateProgress(this, record.id, 0L, -1L)
+                    return performRequest(record.copy(downloaded = 0L, localUri = record.localUri))
                 }
-                else -> connection.getHeaderFieldLong("Content-Length", -1L)
-            }
-            val actualStart = if (append) existing else 0L
-            if (!append && existing > 0L) {
-                PhormiDownloadEngine.updateProgress(this, record.id, 0L, total)
-            }
+                if (!response.isSuccessful) throw HttpFailure(code)
+                val body = response.body ?: throw IOException("Server returned an empty download")
+                val append = existing > 0L && code == 206
+                val bodyLength = body.contentLength()
+                val total = when {
+                    code == 206 && bodyLength >= 0L -> existing + bodyLength
+                    bodyLength >= 0L -> bodyLength
+                    else -> record.total
+                }
+                val actualStart = if (append) existing else 0L
+                if (!append && existing > 0L) {
+                    PhormiDownloadEngine.updateProgress(this, record.id, 0L, total)
+                }
 
-            val uri = ensureDestination(record, actualStart == 0L)
-            if (uri == null) throw IOException("Could not create the Downloads file")
-            PhormiDownloadEngine.updateUri(this, record.id, uri, total)
+                val uri = ensureDestination(record, actualStart == 0L)
+                    ?: throw IOException("Could not create the Downloads file")
+                PhormiDownloadEngine.updateUri(this, record.id, uri, total)
 
-            val output = openOutput(uri, append)
-            connection.inputStream.buffered().use { input ->
-                output.use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    var downloaded = actualStart
-                    var lastPersist = System.currentTimeMillis()
-                    while (true) {
-                        when (cancelSignals[record.id]) {
-                            Control.CANCEL -> throw CancelException()
-                            Control.PAUSE -> throw PauseException()
-                            else -> Unit
+                body.byteStream().buffered().use { input ->
+                    val output = openOutput(uri, append)
+                    output.use { out ->
+                        val buffer = ByteArray(64 * 1024)
+                        var downloaded = actualStart
+                        var lastPersist = System.currentTimeMillis()
+                        while (true) {
+                            when (cancelSignals[record.id]) {
+                                Control.CANCEL -> throw CancelException()
+                                Control.PAUSE -> throw PauseException()
+                                else -> Unit
+                            }
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            if (read == 0) continue
+                            out.write(buffer, 0, read)
+                            downloaded += read
+                            val now = System.currentTimeMillis()
+                            if (now - lastPersist >= 350L) {
+                                lastPersist = now
+                                PhormiDownloadEngine.updateProgress(this, record.id, downloaded, total)
+                                refreshNotification()
+                            }
                         }
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        if (read == 0) continue
-                        out.write(buffer, 0, read)
-                        downloaded += read
-                        val now = System.currentTimeMillis()
-                        if (now - lastPersist >= 350L) {
-                            lastPersist = now
-                            PhormiDownloadEngine.updateProgress(this, record.id, downloaded, total)
-                            refreshNotification()
+                        out.flush()
+                        PhormiDownloadEngine.updateProgress(this, record.id, downloaded, total)
+                        if (total > 0L && downloaded < total) {
+                            throw IOException("Connection ended before the file was complete")
                         }
+                        publish(uri)
+                        PhormiDownloadEngine.updateState(this, record.id, PhormiDownloadEngine.State.COMPLETED, null)
+                        return true
                     }
-                    out.flush()
-                    PhormiDownloadEngine.updateProgress(this, record.id, downloaded, total)
-                    if (total > 0L && downloaded < total) throw IOException("Connection ended before the file was complete")
-                    publish(uri)
-                    PhormiDownloadEngine.updateState(this, record.id, PhormiDownloadEngine.State.COMPLETED, null)
-                    return true
                 }
             }
         } finally {
-            connection.disconnect()
+            activeCalls.remove(record.id, call)
         }
     }
 
