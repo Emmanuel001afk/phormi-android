@@ -245,6 +245,11 @@ class PhormiDownloadService : Service() {
         super.onCreate()
         createChannel()
         startForeground(NOTIFICATION_ID, notification("Phormi downloads", "Preparing download…", 0, false))
+        // Reconnect persisted queued/running records if Android recreates the service. This is
+        // the missing bridge that keeps the Downloads screen and the real transfer lifecycle in sync.
+        PhormiDownloadEngine.items(this)
+            .filter { it.state == PhormiDownloadEngine.State.QUEUED || it.state == PhormiDownloadEngine.State.RUNNING }
+            .forEach { launch(it.id) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
