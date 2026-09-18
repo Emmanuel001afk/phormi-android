@@ -28,6 +28,25 @@ object PhormiFileOpener {
         if (uri.scheme == "content") context.contentResolver.getType(uri)?.takeIf { it.isNotBlank() }?.let { return it }
         val name = displayName(context, uri, "")
         val ext = name.substringAfterLast('.', "").lowercase()
+        val explicit = when (ext) {
+            "mkv" -> "video/x-matroska"
+            "webm" -> "video/webm"
+            "mp4", "m4v" -> "video/mp4"
+            "mov" -> "video/quicktime"
+            "avi" -> "video/x-msvideo"
+            "mp3" -> "audio/mpeg"
+            "m4a" -> "audio/mp4"
+            "flac" -> "audio/flac"
+            "wav" -> "audio/wav"
+            "ogg", "oga" -> "audio/ogg"
+            "m3u8" -> "application/x-mpegURL"
+            "apk" -> "application/vnd.android.package-archive"
+            "zip" -> "application/zip"
+            "rar" -> "application/vnd.rar"
+            "7z" -> "application/x-7z-compressed"
+            else -> null
+        }
+        explicit?.let { return it }
         if (ext.isNotBlank()) MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)?.let { return it }
         return "application/octet-stream"
     }
