@@ -1196,7 +1196,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openShortcut(url: String) {
         localSearchPageActive = false
-        val webView = sourceWebView ?: activeWebView()
+        val webView = activeWebView()
         if (webView == null) {
             createNewTab(url)
             return
