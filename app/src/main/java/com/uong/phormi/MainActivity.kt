@@ -1196,7 +1196,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openShortcut(url: String) {
         localSearchPageActive = false
-        val webView = activeWebView()
+        val webView = sourceWebView ?: activeWebView()
         if (webView == null) {
             createNewTab(url)
             return
@@ -1964,7 +1964,9 @@ class MainActivity : AppCompatActivity() {
         url: String,
         contentDisposition: String?,
         mimeType: String?,
-        userAgentOverride: String? = null
+        userAgentOverride: String? = null,
+        sourceWebView: WebView? = null,
+        contentLength: Long = -1L
     ) {
         if (url.isBlank()) {
             Toast.makeText(this, "Cannot download this link", Toast.LENGTH_SHORT).show()
@@ -1993,7 +1995,8 @@ class MainActivity : AppCompatActivity() {
             url = url,
             contentDisposition = contentDisposition,
             mimeType = mimeType,
-            userAgentOverride = userAgentOverride
+            userAgentOverride = userAgentOverride,
+            contentLength = contentLength
         )
         Toast.makeText(this, "Download added", Toast.LENGTH_SHORT).show()
     }
@@ -2611,8 +2614,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-            startDownload(url, contentDisposition, mimeType, userAgent)
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+            startDownload(url, contentDisposition, mimeType, userAgent, webView, contentLength)
         }
     }
 
