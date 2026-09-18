@@ -65,10 +65,8 @@ object PhormiFileOpener {
             setDataAndType(uri, type)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val pm = context.packageManager
         return try {
             try {
-                pm.getPackageInfo("android", 0)
                 context.startActivity(intent(mime))
                 true
             } catch (_: ActivityNotFoundException) {
