@@ -47,7 +47,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         playerView = PlayerView(this).apply {
             useController = true
             controllerShowTimeoutMs = 4500
-            showBuffering = PlayerView.SHOW_BUFFERING_WHEN_PLAYING
+            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             keepScreenOn = true
         }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
@@ -100,8 +100,8 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private fun configurePlayer(uri: Uri, mime: String) {
         player = ExoPlayer.Builder(this).build().also { exo ->
             playerView.player = exo
-            exo.setSeekBackIncrement(10_000)
-            exo.setSeekForwardIncrement(10_000)
+            exo.setSeekBackIncrementMs(10_000)
+            exo.setSeekForwardIncrementMs(10_000)
             val builder = MediaItem.Builder().setUri(uri)
             if (mime.isNotBlank()) builder.setMimeType(mime)
             exo.setMediaItem(builder.build())
