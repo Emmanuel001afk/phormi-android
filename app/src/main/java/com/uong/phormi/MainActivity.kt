@@ -1958,7 +1958,12 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun startDownload(url: String, contentDisposition: String?, mimeType: String?) {
+    private fun startDownload(
+        url: String,
+        contentDisposition: String?,
+        mimeType: String?,
+        userAgentOverride: String? = null
+    ) {
         if (url.isBlank()) {
             Toast.makeText(this, "Cannot download this link", Toast.LENGTH_SHORT).show()
             return
@@ -1973,30 +1978,22 @@ class MainActivity : AppCompatActivity() {
             downloadDataUrl(url, contentDisposition, mimeType)
             return
         }
-        try {
-            val webView = activeWebView()
-            val userAgent = webView?.settings?.userAgentString
-                ?: WebSettings.getDefaultUserAgent(this)
-            val referer = webView?.url ?: url
-            val cookies = CookieManager.getInstance().getCookie(url)
-                ?: CookieManager.getInstance().getCookie(referer)
-            val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
-            val request = DownloadManager.Request(Uri.parse(info.sourceUrl)).apply {
-                setMimeType(info.mimeType)
-                setTitle(info.fileName)
-                setDescription("Phormi · ${info.category} · ${info.sourceUrl}")
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, info.fileName)
-                allowScanningByMediaScanner()
-                setAllowedOverMetered(true)
-                setAllowedOverRoaming(true)
-                info.headers.forEach { (key, value) -> addRequestHeader(key, value) }
-            }
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            Toast.makeText(this, "Downloading ${info.fileName}\n${info.sourceUrl}", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
+
+        val webView = activeWebView()
+        if (webView == null) {
+            Toast.makeText(this, "No active browser tab", Toast.LENGTH_SHORT).show()
+            return
         }
+
+        PhormiDownloadEngine.enqueue(
+            context = this,
+            webView = webView,
+            url = url,
+            contentDisposition = contentDisposition,
+            mimeType = mimeType,
+            userAgentOverride = userAgentOverride
+        )
+        Toast.makeText(this, "Download added", Toast.LENGTH_SHORT).show()
     }
 
     private fun downloadBlobUrl(url: String, contentDisposition: String?, mimeType: String?) {
@@ -2590,8 +2587,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-            startDownload(url, contentDisposition, mimeType)
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            startDownload(url, contentDisposition, mimeType, userAgent)
         }
     }
 
