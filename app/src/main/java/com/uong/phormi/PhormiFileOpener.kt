@@ -25,7 +25,7 @@ object PhormiFileOpener {
     }
 
     fun resolveMimeType(context: Context, uri: Uri, knownMime: String? = null): String {
-        knownMime?.takeIf { it.isNotBlank() }?.let { return it }
+        knownMime?.takeIf { it.isNotBlank() && !it.equals("application/octet-stream", true) }?.let { return it }
         if (uri.scheme == "content") context.contentResolver.getType(uri)?.takeIf { it.isNotBlank() }?.let { return it }
         val name = displayName(context, uri, "")
         val ext = name.substringAfterLast('.', "").lowercase()
