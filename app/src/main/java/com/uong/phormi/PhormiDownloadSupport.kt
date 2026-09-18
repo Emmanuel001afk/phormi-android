@@ -24,12 +24,15 @@ object PhormiDownloadSupport {
         cookies: String?
     ): RequestInfo {
         val cleanUrl = url.trim()
-        val resolvedMime = (mimeType?.substringBefore(';')?.trim().takeIf { !it.isNullOrBlank() }
-            ?: guessMime(cleanUrl)
-            ?: "application/octet-stream")
+        val serverMime = mimeType?.substringBefore(';')?.trim().takeIf { !it.isNullOrBlank() }
+        val urlMime = guessMime(cleanUrl)
+        val initialMime = serverMime ?: urlMime ?: "application/octet-stream"
         val explicitName = contentDispositionFileName(contentDisposition)
-        val suggested = explicitName ?: URLUtil.guessFileName(cleanUrl, contentDisposition, resolvedMime)
-        val fileName = sanitizeFileName(improveGenericName(suggested, cleanUrl, resolvedMime, explicitName != null))
+        val suggested = explicitName ?: URLUtil.guessFileName(cleanUrl, contentDisposition, initialMime)
+        val fileName = sanitizeFileName(improveGenericName(suggested, cleanUrl, initialMime, explicitName != null))
+        val filenameMime = guessMime(fileName)
+        val resolvedMime = if (serverMime.equals("application/octet-stream", true) && filenameMime != null) filenameMime
+            else initialMime
         val headers = linkedMapOf<String, String>()
         if (!userAgent.isNullOrBlank()) headers["User-Agent"] = userAgent
         if (!referer.isNullOrBlank()) headers["Referer"] = referer
