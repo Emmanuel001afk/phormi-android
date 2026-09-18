@@ -70,7 +70,7 @@ object PhormiDownloadEngine {
         val createdAt: Long
     )
 
-    fun enqueue(context: Context, webView: WebView?, url: String, contentDisposition: String?, mimeType: String?, userAgentOverride: String? = null) {
+    fun enqueue(context: Context, webView: WebView?, url: String, contentDisposition: String?, mimeType: String?, userAgentOverride: String? = null, contentLength: Long = -1L) {
         if (url.isBlank()) return
         if (url.startsWith("blob:", true) || url.startsWith("data:", true)) {
             // Keep the existing, working blob/data implementation in MainActivity intact.
@@ -94,7 +94,7 @@ object PhormiDownloadEngine {
             headers = info.headers,
             state = State.QUEUED,
             downloaded = 0L,
-            total = -1L,
+            total = contentLength.takeIf { it > 0L } ?: -1L,
             localUri = null,
             error = null,
             createdAt = System.currentTimeMillis()
@@ -127,9 +127,11 @@ object PhormiDownloadEngine {
         }
         try {
             ContextCompat.startForegroundService(context, intent)
-        } catch (_: Exception) {
-            // The normal download path is initiated from a visible browser activity. If Android
-            // rejects a foreground start, the persisted item remains visible instead of vanishing.
+        } catch (e: Exception) {
+            // Do not silently lose the linkage. The row stays visible with an actionable error.
+            if (action == ACTION_ENQUEUE || action == ACTION_RESUME) {
+                updateState(context, id, State.FAILED, "Download service could not start: ${e.message ?: "Android rejected the transfer"}")
+            }
         }
     }
 
@@ -231,7 +233,8 @@ object PhormiDownloadEngine {
 class PhormiDownloadService : Service() {
     private val executor = Executors.newCachedThreadPool()
     private val running = ConcurrentHashMap<String, Boolean>()
-    private val cancelSignals = ConcurrentHashMap<String, Boolean>()
+    private enum class Control { NONE, PAUSE, CANCEL }
+    private val cancelSignals = ConcurrentHashMap<String, Control>()
 
     companion object {
         private const val CHANNEL_ID = "phormi_downloads"
@@ -258,14 +261,14 @@ class PhormiDownloadService : Service() {
 
     private fun launch(id: String) {
         if (running.putIfAbsent(id, true) != null) return
-        cancelSignals[id] = false
+        cancelSignals[id] = Control.NONE
         PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.QUEUED, null)
         executor.execute {
             try {
                 download(id)
             } finally {
                 running.remove(id)
-                cancelSignals.remove(id)
+                if (cancelSignals[id] != Control.CANCEL) cancelSignals.remove(id)
                 refreshNotification()
                 maybeStop()
             }
@@ -273,12 +276,12 @@ class PhormiDownloadService : Service() {
     }
 
     private fun pause(id: String) {
-        cancelSignals[id] = true
+        cancelSignals[id] = Control.PAUSE
         if (!running.containsKey(id)) PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
     }
 
     private fun cancel(id: String) {
-        cancelSignals[id] = true
+        cancelSignals[id] = Control.CANCEL
         val record = PhormiDownloadEngine.record(this, id)
         record?.localUri?.let { deleteUri(it) }
         PhormiDownloadEngine.remove(this, id)
@@ -288,18 +291,27 @@ class PhormiDownloadService : Service() {
         var attempts = 0
         while (true) {
             val record = PhormiDownloadEngine.record(this, id) ?: return
-            if (cancelSignals[id] == true) {
-                PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
-                return
+            when (cancelSignals[id]) {
+                Control.CANCEL -> return
+                Control.PAUSE -> {
+                    PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
+                    return
+                }
+                else -> Unit
             }
             PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.RUNNING, null)
             try {
                 val result = performRequest(record)
                 if (result) return
             } catch (paused: PauseException) {
+                if (cancelSignals[id] == Control.CANCEL) return
                 PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
                 return
+            } catch (cancelled: CancelException) {
+                PhormiDownloadEngine.remove(this, id)
+                return
             } catch (http: HttpFailure) {
+                if (cancelSignals[id] == Control.CANCEL) return
                 if (http.code == 429 || http.code in 500..599) {
                     attempts++
                     if (attempts <= 3) {
@@ -310,6 +322,11 @@ class PhormiDownloadService : Service() {
                 PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.FAILED, humanHttpError(http.code))
                 return
             } catch (network: IOException) {
+                if (cancelSignals[id] == Control.CANCEL) return
+                if (cancelSignals[id] == Control.PAUSE) {
+                    PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
+                    return
+                }
                 // A broken mobile/Wi-Fi connection is not a permanent failure. Keep the row in
                 // a waiting state and retry quietly until the user pauses or cancels it.
                 attempts = 0
@@ -365,7 +382,11 @@ class PhormiDownloadService : Service() {
                     var downloaded = actualStart
                     var lastPersist = System.currentTimeMillis()
                     while (true) {
-                        if (cancelSignals[record.id] == true) throw PauseException()
+                        when (cancelSignals[record.id]) {
+                            Control.CANCEL -> throw CancelException()
+                            Control.PAUSE -> throw PauseException()
+                            else -> Unit
+                        }
                         val read = input.read(buffer)
                         if (read < 0) break
                         if (read == 0) continue
@@ -527,5 +548,6 @@ class PhormiDownloadService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private class PauseException : Exception()
+    private class CancelException : Exception()
     private class HttpFailure(val code: Int) : Exception()
 }
