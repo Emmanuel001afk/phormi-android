@@ -107,8 +107,15 @@ object PhormiDownloadEngine {
         Item(it.id, it.title, it.sourceUrl, it.mimeType, it.category, it.state, it.downloaded, it.total, it.localUri, it.error, it.createdAt)
     }.sortedByDescending { it.createdAt }
 
-    fun pause(context: Context, id: String) = start(context, ACTION_PAUSE, id)
-    fun resume(context: Context, id: String) = start(context, ACTION_RESUME, id)
+    fun pause(context: Context, id: String) {
+        if (record(context, id) != null) updateState(context, id, State.PAUSED, null)
+        start(context, ACTION_PAUSE, id)
+    }
+
+    fun resume(context: Context, id: String) {
+        if (record(context, id) != null) updateState(context, id, State.QUEUED, null)
+        start(context, ACTION_RESUME, id)
+    }
     fun cancel(context: Context, id: String) = start(context, ACTION_CANCEL, id)
 
     fun record(context: Context, id: String): Record? = records(context).firstOrNull { it.id == id }
