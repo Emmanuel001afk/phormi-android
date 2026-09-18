@@ -1,5 +1,6 @@
 package com.uong.phormi
 
+import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -51,6 +52,7 @@ object PhormiFileOpener {
         return "application/octet-stream"
     }
 
+    @SuppressLint("UnsafeOptInUsageError")
     fun open(context: Context, uri: Uri, knownMime: String? = null): Boolean {
         val mime = resolveMimeType(context, uri, knownMime)
         if (mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/")) {
