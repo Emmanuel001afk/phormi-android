@@ -252,7 +252,7 @@ class PhormiDownloadService : Service() {
         when (intent?.action) {
             PhormiDownloadEngine.ACTION_ENQUEUE -> if (!id.isNullOrBlank()) launch(id)
             PhormiDownloadEngine.ACTION_PAUSE -> if (!id.isNullOrBlank()) pause(id)
-            PhormiDownloadEngine.ACTION_RESUME -> if (!id.isNullOrBlank()) launch(id)
+            PhormiDownloadEngine.ACTION_RESUME -> if (!id.isNullOrBlank()) resume(id)
             PhormiDownloadEngine.ACTION_CANCEL -> if (!id.isNullOrBlank()) cancel(id)
         }
         refreshNotification()
@@ -278,6 +278,25 @@ class PhormiDownloadService : Service() {
     private fun pause(id: String) {
         cancelSignals[id] = Control.PAUSE
         if (!running.containsKey(id)) PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
+    }
+
+    private fun resume(id: String) {
+        cancelSignals[id] = Control.NONE
+        if (!running.containsKey(id)) {
+            launch(id)
+            return
+        }
+        // If the user taps resume while the pause command is still unwinding, wait for the
+        // old request to release the slot, then start the same record again from its byte offset.
+        executor.execute {
+            repeat(25) {
+                if (!running.containsKey(id)) {
+                    if (PhormiDownloadEngine.record(this, id) != null) launch(id)
+                    return@execute
+                }
+                Thread.sleep(100L)
+            }
+        }
     }
 
     private fun cancel(id: String) {
