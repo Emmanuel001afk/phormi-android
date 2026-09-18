@@ -70,16 +70,17 @@ object PhormiDownloadEngine {
         val createdAt: Long
     )
 
-    fun enqueue(context: Context, webView: WebView, url: String, contentDisposition: String?, mimeType: String?) {
+    fun enqueue(context: Context, webView: WebView?, url: String, contentDisposition: String?, mimeType: String?, userAgentOverride: String? = null) {
         if (url.isBlank()) return
         if (url.startsWith("blob:", true) || url.startsWith("data:", true)) {
             // Keep the existing, working blob/data implementation in MainActivity intact.
             invokeExistingStartDownload(context, url, contentDisposition, mimeType)
             return
         }
-        val userAgent = webView.settings?.userAgentString?.takeIf { it.isNotBlank() }
+        val userAgent = userAgentOverride?.takeIf { it.isNotBlank() }
+            ?: webView?.settings?.userAgentString?.takeIf { it.isNotBlank() }
             ?: WebSettings.getDefaultUserAgent(context)
-        val referer = webView.url?.takeIf { it.startsWith("http", true) } ?: url
+        val referer = webView?.url?.takeIf { it.startsWith("http", true) } ?: url
         val cookies = CookieManager.getInstance().getCookie(url)
             ?: CookieManager.getInstance().getCookie(referer)
         val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
@@ -324,6 +325,8 @@ class PhormiDownloadService : Service() {
             useCaches = false
             setRequestProperty("Accept-Encoding", "identity")
             record.headers.forEach { (key, value) -> if (key.isNotBlank() && value.isNotBlank()) setRequestProperty(key, value) }
+            setRequestProperty("Accept", acceptFor(record.mimeType))
+            setRequestProperty("Accept-Language", java.util.Locale.getDefault().toLanguageTag() + ",en;q=0.8")
             if (existing > 0L) setRequestProperty("Range", "bytes=$existing-")
         }
         try {
@@ -428,6 +431,14 @@ class PhormiDownloadService : Service() {
             if (uri.scheme == "content") contentResolver.delete(uri, null, null)
             else uri.path?.let { File(it).delete() }
         }
+    }
+
+    private fun acceptFor(mime: String): String = when {
+        mime.startsWith("video/") -> "video/*,*/*;q=0.8"
+        mime.startsWith("audio/") -> "audio/*,*/*;q=0.8"
+        mime.startsWith("image/") -> "image/*,*/*;q=0.8"
+        mime == "application/pdf" -> "application/pdf,*/*;q=0.8"
+        else -> "*/*"
     }
 
     private fun humanHttpError(code: Int): String = when (code) {
