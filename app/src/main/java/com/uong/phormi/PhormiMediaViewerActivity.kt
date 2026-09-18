@@ -39,6 +39,9 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Let the built-in viewer follow the device orientation automatically, like a normal
+        // browser/media player. The lock button below locks player controls, not orientation.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
         val uri = intent.getParcelableExtra<Uri>("uri") ?: run { finish(); return }
         val mime = intent.getStringExtra("mime").orEmpty()
         val title = intent.getStringExtra("title").orEmpty().ifBlank { PhormiFileOpener.displayName(this, uri) }
