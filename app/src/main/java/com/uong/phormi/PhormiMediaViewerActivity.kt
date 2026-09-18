@@ -22,7 +22,7 @@ import androidx.media3.ui.PlayerView
 import kotlin.math.max
 
 /** Built-in Phormi player for downloaded/local media. */
-@OptIn(UnstableApi::class)
+@UnstableApi
 class PhormiMediaViewerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
