@@ -202,6 +202,8 @@ class MainActivity : AppCompatActivity() {
     private var unifiedSearchFutures = mutableListOf<java.util.concurrent.Future<*>>()
     private var localSearchPageActive = false
     private val rendererCrashCounts = mutableMapOf<Int, Int>()
+    private var lastHttpErrorKey: String = ""
+    private var lastHttpErrorAt: Long = 0L
     private val rendererCrashTimes = mutableMapOf<Int, Long>()
 
     override fun onResume() {
@@ -2482,7 +2484,29 @@ class MainActivity : AppCompatActivity() {
                 if (request?.isForMainFrame == true && view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                     val code = errorResponse?.statusCode ?: 0
-                    if (code >= 400) Toast.makeText(this@MainActivity, "Page returned HTTP $code.", Toast.LENGTH_SHORT).show()
+                    if (code >= 400) {
+                        val pageUrl = request?.url?.toString().orEmpty()
+                        val key = "$pageUrl|$code"
+                        val now = System.currentTimeMillis()
+                        if (key != lastHttpErrorKey || now - lastHttpErrorAt > 30_000L) {
+                            lastHttpErrorKey = key
+                            lastHttpErrorAt = now
+                            val message = when (code) {
+                                400 -> "The server rejected this page request (HTTP 400 Bad Request)."
+                                401 -> "This page requires authentication (HTTP 401 Unauthorized)."
+                                403 -> "The server refused this page request (HTTP 403 Forbidden)."
+                                404 -> "This page was not found (HTTP 404 Not Found)."
+                                408 -> "The server timed out (HTTP 408 Request Timeout)."
+                                429 -> "The server is rate-limiting this page (HTTP 429 Too Many Requests)."
+                                500 -> "The website reported an internal server error (HTTP 500)."
+                                502 -> "The website's gateway reported an error (HTTP 502 Bad Gateway)."
+                                503 -> "The website is temporarily unavailable (HTTP 503 Service Unavailable)."
+                                504 -> "The website's gateway timed out (HTTP 504 Gateway Timeout)."
+                                else -> "The page request failed (HTTP $code)."
+                            }
+                            Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                        }
+                    }
                 }
             }
 
