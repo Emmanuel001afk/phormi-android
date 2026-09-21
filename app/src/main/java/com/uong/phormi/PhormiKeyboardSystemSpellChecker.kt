@@ -47,17 +47,22 @@ object PhormiKeyboardSystemSpellChecker {
                 for (i in 0 until result.suggestionsCount.coerceAtLeast(0)) result.getSuggestionAt(i)?.takeIf { it.isNotBlank() }?.let(::add)
             }.distinct().take(5)
             if (values.isEmpty()) return
-            cache[lastKey] = values
-            main.post { refreshKeyboard(values) }
+            val key = lastKey
+            if (key.isBlank()) return
+            cache[key] = values
+            main.post { refreshKeyboard(key, values) }
         }
         override fun onGetSentenceSuggestions(results: Array<out android.view.textservice.SentenceSuggestionsInfo>?) = Unit
     }
 
-    private fun refreshKeyboard(values: List<String>) {
+    private fun refreshKeyboard(requestedKey: String, values: List<String>) {
         runCatching {
             val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
             val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
             val service = field?.get(companion) as? PhormiKeyboardServiceV2 ?: return
+            val current = PhormiKeyboardTextEngine.currentWord(service.currentInputConnection)
+            val requestedWord = requestedKey.substringAfter('|')
+            if (current.isBlank() || !current.equals(requestedWord, true)) return
             var type: Class<*>? = service.javaClass
             var completionsField: java.lang.reflect.Field? = null
             while (type != null && completionsField == null) { completionsField = type.declaredFields.firstOrNull { it.name == "completions" }; type = type.superclass }
