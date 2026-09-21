@@ -83,7 +83,7 @@ class TabsOverviewActivity : AppCompatActivity() {
                 if (group != lastGroup) {
                     tabsVertical.addView(TextView(this).apply {
                         text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
-                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(dp(8), dp(12), dp(8), dp(4))
+                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp())
                     }, LinearLayout.LayoutParams(-1, -2))
                     lastGroup = group
                 }
@@ -132,8 +132,6 @@ class TabsOverviewActivity : AppCompatActivity() {
         v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("tab_id", item.id)); finish() }
         return v
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
