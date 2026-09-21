@@ -40,7 +40,7 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
         }
         addSwitch(root, "JavaScript", prefs.getBoolean("security_javascript", true)) { checked ->
             prefs.edit().putBoolean("security_javascript", checked).apply()
-            Toast.makeText(this, "Applies to newly configured WebViews and reloads", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "JavaScript setting saved; reload pages to apply.", Toast.LENGTH_SHORT).show()
         }
         // Keep normal browser compatibility by default. Users can explicitly harden this.
         addSwitch(root, "Third-party cookies", prefs.getBoolean("security_third_party_cookies", true)) { checked ->
@@ -61,7 +61,7 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
                 .onFailure { Toast.makeText(this, "WebView settings are not available on this device", Toast.LENGTH_SHORT).show() }
         }
         root.addView(TextView(this).apply {
-            text = "Safe Browsing and TLS certificate verification remain enforced by the WebView. Mixed content is blocked by default. JavaScript and third-party cookies remain compatible with normal websites unless you explicitly harden them."
+            text = "Security controls apply to Phormi’s browser engine. JavaScript and third-party cookies can be disabled for stricter privacy, while mixed HTTP content stays blocked by default. Site locks and Browser Lock are managed separately."
             setTextColor(0xFF94A3B8.toInt())
             textSize = 13f
             setPadding(0, 18, 0, 0)
