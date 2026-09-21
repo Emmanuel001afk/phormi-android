@@ -52,16 +52,33 @@ object PhormiFileOpener {
         return "application/octet-stream"
     }
 
+    fun openExternal(context: Context, uri: Uri, knownMime: String? = null): Boolean {
+        val mime = resolveMimeType(context, uri, knownMime)
+        fun view(type: String) = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, type)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching {
+            try {
+                context.startActivity(Intent.createChooser(view(mime), "Open with"))
+            } catch (_: ActivityNotFoundException) {
+                context.startActivity(Intent.createChooser(view("*/*"), "Open with"))
+            }
+            true
+        }.getOrDefault(false)
+    }
+
     @SuppressLint("UnsafeOptInUsageError")
     fun open(context: Context, uri: Uri, knownMime: String? = null): Boolean {
         val mime = resolveMimeType(context, uri, knownMime)
         if (mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/")) {
-            return runCatching {
+            val internal = runCatching {
                 context.startActivity(Intent(context, PhormiMediaViewerActivity::class.java).apply {
-                    putExtra("uri", uri); putExtra("mime", mime); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("uri", uri); putExtra("mime", mime); putExtra("title", displayName(context, uri)); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 })
                 true
             }.getOrDefault(false)
+            if (internal) internal else openExternal(context, uri, mime)
         }
         fun intent(type: String) = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, type)
