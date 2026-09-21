@@ -2869,16 +2869,14 @@ class MainActivity : AppCompatActivity() {
                 "assign_group" -> {
                     val groupId = data.getStringExtra("group_id").orEmpty()
                     val tabId = data.getIntExtra("tab_id", -1)
-                    val index = data.getIntExtra("index", -1)
-                    val resolvedId = if (tabId > 0) tabId else tabs.getOrNull(index)?.id ?: -1
-                    if (groupId.isNotBlank() && resolvedId > 0) TabGroupManager(this).assignTab(groupId, resolvedId, tabs.find { it.id == resolvedId }?.webView?.url.orEmpty())
+                    if (groupId.isNotBlank() && tabId > 0) {
+                        TabGroupManager(this).assignTab(groupId, tabId, tabs.find { it.id == tabId }?.webView?.url.orEmpty())
+                    }
                 }
                 "reassign_env" -> {
-                    val index = data.getIntExtra("index", -1); val profile = data.getStringExtra("profile").orEmpty()
-                    val old = tabs.getOrNull(index)
-                    if (old != null && profile.isNotBlank()) {
-                        reassignTabEnvironment(old.id, profile)
-                    }
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    val profile = data.getStringExtra("profile").orEmpty()
+                    if (tabId > 0 && profile.isNotBlank()) reassignTabEnvironment(tabId, profile)
                 }
             }
             return
