@@ -1,5 +1,7 @@
 name: Build Phormi APK
 
+# CI build gate: source compile/lint must pass before APK packaging.
+
 on:
   push:
     branches:
