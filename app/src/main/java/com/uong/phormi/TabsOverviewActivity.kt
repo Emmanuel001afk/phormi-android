@@ -134,7 +134,11 @@ class TabsOverviewActivity : AppCompatActivity() {
         val envs = PhormiEnvironmentManager.list().filter { it != "Ghost" }.toTypedArray()
         if (envs.isEmpty()) return
         AlertDialog.Builder(this).setTitle("Environment for ${item.title}").setItems(envs) { _, which ->
-            PhormiCommandBus.enqueue(this, "reassign_env", mapOf("index" to item.index.toString(), "profile" to envs[which]))
+            setResult(RESULT_OK, Intent().apply {
+                putExtra("action", "reassign_env")
+                putExtra("tab_id", item.id)
+                putExtra("profile", envs[which])
+            })
             finish()
         }.show()
     }
@@ -146,7 +150,12 @@ class TabsOverviewActivity : AppCompatActivity() {
                 .setNegativeButton("Cancel", null).setPositiveButton("Create group") { _, _ -> startActivity(Intent(this, TabGroupsActivity::class.java)) }.show(); return
         }
         AlertDialog.Builder(this).setTitle("Add tab to group").setItems(groups.map { it.name }.toTypedArray()) { _, which ->
-            PhormiCommandBus.enqueue(this, "assign_group", mapOf("group_id" to groups[which].id, "url" to item.url, "tab_id" to item.id.toString())); finish()
+            setResult(RESULT_OK, Intent().apply {
+                putExtra("action", "assign_group")
+                putExtra("group_id", groups[which].id)
+                putExtra("tab_id", item.id)
+                putExtra("url", item.url)
+            }); finish()
         }.show()
     }
 }
