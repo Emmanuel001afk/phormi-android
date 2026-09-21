@@ -64,7 +64,7 @@ class HistoryActivity : AppCompatActivity() {
             if (host.isNotBlank()) PhormiQuickAccessState.hideVisited(context, host)
         }
 
-        fun getMostVisited(context: android.content.Context, limit: Int = 8, minVisits: Int = 10): List<Entry> {
+        fun getMostVisited(context: android.content.Context, limit: Int = 8, minVisits: Int = 25): List<Entry> {
             if (limit <= 0) return emptyList()
             val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
             val arr = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrElse { JSONArray() }
