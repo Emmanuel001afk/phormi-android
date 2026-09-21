@@ -198,6 +198,7 @@ class MainActivity : AppCompatActivity() {
     private var threeFingerTracking = false
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
     private val aiController by lazy { AiController(applicationContext) }
+    private var aiTaskRunning = false
     private val mainExecutor = java.util.concurrent.Executor { command -> Handler(Looper.getMainLooper()).post(command) }
     private val unifiedSearchGeneration = AtomicInteger(0)
     private val unifiedSearchLock = Any()
@@ -215,11 +216,34 @@ class MainActivity : AppCompatActivity() {
             applyBrowserChromeAppearance()
             applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
             pruneExpiredTabs()
+            runPendingAiTask()
             updateHomeNewsVisibility()
             refreshHomeNews()
         }
     }
 
+    private fun runPendingAiTask() {
+        if (aiTaskRunning) return
+        val task = PhormiAiPendingTask.take(applicationContext) ?: return
+        aiTaskRunning = true
+        if (task.target.startsWith("http://") || task.target.startsWith("https://")) {
+            createNewTab(task.target)
+        }
+        lifecycleScope.launch {
+            try {
+                aiController.runTask(task.instruction) { status ->
+                    PhormiAiPendingTask.saveStatus(applicationContext, status)
+                    runOnUiThread { Toast.makeText(this@MainActivity, status, Toast.LENGTH_SHORT).show() }
+                }
+            } catch (t: Throwable) {
+                val status = "Phormi AI stopped: \${t.message ?: "unknown error"}"
+                PhormiAiPendingTask.saveStatus(applicationContext, status)
+                Toast.makeText(this@MainActivity, status, Toast.LENGTH_LONG).show()
+            } finally {
+                aiTaskRunning = false
+            }
+        }
+    }
     override fun onStart() {
         super.onStart()
         if (::prefs.isInitialized && browserLockManager.isEnabled(prefs) &&
