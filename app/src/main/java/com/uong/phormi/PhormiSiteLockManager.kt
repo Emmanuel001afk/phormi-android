@@ -8,7 +8,11 @@ import java.util.Locale
 object PhormiSiteLockManager {
     private const val PREFS = "phormi_site_locks"
 
-    data class LockState(val host: String, val expiryAt: Long)
+    data class LockState(val host: String, val expiryAt: Long, val scopeType: String = SCOPE_TAB, val scopeId: String = "")
+
+    const val SCOPE_TAB = "tab"
+    const val SCOPE_GROUP = "group"
+    const val SCOPE_ENVIRONMENT = "environment"
 
     fun normalizeHost(url: String?): String? {
         val raw = url?.trim().orEmpty()
@@ -18,26 +22,26 @@ object PhormiSiteLockManager {
             ?.takeIf { it.isNotBlank() }
     }
 
-    fun lock(context: Context, host: String, expiryAt: Long) {
+    fun lock(context: Context, host: String, expiryAt: Long, scopeType: String = SCOPE_TAB, scopeId: String = "") {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putLong(host.lowercase(Locale.US), expiryAt).apply()
+            .edit().putLong(key(host, scopeType, scopeId), expiryAt).apply()
     }
 
-    fun unlock(context: Context, host: String) {
+    fun unlock(context: Context, host: String, scopeType: String = SCOPE_TAB, scopeId: String = "") {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().remove(host.lowercase(Locale.US)).apply()
+            .edit().remove(key(host, scopeType, scopeId)).apply()
     }
 
-    fun get(context: Context, host: String): LockState? {
-        val key = host.lowercase(Locale.US)
+    fun get(context: Context, host: String, scopeType: String = SCOPE_TAB, scopeId: String = ""): LockState? {
+        val storageKey = key(host, scopeType, scopeId)
         val expiry = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getLong(key, 0L)
+            .getLong(storageKey, 0L)
         if (expiry <= 0L) return null
         if (expiry != Long.MAX_VALUE && expiry <= System.currentTimeMillis()) {
-            unlock(context, host)
+            unlock(context, host, scopeType, scopeId)
             return null
         }
-        return LockState(key, expiry)
+        return LockState(host.lowercase(Locale.US), expiry, scopeType, scopeId)
     }
 
     fun clearAll(context: Context) {
@@ -49,13 +53,19 @@ object PhormiSiteLockManager {
         val out = mutableListOf<LockState>()
         prefs.all.forEach { (host, value) ->
             val expiry = value as? Long ?: return@forEach
-            if (expiry > 0L && (expiry == Long.MAX_VALUE || expiry > System.currentTimeMillis())) out += LockState(host, expiry)
+            if (expiry > 0L && (expiry == Long.MAX_VALUE || expiry > System.currentTimeMillis())) {
+                val parts = host.split("|", limit = 3)
+                if (parts.size == 3) out += LockState(parts[2], expiry, parts[0], parts[1])
+            }
         }
         return out.sortedBy { it.host }
     }
 
-    fun isLocked(context: Context, url: String?): Boolean {
+    fun isLocked(context: Context, url: String?, scopeType: String = SCOPE_TAB, scopeId: String = ""): Boolean {
         val host = normalizeHost(url) ?: return false
-        return get(context, host) != null
+        return get(context, host, scopeType, scopeId) != null
     }
+
+    private fun key(host: String, scopeType: String, scopeId: String): String =
+        scopeType.lowercase(Locale.US) + "|" + scopeId.lowercase(Locale.US) + "|" + host.lowercase(Locale.US)
 }
