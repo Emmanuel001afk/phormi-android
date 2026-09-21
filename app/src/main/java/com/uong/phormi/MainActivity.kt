@@ -1633,7 +1633,7 @@ class MainActivity : AppCompatActivity() {
         val group = TabGroupManager(this).groupForTab(tabId)
         if (group != null) out += PhormiSiteLockManager.SCOPE_GROUP to group.id
         val profile = tabs.firstOrNull { it.id == tabId }?.profileName
-        if (!profile.isNullOrBlank() && !profile.equals(DEFAULT_PROFILE_NAME, ignoreCase = true)) {
+        if (!profile.isNullOrBlank()) {
             out += PhormiSiteLockManager.SCOPE_ENVIRONMENT to profile
         }
         return out
