@@ -68,7 +68,7 @@
         <TextView android:id="@+id/menu_default_browser" style="@style/PhormiMenuItem" android:text="◎  Default browser"/>
         <TextView android:id="@+id/menu_theme" style="@style/PhormiMenuItem" android:text="◐  Theme &amp; wallpaper"/>
         <TextView android:id="@+id/menu_settings" style="@style/PhormiMenuItem" android:text="☻  Accounts &amp; sign-in"/>
-        <TextView android:id="@+id/menu_help" style="@style/PhormiMenuItem" android:text="?  Help"/>
+        <TextView android:id="@+id/menu_help" style="@style/PhormiMenuItem" android:text="ℹ  Help"/>
 
         <TextView android:id="@+id/menu_local_ai" android:layout_width="match_parent" android:layout_height="1dp" android:visibility="gone"/>
         <TextView android:id="@+id/menu_video_analysis" android:layout_width="match_parent" android:layout_height="1dp" android:visibility="gone"/>
