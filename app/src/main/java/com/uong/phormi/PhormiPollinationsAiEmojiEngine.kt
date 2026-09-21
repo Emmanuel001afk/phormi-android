@@ -41,14 +41,15 @@ object PhormiPollinationsAiEmojiEngine {
 
     private fun buildPrompt(context: String): String {
         val sanitized = sanitizeContext(context)
-        return "one original custom emoji-style reaction fused from the whole context: " +
-            "${sanitized.take(360)}; infer the strongest emotion and important situational concepts " +
-            "and combine them into ONE coherent expressive icon; secondary concepts must be visibly " +
-            "integrated into the face or main symbol, never placed as separate emoji; create a distinctive " +
-            "new emoji design, not a copy of any standard Unicode or platform emoji; centered isolated " +
-            "subject, simple bold high-quality emoji aesthetic, clean uncluttered background, square " +
-            "composition, no text, no letters, no words, no UI, no border, no watermark, one unified reaction, " +
-            "high readability at tiny size"
+        return "create ONE custom emoji-style reaction from this context: " +
+            "${sanitized.take(360)}; keep the familiar visual language of a normal expressive emoji " +
+            "(simple face, clear eyes and mouth, bold readable silhouette), infer the strongest emotion, " +
+            "then fuse only the most relevant secondary idea into the SAME emoji itself. For example, " +
+            "happy + fire should become one happy face with a subtle flame-like glow/crown integrated " +
+            "into the head, not a face plus a separate fire emoji. The result should feel immediately " +
+            "recognizable as an emoji but have one new expressive twist; do not make a collage, scene, " +
+            "sticker sheet, or collection of separate icons. Centered single subject, clean square composition, " +
+            "no text, no letters, no words, no UI, no border, no watermark, high readability at tiny size."
     }
 
     private fun sanitizeContext(value: String): String = value
