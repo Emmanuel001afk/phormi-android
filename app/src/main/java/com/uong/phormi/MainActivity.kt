@@ -1196,15 +1196,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openShortcut(url: String) {
         localSearchPageActive = false
-        val webView = activeWebView()
-        if (webView == null) {
-            createNewTab(url)
-            return
-        }
-        startPageContainer.visibility = View.GONE
-        webView.visibility = View.VISIBLE
-        urlBar.setText(url)
-        webView.loadUrl(url)
+        createNewTab(url)
     }
 
     private fun navigateFromStartPage() {
@@ -1356,10 +1348,16 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val url = intent?.dataString?.trim()
-        if (!url.isNullOrBlank() && (url.startsWith("http://") || url.startsWith("https://"))) {
-            createNewTab(url)
+        val action = intent?.getStringExtra("action").orEmpty()
+        val openUrl = intent?.getStringExtra("open_url")?.trim().orEmpty()
+        val profile = intent?.getStringExtra("open_profile")?.trim().takeIf { !it.isNullOrBlank() }
+        when (action) {
+            "new_tab" -> createNewTab(NEW_TAB_URL, requestedProfile = profile)
+            "select" -> intent?.getIntExtra("tab_id", -1)?.let { id -> tabs.firstOrNull { it.id == id }?.let { switchToTab(it.id) } }
+            "close" -> intent?.getIntExtra("tab_id", -1)?.let { id -> if (id > 0) closeTab(id) }
         }
+        if (openUrl.startsWith("http://") || openUrl.startsWith("https://")) createNewTab(openUrl, requestedProfile = profile)
+        else intent?.dataString?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { createNewTab(it, requestedProfile = profile) }
     }
 
     private fun setActiveSplitPane(tabId: Int) {
@@ -2424,7 +2422,7 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = true
             displayZoomControls = false
             val desktop = prefs.getBoolean("desktop_mode", false)
-            userAgentString = if (desktop) "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" else WebSettings.getDefaultUserAgent(this@MainActivity)
+            userAgentString = desktopUserAgent(desktop)
             loadWithOverviewMode = desktop
             useWideViewPort = desktop
         }
@@ -2860,12 +2858,12 @@ class MainActivity : AppCompatActivity() {
                     showKeyboard()
                 }
                 "select" -> {
-                    val index = data.getIntExtra("index", -1)
-                    tabs.getOrNull(index)?.let { switchToTab(it.id) }
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    tabs.firstOrNull { it.id == tabId }?.let { switchToTab(it.id) }
                 }
                 "close" -> {
-                    val index = data.getIntExtra("index", -1)
-                    tabs.getOrNull(index)?.let { closeTab(it.id) }
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    tabs.firstOrNull { it.id == tabId }?.let { closeTab(it.id) }
                 }
                 "toggle_split" -> setSplitMode(!splitMode)
                 "assign_group" -> {
@@ -3226,18 +3224,25 @@ class MainActivity : AppCompatActivity() {
         updateFavoriteButton()
     }
 
+    private fun desktopUserAgent(enabled: Boolean): String {
+        val mobile = WebSettings.getDefaultUserAgent(this)
+        if (!enabled) return mobile
+        return mobile.replace(Regex("\s+Mobile\b"), "")
+            .replace(Regex(";\s*wv\b"), "")
+            .replace(Regex("\s+Version/[0-9.]+"), "")
+            .replace(Regex("Android\s+[0-9.]+;\s*"), "X11; Linux x86_64; ")
+            .replace(Regex("\s+Build/[A-Za-z0-9._-]+;?"), "")
+    }
+    private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
+        webView.settings.userAgentString = desktopUserAgent(enabled)
+        webView.settings.useWideViewPort = enabled
+        webView.settings.loadWithOverviewMode = enabled
+        webView.setInitialScale(0)
+    }
     private fun toggleDesktopMode() {
-        val view = activeWebView() ?: return
         val desktop = !prefs.getBoolean("desktop_mode", false)
         prefs.edit().putBoolean("desktop_mode", desktop).apply()
-        val settings = view.settings
-        settings.userAgentString = if (desktop) {
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-        } else WebSettings.getDefaultUserAgent(this)
-        settings.useWideViewPort = desktop
-        settings.loadWithOverviewMode = desktop
-        if (desktop) view.setInitialScale(100) else view.setInitialScale(0)
-        view.reload()
+        tabs.forEach { applyDesktopMode(it.webView, desktop); it.webView.reload() }
         Toast.makeText(this, if (desktop) "Desktop mode: on" else "Desktop mode: off", Toast.LENGTH_SHORT).show()
     }
 
