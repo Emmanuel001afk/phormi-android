@@ -236,7 +236,7 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread { Toast.makeText(this@MainActivity, status, Toast.LENGTH_SHORT).show() }
                 }
             } catch (t: Throwable) {
-                val status = "Phormi AI stopped: \${t.message ?: "unknown error"}"
+                val status = "Phormi AI stopped: ${t.message ?: "unknown error"}"
                 PhormiAiPendingTask.saveStatus(applicationContext, status)
                 Toast.makeText(this@MainActivity, status, Toast.LENGTH_LONG).show()
             } finally {
