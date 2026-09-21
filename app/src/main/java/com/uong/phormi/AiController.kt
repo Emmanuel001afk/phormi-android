@@ -228,9 +228,13 @@ class AiController(private val context: Context) {
     }
 
     private suspend fun askAiForNextAction(instruction: String, screen: String, onStatus: (String) -> Unit): Pair<JSONObject, String>? {
-        for (provider in listProviders()) {
-            if (provider.apiKey.isBlank() || provider.endpoint.isBlank() || provider.model.isBlank()) continue
+        for (stored in listProviders()) {
+            if (stored.apiKey.isBlank() || stored.endpoint.isBlank()) continue
             try {
+                val provider = if (stored.model.isBlank() || stored.model.equals("auto", true)) {
+                    val cfg = resolveProviderConfig(stored.name, stored.apiKey, stored.endpoint, stored.model)
+                    stored.copy(endpoint = cfg.endpoint, model = cfg.model)
+                } else stored
                 val text = callTextProvider(provider,
                     "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
                     "Goal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
@@ -249,8 +253,15 @@ class AiController(private val context: Context) {
     }
 
     private fun callTextProvider(provider: Provider, system: String, user: String): String? {
-        val endpoint = provider.endpoint.lowercase()
-        val builder = Request.Builder().url(provider.endpoint)
+        val rawEndpoint = provider.endpoint.trim()
+        val endpoint = rawEndpoint.lowercase()
+        val normalizedEndpoint = when {
+            endpoint.contains("/chat/completions") || endpoint.contains("generativelanguage.googleapis.com") -> rawEndpoint
+            endpoint.endsWith("/v1") -> rawEndpoint + "/chat/completions"
+            endpoint.endsWith("/v1/") -> rawEndpoint + "chat/completions"
+            else -> rawEndpoint
+        }
+        val builder = Request.Builder().url(normalizedEndpoint)
             .addHeader("Accept", "application/json")
             .addHeader("Content-Type", "application/json")
 
@@ -262,8 +273,8 @@ class AiController(private val context: Context) {
         } else if (endpoint.contains("generativelanguage.googleapis.com") && !endpoint.contains("/openai/")) {
             body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put(
                 "parts", JSONArray().put(JSONObject().put("text", "$system\n\n$user")))))
-            val separator = if (provider.endpoint.contains("?")) "&" else "?"
-            builder.url(provider.endpoint + separator + "key=" + URLEncoder.encode(provider.apiKey, "UTF-8"))
+            val separator = if (normalizedEndpoint.contains("?")) "&" else "?"
+            builder.url(normalizedEndpoint + separator + "key=" + URLEncoder.encode(provider.apiKey, "UTF-8"))
         } else {
             body = JSONObject().put("model", provider.model).put("messages", JSONArray()
                 .put(JSONObject().put("role", "system").put("content", system))
