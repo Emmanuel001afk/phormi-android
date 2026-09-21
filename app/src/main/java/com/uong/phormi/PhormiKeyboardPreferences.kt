@@ -11,6 +11,8 @@ object PhormiKeyboardPreferences {
     private const val HAPTIC = "haptic"
     private const val SOUND = "sound"
     private const val HEIGHT = "keyboard_height"
+    private const val HEIGHT_SCALE = "keyboard_height_scale"
+    private const val WIDTH_SCALE = "keyboard_width_scale"
     private const val AI_EMOJI = "ai_emoji"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
@@ -32,7 +34,8 @@ object PhormiKeyboardPreferences {
         prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
 
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
-    fun heightScale(context: Context): Float = heightScaleFor(height(context))
+    fun heightScale(context: Context): Float = prefs(context).getFloat(HEIGHT_SCALE, heightScaleFor(height(context))).coerceIn(0.70f, 1.35f)
+    fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.70f, 1.00f)
     fun heightScaleFor(level: Int): Float = when (level.coerceIn(0, 6)) {
         0 -> 0.85f
         1 -> 0.92f
@@ -50,7 +53,10 @@ object PhormiKeyboardPreferences {
         if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
     }.apply()
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
-    fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).apply()
+    fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).putFloat(HEIGHT_SCALE, heightScaleFor(value)).apply()
+    fun setHeightScale(context: Context, value: Float) = prefs(context).edit().putFloat(HEIGHT_SCALE, value.coerceIn(0.70f, 1.35f)).apply()
+    fun setWidthScale(context: Context, value: Float) = prefs(context).edit().putFloat(WIDTH_SCALE, value.coerceIn(0.70f, 1.00f)).apply()
+    fun resetSize(context: Context) = prefs(context).edit().putInt(HEIGHT, 3).putFloat(HEIGHT_SCALE, 1.0f).putFloat(WIDTH_SCALE, 1.0f).apply()
 
     const val KEY_SUGGESTIONS = SUGGESTIONS
     const val KEY_AUTOCORRECT = AUTOCORRECT
