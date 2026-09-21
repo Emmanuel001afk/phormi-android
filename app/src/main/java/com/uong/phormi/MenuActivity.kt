@@ -6,7 +6,7 @@ import android.provider.Settings
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
-/** Browser menu. Every action is also placed on the central command bus for MainActivity. */
+/** Browser menu. Returns one explicit action to MainActivity; no duplicate command-bus dispatch. */
 class MenuActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_ACTION = "menu_action"
@@ -86,7 +86,6 @@ class MenuActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK || data == null) return
         if (requestCode == REQ_TABS) {
-            enqueueIntent(data)
             setResult(RESULT_OK, data)
             finish()
             return
@@ -100,7 +99,6 @@ class MenuActivity : AppCompatActivity() {
     }
 
     private fun finishWith(action: String) {
-        PhormiCommandBus.enqueue(this, action)
         setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, action))
         finish()
     }
