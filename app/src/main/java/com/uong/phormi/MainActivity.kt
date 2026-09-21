@@ -1472,7 +1472,10 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Environment could not be applied", Toast.LENGTH_LONG).show()
             return
         }
-        CookieManager.getInstance().setAcceptThirdPartyCookies(newWebView, true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(
+            newWebView,
+            prefs.getBoolean("security_third_party_cookies", true)
+        )
         configureWebView(newWebView)
         newWebView.isClickable = true
         newWebView.isFocusable = true
