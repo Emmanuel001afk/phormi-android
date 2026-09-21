@@ -56,7 +56,11 @@ class TabEnvironmentActivity : AppCompatActivity() {
                 val selected = selectedEnvironment()
                 if (selected != PhormiEnvironmentManager.DEFAULT_ENVIRONMENT) PhormiEnvironmentManager.ensure(selected)
                 PhormiEnvironmentManager.touch(this@TabEnvironmentActivity, selected)
-                PhormiCommandBus.enqueue(this@TabEnvironmentActivity, "open_url", mapOf("open_url" to normalized))
+                startActivity(android.content.Intent(this@TabEnvironmentActivity, MainActivity::class.java).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("open_url", normalized)
+                    putExtra("open_profile", selected)
+                })
                 Toast.makeText(this@TabEnvironmentActivity, "Opening in $selected", Toast.LENGTH_SHORT).show()
                 finish()
             }
