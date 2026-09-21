@@ -78,7 +78,8 @@ object PhormiFileOpener {
                 })
                 true
             }.getOrDefault(false)
-            if (internal) internal else openExternal(context, uri, mime)
+            if (internal) return true
+            return openExternal(context, uri, mime)
         }
         fun intent(type: String) = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, type)
