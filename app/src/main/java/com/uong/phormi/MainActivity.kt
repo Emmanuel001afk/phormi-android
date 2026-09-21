@@ -1880,7 +1880,7 @@ class MainActivity : AppCompatActivity() {
     private fun pruneExpiredTabs() {
         val age = retentionAgeMillis() ?: return
         val cutoff = System.currentTimeMillis() - age
-        val expired = tabs.filter { !it.isGhost && it.createdAt <= cutoff }.map { it.id }
+        val expired = tabs.filter { !it.isGhost && it.lastUsed <= cutoff }.map { it.id }
         expired.forEach { closeTab(it) }
     }
 
@@ -3292,11 +3292,11 @@ class MainActivity : AppCompatActivity() {
     private fun desktopUserAgent(enabled: Boolean): String {
         val mobile = WebSettings.getDefaultUserAgent(this)
         if (!enabled) return mobile
-        return mobile.replace(Regex("\s+Mobile\b"), "")
-            .replace(Regex(";\s*wv\b"), "")
-            .replace(Regex("\s+Version/[0-9.]+"), "")
-            .replace(Regex("Android\s+[0-9.]+;\s*"), "X11; Linux x86_64; ")
-            .replace(Regex("\s+Build/[A-Za-z0-9._-]+;?"), "")
+        return mobile.replace(Regex("""\s+Mobile\b"""), "")
+            .replace(Regex(""";\s*wv\b"""), "")
+            .replace(Regex("""\s+Version/[0-9.]+"""), "")
+            .replace(Regex("""Android\s+[0-9.]+;\s*"""), "X11; Linux x86_64; ")
+            .replace(Regex("""\s+Build/[A-Za-z0-9._-]+;?"""), "")
     }
     private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
         webView.settings.userAgentString = desktopUserAgent(enabled)
