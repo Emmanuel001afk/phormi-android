@@ -7,7 +7,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.browser.customtabs.CustomTabsIntent
 import java.text.DateFormat
 import java.util.Date
 
@@ -40,7 +39,7 @@ class AccountsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_accounts)
         findViewById<TextView>(R.id.accounts_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.accounts_help).text =
-            "Third-party sign-in opens in a secure Custom Tab and returns here instead of creating a normal Phormi tab. When you return, Phormi asks whether to remember that you trusted the provider on this device. Provider authentication itself is never copied or fabricated by Phormi."
+            "Sign-ins open in a normal Phormi tab so website cookies and sessions stay in Phormi. Previously used providers remain listed so you can switch back without re-entering the provider address."
         render()
     }
 
@@ -101,19 +100,6 @@ class AccountsActivity : AppCompatActivity() {
         }
     }
 
-    private fun confirmReturnedFromAuth(provider: AccountProvider) {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Trust ${provider.label} on this device?")
-            .setMessage("Phormi cannot safely infer whether an arbitrary provider login succeeded. Confirm only if you completed the provider sign-in successfully.")
-            .setNegativeButton("Not yet", null)
-            .setPositiveButton("Trust this device") { _, _ ->
-                AccountSessionStore.touch(this, provider.id, provider.label)
-                Toast.makeText(this, "${provider.label} marked as trusted on this device", Toast.LENGTH_SHORT).show()
-                render()
-            }
-            .show()
-    }
-
     private fun clearProviderSession(provider: AccountProvider) {
         val hosts = when (provider.id) {
             "google" -> listOf("accounts.google.com", "google.com")
@@ -139,21 +125,12 @@ class AccountsActivity : AppCompatActivity() {
     }
 
     private fun openProvider(provider: AccountProvider, switch: Boolean) {
-        pendingProvider = provider
-        authTabWasPaused = false
         val url = if (switch) provider.switchUrl else provider.loginUrl
-        try {
-            CustomTabsIntent.Builder()
-                .setShowTitle(true)
-                .setUrlBarHidingEnabled(false)
-                .build()
-                .launchUrl(this, Uri.parse(url))
-        } catch (_: Exception) {
-            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                .onFailure {
-                    pendingProvider = null
-                    Toast.makeText(this, "No browser can open ${provider.label} sign-in", Toast.LENGTH_LONG).show()
-                }
-        }
+        AccountSessionStore.touch(this, provider.id, provider.label)
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("open_url", url)
+        })
+        finish()
     }
 }
