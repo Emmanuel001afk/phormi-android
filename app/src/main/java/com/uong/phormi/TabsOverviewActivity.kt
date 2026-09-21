@@ -15,7 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 
 /** Tab overview with persistent commands routed back to the live browser. */
 class TabsOverviewActivity : AppCompatActivity() {
-    data class TabInfo(val index: Int, val id: Int, val title: String, val url: String, val profile: String)
+    data class TabInfo(val index: Int, val id: Int, val title: String, val url: String, val profile: String, val groupName: String = "")
     private val allTabs = mutableListOf<TabInfo>()
     private lateinit var tabsVerticalScroll: View
     private lateinit var tabsHorizontalScroll: View
@@ -77,7 +77,18 @@ class TabsOverviewActivity : AppCompatActivity() {
                 tabsGrid.addView(row)
             }
         } else if (mode == "vertical") {
-            items.forEach { item -> tabsVertical.addView(makeTab(item, "vertical"), LinearLayout.LayoutParams(-1, 154).apply { topMargin = 6 }) }
+            var lastGroup = ""
+            items.forEach { item ->
+                val group = item.groupName.ifBlank { "Ungrouped" }
+                if (group != lastGroup) {
+                    tabsVertical.addView(TextView(this).apply {
+                        text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
+                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp)
+                    }, LinearLayout.LayoutParams(-1, -2))
+                    lastGroup = group
+                }
+                tabsVertical.addView(makeTab(item, "vertical"), LinearLayout.LayoutParams(-1, 154).apply { topMargin = 6 })
+            }
         } else {
             tabsHorizontal.orientation = LinearLayout.VERTICAL
             val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -97,7 +108,12 @@ class TabsOverviewActivity : AppCompatActivity() {
         val body = v.findViewById<View>(R.id.tab_circle_body)
         val title = v.findViewById<TextView>(R.id.tab_circle_title)
         val url = v.findViewById<TextView>(R.id.tab_circle_url)
-        title.text = item.title; url.text = if (item.url == "about:blank") "New tab" else item.url
+        title.text = item.title
+        url.text = buildString {
+            append(if (item.url == "about:blank") "New tab" else item.url)
+            if (item.groupName.isNotBlank()) append("\nGroup: ${item.groupName}")
+            if (item.profile.isNotBlank() && !item.profile.equals("Default", true)) append("\nEnvironment: ${item.profile}")
+        }
         if (style != "horizontal") {
             val lp = body.layoutParams as android.widget.FrameLayout.LayoutParams
             lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT; lp.height = if (style == "vertical") 142.dp() else 148.dp(); lp.gravity = Gravity.CENTER; body.layoutParams = lp
@@ -126,7 +142,13 @@ class TabsOverviewActivity : AppCompatActivity() {
             val titles = org.json.JSONArray(prefs.getString("tab_titles", "[]") ?: "[]")
             val profiles = org.json.JSONArray(prefs.getString("tab_profiles", "[]") ?: "[]")
             val ids = org.json.JSONArray(prefs.getString("tab_ids", "[]") ?: "[]")
-            for (i in 0 until urls.length()) allTabs.add(TabInfo(i, ids.optInt(i, i + 1), titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }))
+            val groups = TabGroupManager(this).list()
+        val groupByTab = mutableMapOf<Int, String>()
+        groups.forEach { group -> group.tabIds.forEach { id -> groupByTab[id] = group.name } }
+        for (i in 0 until urls.length()) {
+            val id = ids.optInt(i, i + 1)
+            allTabs.add(TabInfo(i, id, titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }, groupByTab[id].orEmpty()))
+        }
         }
     }
 
