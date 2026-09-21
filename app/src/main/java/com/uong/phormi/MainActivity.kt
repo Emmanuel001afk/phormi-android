@@ -361,10 +361,22 @@ class MainActivity : AppCompatActivity() {
         // behavior the app needs; each website still controls its own authentication.
         CookieManager.getInstance().flush()
 
-        val incomingUrl = intent?.dataString?.trim()
+        val startupAction = intent?.getStringExtra("action").orEmpty()
+        val startupTabId = intent?.getIntExtra("tab_id", -1) ?: -1
+        val incomingUrl = intent?.getStringExtra("open_url")?.trim().takeIf { !it.isNullOrBlank() }
+            ?: intent?.dataString?.trim()
+        val incomingProfile = intent?.getStringExtra("open_profile")?.trim().takeIf { !it.isNullOrBlank() }
         restoreTabs()
-        if (!incomingUrl.isNullOrBlank() && (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
-            createNewTab(incomingUrl)
+
+        // Handle browser-routing intents here as well as in onNewIntent(). This matters
+        // when MainActivity has been recreated rather than receiving an existing-instance intent.
+        when (startupAction) {
+            "new_tab" -> createNewTab(NEW_TAB_URL, requestedProfile = incomingProfile)
+            "select" -> if (startupTabId > 0) tabs.firstOrNull { it.id == startupTabId }?.let { switchToTab(it.id) }
+            "close" -> if (startupTabId > 0) tabs.firstOrNull { it.id == startupTabId }?.let { closeTab(it.id) }
+        }
+        if (incomingUrl != null && (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
+            createNewTab(incomingUrl, requestedProfile = incomingProfile)
         }
     }
 
