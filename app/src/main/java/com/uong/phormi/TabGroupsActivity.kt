@@ -39,7 +39,14 @@ class TabGroupsActivity : AppCompatActivity() {
                 row.addView(TextView(this).apply {
                     text = if (tab != null) "• ${tab.second}\n  ${tab.third}" else "• Tab $tabId (closed)"
                     textSize = 12f; setTextColor(0xFFE2E8F0.toInt()); setPadding(4, 5, 4, 5)
-                    if (tab != null) setOnClickListener { PhormiCommandBus.enqueue(this@TabGroupsActivity, "select", mapOf("tab_id" to tab.first.toString())); finish() }
+                    if (tab != null) setOnClickListener {
+                        startActivity(Intent(this@TabGroupsActivity, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            putExtra("action", "select")
+                            putExtra("tab_id", tab.first)
+                        })
+                        finish()
+                    }
                 })
             }
             if (group.tabIds.isEmpty()) row.addView(TextView(this).apply { text = "No tabs assigned yet."; textSize = 12f; setTextColor(0xFF64748B.toInt()) })
