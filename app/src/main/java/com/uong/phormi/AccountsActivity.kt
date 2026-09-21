@@ -11,9 +11,8 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * General third-party sign-in hub. Provider authentication is opened in a secure
- * Custom Tab rather than an embedded WebView. Provider sessions remain controlled
- * by the provider; Phormi does not copy cookies between browsers or environments.
+ * General sign-in hub. Provider pages open in a normal Phormi tab, so the same
+ * WebView cookie/session store is used by ordinary browsing.
  */
 class AccountsActivity : AppCompatActivity() {
     data class AccountProvider(val id: String, val label: String, val loginUrl: String, val switchUrl: String, val note: String)
@@ -31,9 +30,6 @@ class AccountsActivity : AppCompatActivity() {
         )
     }
 
-    private var pendingProvider: AccountProvider? = null
-    private var authTabWasPaused = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_accounts)
@@ -43,34 +39,19 @@ class AccountsActivity : AppCompatActivity() {
         render()
     }
 
-    override fun onPause() {
-        if (pendingProvider != null) authTabWasPaused = true
-        super.onPause()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (authTabWasPaused && pendingProvider != null) {
-            authTabWasPaused = false
-            val provider = pendingProvider ?: return
-            pendingProvider = null
-            confirmReturnedFromAuth(provider)
-        }
-    }
-
     private fun render() {
         val container = findViewById<LinearLayout>(R.id.accounts_list)
         container.removeAllViews()
         val sessions = AccountSessionStore.list(this)
         if (sessions.isNotEmpty()) {
             container.addView(TextView(this).apply {
-                text = "Previously trusted providers"
+                text = "Previously used providers"
                 setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(12, 16, 12, 8)
             })
             sessions.forEach { session ->
                 val row = layoutInflater.inflate(R.layout.item_account, container, false)
                 row.findViewById<TextView>(R.id.account_label).text = session.label
-                row.findViewById<TextView>(R.id.account_note).text = "Last used ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.lastUsed))} · tap to switch"
+                row.findViewById<TextView>(R.id.account_note).text = "Last used ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.lastUsed))} · tap to reopen / switch"
                 row.setOnClickListener { PROVIDERS.firstOrNull { it.id == session.providerId }?.let { openProvider(it, true) } }
                 row.setOnLongClickListener {
                     androidx.appcompat.app.AlertDialog.Builder(this)
