@@ -187,6 +187,13 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         window.attributes = window.attributes.apply { screenBrightness = value }
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (android.os.Build.VERSION.SDK_INT >= 26 && player != null && player?.isPlaying == true && !isInPictureInPictureMode) {
+            runCatching { enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().build()) }
+        }
+    }
+
     override fun onBackPressed() {
         if (landscape) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
