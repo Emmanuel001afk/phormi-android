@@ -51,13 +51,15 @@ private fun PhormiKeyboardServiceV2.viewportHeightPx(): Int {
 
 private fun PhormiKeyboardServiceV2.normalizeViewport(view: View) {
     val h = viewportHeightPx()
-    val lp = view.layoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h)
-    lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+    val width = (resources.displayMetrics.widthPixels * PhormiKeyboardPreferences.widthScale(this)).toInt().coerceAtLeast((240 * resources.displayMetrics.density).toInt())
+    val lp = view.layoutParams ?: LinearLayout.LayoutParams(width, h)
+    lp.width = width
     lp.height = h
+    if (lp is LinearLayout.LayoutParams) lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
     view.layoutParams = lp
     view.minimumHeight = h
     view.minimumWidth = 0
-    runCatching { window?.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, h) }
+    runCatching { window?.window?.setLayout(width, h) }
 }
 
 private fun PhormiKeyboardServiceV2.scaledCompat(dp: Int): Int = (dp * resources.displayMetrics.density * PhormiKeyboardPreferences.heightScale(this)).toInt().coerceAtLeast(1)
