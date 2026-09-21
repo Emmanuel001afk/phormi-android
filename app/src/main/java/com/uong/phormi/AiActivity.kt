@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import android.speech.RecognizerIntent
 import android.widget.Button
 import android.widget.EditText
@@ -23,6 +27,7 @@ class AiActivity : AppCompatActivity() {
     private lateinit var instruction: EditText
     private lateinit var active: Switch
     private val voiceRequest = 6201
+    private val voicePermissionRequest = 6202
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,12 +99,28 @@ class AiActivity : AppCompatActivity() {
     }
 
     private fun startVoiceInput() {
-        try {
-            startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-            }, voiceRequest)
-        } catch (_: Exception) { status.text = "Voice input is not available." }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), voicePermissionRequest)
+            status.text = "Microphone permission is required for Phormi AI voice input."
+            return
+        }
+        val recognition = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Phormi AI")
+        }
+        runCatching { startActivityForResult(recognition, voiceRequest) }
+            .onFailure { status.text = "Voice input is unavailable on this device. Check that a speech recognition service is installed." }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == voicePermissionRequest) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
+            else status.text = "Microphone permission was denied."
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
