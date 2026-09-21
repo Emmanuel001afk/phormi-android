@@ -58,7 +58,7 @@ object PhormiSiteLockManager {
                 if (parts.size == 3) out += LockState(parts[2], expiry, parts[0], parts[1])
             }
         }
-        return out.sortedBy { it.host }
+        return out.sortedWith(compareBy<LockState> { it.host }.thenBy { it.scopeType }.thenBy { it.scopeId })
     }
 
     fun isLocked(context: Context, url: String?, scopeType: String = SCOPE_TAB, scopeId: String = ""): Boolean {
