@@ -3166,10 +3166,18 @@ class MainActivity : AppCompatActivity() {
             createNewTab(anchor.url, anchor.profileName)
             val anchorWebView = activeWebView()
             anchorWebView?.postDelayed({
-                if (anchorWebView.url == anchor.url || anchor.url.isNotBlank()) {
-                    PhormiNavigationLens.focus(anchorWebView, anchor.locator)
+                fun retry(remaining: Int) {
+                    if (anchorWebView.url == anchor.url) {
+                        PhormiNavigationLens.focus(anchorWebView, anchor.locator) { found ->
+                            if (!found && remaining > 0) anchorWebView.postDelayed({ retry(remaining - 1) }, 500)
+                            else if (!found) Toast.makeText(this, "This page object has changed or is no longer available.", Toast.LENGTH_SHORT).show()
+                        }
+                    } else if (remaining > 0) {
+                        anchorWebView.postDelayed({ retry(remaining - 1) }, 500)
+                    }
                 }
-            }, 900)
+                retry(8)
+            }, 500)
         }.setNegativeButton("Close", null).show()
     }
 
