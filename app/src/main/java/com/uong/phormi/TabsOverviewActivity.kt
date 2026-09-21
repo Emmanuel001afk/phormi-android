@@ -35,8 +35,8 @@ class TabsOverviewActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         mode = prefs.getString(KEY_MODE, "vertical") ?: "vertical"
         findViewById<TextView>(R.id.btn_close_overview).setOnClickListener { finish() }
-        findViewById<TextView>(R.id.btn_new_tab_overview).setOnClickListener { PhormiCommandBus.enqueue(this, "new_tab"); finish() }
-        findViewById<TextView>(R.id.btn_split_overview).setOnClickListener { PhormiCommandBus.enqueue(this, "toggle_split"); finish() }
+        findViewById<TextView>(R.id.btn_new_tab_overview).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "new_tab")); finish() }
+        findViewById<TextView>(R.id.btn_split_overview).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "toggle_split")); finish() }
         findViewById<TextView>(R.id.btn_groups_overview).setOnClickListener { startActivity(Intent(this, TabGroupsActivity::class.java)) }
         modeButton = findViewById(R.id.btn_view_mode)
         modeButton.setOnClickListener {
@@ -105,7 +105,7 @@ class TabsOverviewActivity : AppCompatActivity() {
             body.setPadding(if (style == "vertical") 18.dp() else 12.dp(), 14.dp(), 92.dp(), 14.dp())
             title.gravity = Gravity.CENTER_VERTICAL; title.setTextColor(0xFF111827.toInt()); url.gravity = Gravity.CENTER_VERTICAL; url.setTextColor(0xFF334155.toInt()); title.textSize = if (style == "vertical") 15f else 13f; url.textSize = if (style == "vertical") 10f else 9f
         }
-        body.setOnClickListener { PhormiCommandBus.enqueue(this, "select", mapOf("tab_id" to item.id.toString())); finish() }
+        body.setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id)); finish() }
         body.setOnLongClickListener { AlertDialog.Builder(this).setTitle(item.title).setItems(arrayOf("Environment", "Assign to group")) { _, which -> if (which == 0) showEnvironmentChooser(item) else showGroupChooser(item) }.show(); true }
         val groupButton = TextView(this).apply {
             text = "Group"; contentDescription = "Assign ${item.title} to a tab group"; gravity = Gravity.CENTER; setTextColor(0xFF0F172A.toInt()); textSize = 11f; setPadding(10.dp(), 5.dp(), 10.dp(), 5.dp())
@@ -113,7 +113,7 @@ class TabsOverviewActivity : AppCompatActivity() {
             setOnClickListener { showGroupChooser(item) }
         }
         if (body is android.widget.FrameLayout) body.addView(groupButton, android.widget.FrameLayout.LayoutParams(-2, 34.dp(), Gravity.BOTTOM or Gravity.END).apply { rightMargin = 44.dp(); bottomMargin = 8.dp() })
-        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { PhormiCommandBus.enqueue(this, "close", mapOf("tab_id" to item.id.toString())); finish() }
+        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("tab_id", item.id)); finish() }
         return v
     }
 
