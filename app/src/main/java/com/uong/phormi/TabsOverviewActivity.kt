@@ -133,7 +133,9 @@ class TabsOverviewActivity : AppCompatActivity() {
         return v
     }
 
-    private fun dp(value: Int): Int =\n        (value * resources.displayMetrics.density).toInt()\n\n    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
     private fun loadTabs() {
         allTabs.clear(); val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
