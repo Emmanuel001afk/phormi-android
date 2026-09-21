@@ -1531,7 +1531,10 @@ class MainActivity : AppCompatActivity() {
             if (PhormiEnvironmentManager.apply(webView, requested)) effectiveProfile = requested
         }
         val isGhost = ghostRequested && effectiveProfile == GHOST_PROFILE_NAME
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(
+            webView,
+            prefs.getBoolean("security_third_party_cookies", true)
+        )
 
         webViewContainer.addView(
             webView,
@@ -2437,13 +2440,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun configureWebView(webView: WebView) {
         webView.settings.apply {
-            javaScriptEnabled = true
+            javaScriptEnabled = prefs.getBoolean("security_javascript", true)
             domStorageEnabled = true
             databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
             mediaPlaybackRequiresUserGesture = false
             setGeolocationEnabled(true)
-            mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            mixedContentMode = if (prefs.getBoolean("security_mixed_content", false)) {
+                android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            } else {
+                android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            }
             // Let sites that use target="_blank" behave like a real browser tab.
             setSupportMultipleWindows(true)
             loadWithOverviewMode = true
@@ -2941,6 +2948,7 @@ class MainActivity : AppCompatActivity() {
                     if (!enabled) authenticateBrowserLock()
                 }
                 MenuActivity.ACTION_TAB_ENVIRONMENT -> showTabEnvironmentChooser()
+                MenuActivity.ACTION_SPLIT_SCREEN -> setSplitMode(!splitMode)
                 MenuActivity.ACTION_NOTIFICATIONS -> {
                     val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                         putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
