@@ -10,7 +10,7 @@ import java.util.Locale
 object PhormiVisitTracker {
     private const val PREFS = "phormi_most_visited"
     private const val KEY = "sites"
-    private const val THRESHOLD = 10
+    private const val THRESHOLD = 25
 
     data class Site(val title: String, val url: String, val host: String, val visits: Int)
 
