@@ -90,10 +90,10 @@ object PhormiKeyboardTextEngine {
     fun suggestions(context: Context, prefix: String, locale: Locale = activeLocale(context)): List<String> {
         val p = prefix.trim().lowercase(locale); if (p.isBlank()) return emptyList()
         val result = LinkedHashSet<String>()
-        correctionsByLanguage[locale.language]?.get(p)?.let(result::add)
-        loadLearned(context).filter { it.startsWith(p, true) }.forEach(result::add)
-        PhormiKeyboardSystemSpellChecker.cached(p, locale).forEach(result::add)
+        loadLearned(context).filter { it.startsWith(p, true) && !it.equals(p, true) }.forEach(result::add)
         PhormiKeyboardLanguageData.words(locale).filter { it.startsWith(p, true) && !it.equals(p, true) }.forEach(result::add)
+        correctionsByLanguage[locale.language]?.get(p)?.takeIf { it.isNotBlank() && !it.equals(p, true) }?.let(result::add)
+        PhormiKeyboardSystemSpellChecker.cached(p, locale).filter { it.isNotBlank() && !it.equals(p, true) }.forEach(result::add)
         PhormiKeyboardSystemSpellChecker.request(context, p, locale)
         return result.take(5)
     }
