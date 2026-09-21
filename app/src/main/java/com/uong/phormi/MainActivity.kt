@@ -110,6 +110,8 @@ class MainActivity : AppCompatActivity() {
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
     private var pendingLockedNavigationUrl: String? = null
+    private var pendingLockedScopeType: String = PhormiSiteLockManager.SCOPE_TAB
+    private var pendingLockedScopeId: String = ""
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
@@ -1589,7 +1591,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchToTab(id: Int) {
         val candidate = tabs.find { it.id == id }
-        if (candidate != null && candidate.id != activeTabId && isSiteLocked(candidate.webView.url)) {
+        if (candidate != null && candidate.id != activeTabId && isSiteLocked(candidate.webView.url, candidate.id)) {
             requestSiteUnlock(candidate.webView.url.orEmpty()) { switchToTabUnlocked(id) }
             return
         }
@@ -1620,7 +1622,24 @@ class MainActivity : AppCompatActivity() {
         saveTabs()
     }
 
-    private fun isSiteLocked(url: String?): Boolean = PhormiSiteLockManager.isLocked(this, url)
+    private fun siteLockScopesForTab(tabId: Int): List<Pair<String, String>> {
+        val out = mutableListOf(PhormiSiteLockManager.SCOPE_TAB to tabId.toString())
+        val group = TabGroupManager(this).groupForTab(tabId)
+        if (group != null) out += PhormiSiteLockManager.SCOPE_GROUP to group.id
+        val profile = tabs.firstOrNull { it.id == tabId }?.profileName
+        if (!profile.isNullOrBlank() && !profile.equals(DEFAULT_PROFILE_NAME, ignoreCase = true)) {
+            out += PhormiSiteLockManager.SCOPE_ENVIRONMENT to profile
+        }
+        return out
+    }
+
+    private fun isSiteLocked(url: String?, tabId: Int = activeTabId): Boolean =
+        siteLockScopesForTab(tabId).any { (type, id) -> PhormiSiteLockManager.isLocked(this, url, type, id) }
+
+    private fun firstSiteLock(url: String?, tabId: Int): PhormiSiteLockManager.LockState? =
+        siteLockScopesForTab(tabId).asSequence().mapNotNull { (type, id) ->
+            PhormiSiteLockManager.normalizeHost(url)?.let { host -> PhormiSiteLockManager.get(this, host, type, id) }
+        }.firstOrNull()
 
     private fun requestSiteUnlock(url: String, onSuccess: () -> Unit) {
         val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("protected site")
@@ -2445,10 +2464,15 @@ class MainActivity : AppCompatActivity() {
                 val target = targetUri.toString()
                 if (target.isBlank()) return false
                 val host = PhormiSiteLockManager.normalizeHost(target)
-                if (host != null && PhormiSiteLockManager.isLocked(this@MainActivity, target)) {
-                    pendingLockedNavigationUrl = target
-                    showSiteUnlockDialog(host)
-                    return true
+                if (host != null) {
+                    val sourceTabId = tabs.firstOrNull { it.webView === view }?.id ?: activeTabId
+                    firstSiteLock(target, sourceTabId)?.let { lock ->
+                        pendingLockedNavigationUrl = target
+                        pendingLockedScopeType = lock.scopeType
+                        pendingLockedScopeId = lock.scopeId
+                        showSiteUnlockDialog(host)
+                        return true
+                    }
                 }
                 val scheme = targetUri.scheme?.lowercase(Locale.US).orEmpty()
                 if (scheme.isBlank() || scheme == "http" || scheme == "https" ||
@@ -3131,61 +3155,81 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSiteLockDialog() {
-        val view = activeWebView() ?: return
+        val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
+        val view = tab.webView
         val url = view.url.orEmpty()
         if (!url.startsWith("http")) return
         val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
         if (host.isBlank()) return
-        val options = arrayOf("15 minutes", "1 hour", "Until removed")
-        AlertDialog.Builder(this)
-            .setTitle("Protect $host")
-            .setItems(options) { _, which ->
-                val expiry = when (which) {
-                    0 -> System.currentTimeMillis() + 15 * 60 * 1000L
-                    1 -> System.currentTimeMillis() + 60 * 60 * 1000L
-                    else -> Long.MAX_VALUE
+        val group = TabGroupManager(this).groupForTab(tab.id)
+        val scopes = mutableListOf(PhormiSiteLockManager.SCOPE_TAB to "Current tab")
+        if (group != null) scopes += PhormiSiteLockManager.SCOPE_GROUP to "Group: ${group.name}"
+        if (!tab.profileName.equals(DEFAULT_PROFILE_NAME, ignoreCase = true)) scopes += PhormiSiteLockManager.SCOPE_ENVIRONMENT to "Environment: ${tab.profileName}"
+
+        AlertDialog.Builder(this).setTitle("Site protection for $host")
+            .setItems(scopes.map { it.second }.toTypedArray()) { _, which ->
+                val scopeType = scopes[which].first
+                val scopeId = when (scopeType) {
+                    PhormiSiteLockManager.SCOPE_TAB -> tab.id.toString()
+                    PhormiSiteLockManager.SCOPE_GROUP -> group?.id.orEmpty()
+                    else -> tab.profileName
                 }
-                PhormiSiteLockManager.lock(this, host, expiry)
-                Toast.makeText(this, "Site protection enabled for $host", Toast.LENGTH_SHORT).show()
+                val existing = PhormiSiteLockManager.get(this, host, scopeType, scopeId)
+                val actions = mutableListOf("15 minutes", "1 hour", "Until removed")
+                if (existing != null) actions += "Turn off"
+                AlertDialog.Builder(this).setTitle("$host • ${scopes[which].second}")
+                    .setItems(actions.toTypedArray()) { _, action ->
+                        if (actions[action] == "Turn off") {
+                            PhormiSiteLockManager.unlock(this, host, scopeType, scopeId)
+                            Toast.makeText(this, "Site protection off", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val expiry = when (actions[action]) {
+                                "15 minutes" -> System.currentTimeMillis() + 15 * 60 * 1000L
+                                "1 hour" -> System.currentTimeMillis() + 60 * 60 * 1000L
+                                else -> Long.MAX_VALUE
+                            }
+                            PhormiSiteLockManager.lock(this, host, expiry, scopeType, scopeId)
+                            Toast.makeText(this, "Site protection enabled", Toast.LENGTH_SHORT).show()
+                        }
+                    }.show()
             }.show()
     }
 
     private fun showSiteUnlockDialog(host: String) {
-        val unlock = {
-            PhormiSiteLockManager.unlock(this, host)
+        val continueOnce = {
             val url = pendingLockedNavigationUrl
             pendingLockedNavigationUrl = null
+            pendingLockedScopeType = PhormiSiteLockManager.SCOPE_TAB
+            pendingLockedScopeId = ""
             if (!url.isNullOrBlank()) activeWebView()?.loadUrl(url)
         }
-
+        val cancel = {
+            pendingLockedNavigationUrl = null
+            pendingLockedScopeType = PhormiSiteLockManager.SCOPE_TAB
+            pendingLockedScopeId = ""
+        }
         if (browserLockManager.isPinConfigured(prefs)) {
             val input = EditText(this).apply {
                 hint = "Phormi PIN"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER or
-                    android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
                 setSingleLine(true)
             }
             AlertDialog.Builder(this)
                 .setTitle("Site protected")
-                .setMessage("$host is currently protected. Enter your Phormi PIN to continue.")
+                .setMessage("$host is protected. Unlocking here is one-time; protection stays on.")
                 .setView(input)
-                .setNegativeButton("Cancel") { _, _ -> pendingLockedNavigationUrl = null }
+                .setNegativeButton("Cancel") { _, _ -> cancel() }
                 .setPositiveButton("Unlock once") { _, _ ->
-                    if (browserLockManager.verifyPin(prefs, input.text.toString())) {
-                        unlock()
-                    } else {
-                        pendingLockedNavigationUrl = null
-                        Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
-                    }
+                    if (browserLockManager.verifyPin(prefs, input.text.toString())) continueOnce()
+                    else { cancel(); Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show() }
                 }.show()
         } else {
             AlertDialog.Builder(this)
                 .setTitle("Site protected")
-                .setMessage("$host is currently protected. Use device authentication to continue.")
-                .setNegativeButton("Cancel") { _, _ -> pendingLockedNavigationUrl = null }
-                .setPositiveButton("Authenticate") { _, _ ->
-                    browserLockManager.authenticate(unlock) { pendingLockedNavigationUrl = null }
-                }.show()
+                .setMessage("$host is protected. Authenticate to continue once.")
+                .setNegativeButton("Cancel") { _, _ -> cancel() }
+                .setPositiveButton("Authenticate") { _, _ -> browserLockManager.authenticate(continueOnce) { cancel() } }
+                .show()
         }
     }
 
