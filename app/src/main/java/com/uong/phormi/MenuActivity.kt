@@ -71,7 +71,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_object_anchors) { finishWith(ACTION_OBJECT_ANCHORS) }
         wire(R.id.menu_same_page_split) { finishWith(ACTION_SAME_PAGE_SPLIT) }
         wire(R.id.menu_desktop_mode) { finishWith(ACTION_DESKTOP_MODE) }
-        wire(R.id.menu_favorite) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
+        wire(R.id.menu_favorite) { finishWith(ACTION_FAVORITE) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
         wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
         wire(R.id.menu_pull_to_refresh) { finishWith(ACTION_PULL_TO_REFRESH) }
