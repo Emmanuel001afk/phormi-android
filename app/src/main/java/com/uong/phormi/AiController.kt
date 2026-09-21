@@ -244,9 +244,12 @@ class AiController(private val context: Context) {
                 if (a >= 0 && b > a) return JSONObject(cleaned.substring(a, b + 1)) to provider.name
                 onStatus("${provider.name}: response was not an action JSON")
             } catch (e: Exception) {
-                val message = e.message?.replace(Regex("\\s+"), " ")?.take(220).orEmpty()
-                Log.w(TAG, "${provider.name} failed: $message")
-                onStatus("${provider.name} failed: ${message.ifBlank { "request error" }}")
+                val message = e.message
+                    ?.replace(Regex("\\s+"), " ")
+                    ?.take(220)
+                    .orEmpty()
+                Log.w(TAG, "${stored.name} failed: $message")
+                onStatus("${stored.name} failed: ${message.ifBlank { "request error" }}")
             }
         }
         return null
