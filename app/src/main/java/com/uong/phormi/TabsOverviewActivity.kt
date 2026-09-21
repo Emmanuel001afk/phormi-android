@@ -83,7 +83,7 @@ class TabsOverviewActivity : AppCompatActivity() {
                 if (group != lastGroup) {
                     tabsVertical.addView(TextView(this).apply {
                         text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
-                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp)
+                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(dp(8), dp(12), dp(8), dp(4))
                     }, LinearLayout.LayoutParams(-1, -2))
                     lastGroup = group
                 }
@@ -133,7 +133,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         return v
     }
 
-    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int =\n        (value * resources.displayMetrics.density).toInt()\n\n    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
     private fun loadTabs() {
         allTabs.clear(); val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
