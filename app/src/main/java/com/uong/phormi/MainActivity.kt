@@ -217,6 +217,7 @@ class MainActivity : AppCompatActivity() {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
             applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
+            PhormiEnvironmentManager.cleanupExpired(this, tabs.map { it.profileName }.toSet())
             pruneExpiredTabs()
             runPendingAiTask()
             updateHomeNewsVisibility()
