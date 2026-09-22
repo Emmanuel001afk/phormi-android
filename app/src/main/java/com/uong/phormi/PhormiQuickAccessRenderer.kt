@@ -8,7 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONArray
 
-/** Canonical Quick Access renderer: pinned, manual shortcuts, Favorites, and Most Visited. */
+/** Canonical Quick Access renderer: pinned services and manually added shortcuts only. */
 object PhormiQuickAccessRenderer {
     private data class Item(val title: String, val url: String, val kind: String, val visits: Int = 0)
     private const val PREFS = "phormi_quick_access"
@@ -25,18 +25,11 @@ object PhormiQuickAccessRenderer {
             Item("YouTube", "https://www.youtube.com", "Pinned"),
             Item("GitHub", "https://github.com", "Pinned")
         )
-        val hiddenFavorites = hidden(context, HIDDEN_FAVORITES)
-        val hiddenVisited = hidden(context, HIDDEN_VISITED)
-        val hiddenCustom = hidden(context, HIDDEN_CUSTOM)
-        val favorites = PhormiFavorites.getAll(context)
-            .filterNot { hiddenFavorites.contains(it.url) }
-            .map { Item(it.title, it.url, "Favorite") }
         val custom = readCustom(context)
-            .filterNot { hiddenCustom.contains(it.url) }
-        val mostVisited = PhormiVisitTracker.top(context, 10)
-            .filterNot { hiddenVisited.contains(it.url) || hiddenVisited.contains(it.host) }
-            .map { Item(it.title, it.url, "Most visited", it.visits) }
-        val combined = (fixed + custom + favorites + mostVisited).distinctBy { it.url }.take(12)
+            .filterNot { hidden(context, HIDDEN_CUSTOM).contains(it.url) }
+        // Quick Access is intentionally deterministic: fixed pinned services + user-added shortcuts.
+        // Favorites and Most Visited remain available in their own browser sections.
+        val combined = (fixed + custom).distinctBy { it.url }.take(12)
 
         if (combined.isEmpty()) {
             rows.addView(TextView(context).apply {
