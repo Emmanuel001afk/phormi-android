@@ -14,9 +14,6 @@ permissions:
 
 jobs:
   codeql:
-    env:
-      PHORMI_VERSION_CODE: ${{ github.run_number }}
-      PHORMI_VERSION_NAME: 1.0.${{ github.run_number }}
     name: CodeQL Java/Kotlin
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +28,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.11.1'
+      - name: Set unique Android version
+        shell: bash
+        run: |
+          echo "PHORMI_VERSION_CODE=$(date +%s)" >> "$GITHUB_ENV"
+          echo "PHORMI_VERSION_NAME=1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
