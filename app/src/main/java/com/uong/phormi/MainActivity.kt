@@ -634,33 +634,53 @@ class MainActivity : AppCompatActivity() {
     private fun loadQuickAccessRows() {
         val rows = findViewById<LinearLayout>(R.id.quick_access_rows) ?: return
         rows.removeAllViews()
-        val fixed = listOf(
-            QuickSite("Google", "https://www.google.com", "", false),
-            QuickSite("Bing", "https://www.bing.com", "", false),
-            QuickSite("YouTube", "https://www.youtube.com", "", false),
-            QuickSite("Facebook", "https://www.facebook.com", "", false),
-            QuickSite("Instagram", "https://www.instagram.com", "", false),
-            QuickSite("GitHub", "https://github.com", "", false)
-        )
+
+        // Quick Access is intentionally user-controlled. Do not inject Favorites,
+        // Most Visited, browsing history, or a fixed list of websites here.
+        // Entries come only from the user's saved/pinned shortcuts plus the Add action.
         val personal = mutableListOf<QuickSite>()
-        val custom = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
+        val custom = runCatching {
+            JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]")
+        }.getOrElse { JSONArray() }
+
         for (i in custom.length() - 1 downTo 0) {
             val item = custom.optJSONObject(i) ?: continue
-            val name = item.optString("name").trim(); val url = item.optString("url").trim()
-            if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) personal += QuickSite(name, url, "⌂", true)
+            val name = item.optString("name").trim()
+            val url = item.optString("url").trim()
+            if (name.isNotBlank() && url.isNotBlank() &&
+                personal.none { it.url.equals(url, ignoreCase = true) }) {
+                personal += QuickSite(name, url, "⌂", true)
+            }
         }
-        val all = fixed + personal.take(18) + QuickSite("Add", "", "+", false)
-        val columns = when { resources.displayMetrics.widthPixels >= 900 -> 8; resources.displayMetrics.widthPixels >= 600 -> 7; else -> 6 }
+
+        val all = personal.take(18) + QuickSite("Add", "", "+", false)
+        val columns = when {
+            resources.displayMetrics.widthPixels >= 900 -> 8
+            resources.displayMetrics.widthPixels >= 600 -> 7
+            else -> 6
+        }
+
         all.chunked(columns).forEach { batch ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 60.dp())
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    60.dp()
+                )
             }
             batch.forEach { site ->
-                row.addView(makeQuickSiteView(site), LinearLayout.LayoutParams(0, 56.dp(), 1f).apply { leftMargin = 2.dp(); rightMargin = 2.dp() })
+                row.addView(
+                    makeQuickSiteView(site),
+                    LinearLayout.LayoutParams(0, 56.dp(), 1f).apply {
+                        leftMargin = 2.dp()
+                        rightMargin = 2.dp()
+                    }
+                )
             }
-            repeat(columns - batch.size) { row.addView(Space(this), LinearLayout.LayoutParams(0, 56.dp(), 1f)) }
+            repeat(columns - batch.size) {
+                row.addView(Space(this), LinearLayout.LayoutParams(0, 56.dp(), 1f))
+            }
             rows.addView(row)
         }
     }
