@@ -122,7 +122,11 @@ object PhormiDownloadEngine {
     }
     fun cancel(context: Context, id: String) {
         // Remove the row immediately; the service still receives the command to cancel
-        // the in-flight HTTP call.
+        // the in-flight HTTP call. Delete any already-created MediaStore file as well.
+        val existing = record(context, id)
+        existing?.localUri?.let { uri ->
+            runCatching { context.contentResolver.delete(Uri.parse(uri), null, null) }
+        }
         remove(context, id)
         start(context, ACTION_CANCEL, id)
     }
