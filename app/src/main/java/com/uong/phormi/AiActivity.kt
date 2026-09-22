@@ -82,6 +82,7 @@ class AiActivity : AppCompatActivity() {
             }
         }
         active.setOnCheckedChangeListener { _, checked -> controller.setActive(checked); refresh() }
+        findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
         findViewById<Button>(R.id.btn_voice).setOnClickListener { startVoiceInput() }
         findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
         findViewById<Button>(R.id.btn_run).setOnClickListener { runAssistant() }
@@ -108,6 +109,27 @@ class AiActivity : AppCompatActivity() {
         }.show()
     }
 
+    private fun openWebAi() {
+        val names = arrayOf("ChatGPT", "Gemini", "Grok", "Claude", "DeepSeek", "OpenRouter")
+        val urls = arrayOf(
+            "https://chatgpt.com/",
+            "https://gemini.google.com/",
+            "https://grok.com/",
+            "https://claude.ai/",
+            "https://chat.deepseek.com/",
+            "https://openrouter.ai/chat"
+        )
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Use AI on the web inside Phormi")
+            .setMessage("This opens the selected provider in a normal Phormi browser tab. It is a web fallback when direct API execution is unavailable.")
+            .setItems(names) { _, which ->
+                startActivity(Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("open_url", urls[which])
+                })
+                status.text = names[which] + " opened in Phormi."
+            }.show()
+    }
     private fun runAssistant() {
         val text = instruction.text.toString().trim()
         if (text.isBlank()) return startVoiceInput()
