@@ -116,7 +116,6 @@ object PhormiKeyboardEmoji {
             put("💻", grouped["💻"].orEmpty())
             put("🔣", grouped["🔣"].orEmpty())
             put("🇳🇬", grouped["🇳🇬"].orEmpty())
-            put("✨", all)
         }
     }
 
