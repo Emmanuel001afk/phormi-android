@@ -113,8 +113,28 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             rightMargin = 18
         })
 
-        setContentView(root),        setBrightnessFromWindow(),        if (mime.startsWith("image/")) {,            playerView.visibility = View.GONE,            imageView = ImageView(this).apply {,                scaleType = ImageView.ScaleType.FIT_CENTER,                setBackgroundColor(0xFF000000.toInt()),                adjustViewBounds = true,                contentDescription = title,            },            root.addView(imageView, 0, FrameLayout.LayoutParams(-1, -1)),            runCatching {,                contentResolver.openInputStream(uri)?.use { stream ->,                    imageView?.setImageBitmap(android.graphics.BitmapFactory.decodeStream(stream)),                },            }.onFailure {,                Toast.makeText(this, "Phormi could not display this image.", Toast.LENGTH_LONG).show(),            },        } else {,            configurePlayer(uri, mime),            configureGestures(),        }    }
-
+        setContentView(root)
+        setBrightnessFromWindow()
+        if (mime.startsWith("image/")) {
+            playerView.visibility = View.GONE
+            imageView = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(0xFF000000.toInt())
+                adjustViewBounds = true
+                contentDescription = title
+            }
+            root.addView(imageView, 0, FrameLayout.LayoutParams(-1, -1))
+            runCatching {
+                contentResolver.openInputStream(uri)?.use { stream ->
+                    imageView?.setImageBitmap(android.graphics.BitmapFactory.decodeStream(stream))
+                }
+            }.onFailure {
+                Toast.makeText(this, "Phormi could not display this image.", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            configurePlayer(uri, mime)
+            configureGestures()
+        }
     private fun configurePlayer(uri: Uri, mime: String) {
         player = ExoPlayer.Builder(this).build().also { exo ->
             playerView.player = exo
