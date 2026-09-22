@@ -880,7 +880,7 @@ class MainActivity : AppCompatActivity() {
                 val snapshot = synchronized(unifiedSearchLock) { all.toList() }
                 val successfulSnapshot = synchronized(unifiedSearchLock) { successfulEngines.toList() }
                 val finishedSnapshot = synchronized(unifiedSearchLock) { finishedEngines.toList() }
-                val mergedSnapshot = mergeUnifiedResults(snapshot)
+                val mergedSnapshot = mergeUnifiedResults(snapshot, query)
                 runOnUiThread {
                     if (generation != unifiedSearchGeneration.get()) return@runOnUiThread
                     if (activeWebView() === webView) {
@@ -1127,7 +1127,7 @@ class MainActivity : AppCompatActivity() {
         return text.take(220)
     }
 
-    private fun mergeUnifiedResults(raw: List<UnifiedResult>): List<UnifiedResult> {
+    private fun mergeUnifiedResults(raw: List<UnifiedResult>, query: String): List<UnifiedResult> {
         val grouped = linkedMapOf<String, MutableList<UnifiedResult>>()
         raw.forEach { result ->
             grouped.getOrPut(canonicalUrl(result.url)) { mutableListOf() }.add(result)
@@ -1142,15 +1142,42 @@ class MainActivity : AppCompatActivity() {
                 val best = group.minByOrNull { it.rank } ?: group.first()
                 val sourceNames = group.map { it.source }.distinct()
                 val engineContribution = group.sumOf { result ->
-                    (100 - (result.rank * 8)).coerceAtLeast(20)
+                    val sourceWeight = when (result.source) {
+                        "Google" -> 100
+                        "Bing" -> 92
+                        "Brave" -> 88
+                        "DuckDuckGo" -> 84
+                        "Startpage" -> 82
+                        "Yahoo" -> 78
+                        "Ecosia" -> 76
+                        "Qwant" -> 74
+                        "Mojeek" -> 70
+                        "Yandex" -> 68
+                        "Swisscows" -> 66
+                        else -> 60
+                    }
+                    (sourceWeight - (result.rank * 7)).coerceAtLeast(15)
                 }
-                val agreementBonus = ((sourceNames.size - 1) * 20)
-                // Prefer useful results that are independently surfaced by several engines,
-                // while also preventing a single domain from dominating the first page.
+                val agreementBonus = ((sourceNames.size - 1) * 24)
+                val queryTokens = query.lowercase(Locale.US)
+                    .split(Regex("[^a-z0-9]+"))
+                    .filter { it.length >= 2 }
+                    .distinct()
+                val searchable = "${best.title} ${best.snippet}".lowercase(Locale.US)
+                val queryMatchBonus = queryTokens.sumOf { token ->
+                    when {
+                        Regex("\\b${Regex.escape(token)}\\b").containsMatchIn(searchable) -> 35
+                        searchable.contains(token) -> 15
+                        else -> 0
+                    }
+                }
+                // Search relevance is influenced by source quality and actual query terms.
+                // Google/Bing/Brave receive a stronger baseline, while cross-engine agreement
+                // remains useful. This prevents unrelated pages outranking direct matches.
                 val domain = try {
                     URL(best.url).host.lowercase(Locale.US).removePrefix("www.")
                 } catch (_: Exception) { "" }
-                val score = engineContribution + agreementBonus
+                val score = engineContribution + agreementBonus + queryMatchBonus
                 best.copy(
                     source = sourceNames.joinToString(" · "),
                     rank = score,
