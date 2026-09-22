@@ -54,6 +54,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import androidx.webkit.WebSettingsCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
@@ -2476,6 +2477,9 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
+                runCatching { WebSettingsCompat.setBackForwardCacheEnabled(this@MainActivity.settings, true) }
+            }
             mediaPlaybackRequiresUserGesture = false
             setGeolocationEnabled(true)
             mixedContentMode = if (prefs.getBoolean("security_mixed_content", false)) {
