@@ -3130,7 +3130,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     val centerMoved = kotlin.math.hypot(cx - twoFingerStartX, cy - twoFingerStartY)
                     val spanChanged = kotlin.math.abs(span - twoFingerStartSpan)
-                    if (centerMoved > 24f || spanChanged > 18f) {
+                    // A real pinch should cancel the reload gesture almost immediately. On phones with\n                    // small/touch-dense displays, an 18px span threshold is too forgiving and can\n                    // let a pinch sit in the one-second hold window before WebView receives the zoom.\n                    if (centerMoved > 10f || spanChanged > 8f) {
                         twoFingerHoldActive = false
                         reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
                         reloadRunnable = null
