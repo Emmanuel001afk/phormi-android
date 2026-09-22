@@ -12,7 +12,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
@@ -21,14 +20,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlin.math.max
-import android.widget.Toast
 
 /** Built-in Phormi player for downloaded/local media. */
 @UnstableApi
 class PhormiMediaViewerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
-    private var imageView: ImageView? = null
     private lateinit var root: FrameLayout
     private lateinit var lockButton: TextView
     private lateinit var brightnessHint: TextView
@@ -115,26 +112,10 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
         setContentView(root)
         setBrightnessFromWindow()
-        if (mime.startsWith("image/")) {
-            playerView.visibility = View.GONE
-            imageView = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(0xFF000000.toInt())
-                adjustViewBounds = true
-                contentDescription = title
-            }
-            root.addView(imageView, 0, FrameLayout.LayoutParams(-1, -1))
-            runCatching {
-                contentResolver.openInputStream(uri)?.use { stream ->
-                    imageView?.setImageBitmap(android.graphics.BitmapFactory.decodeStream(stream))
-                }
-            }.onFailure {
-                Toast.makeText(this, "Phormi could not display this image.", Toast.LENGTH_LONG).show()
-            }
-        } else {
-            configurePlayer(uri, mime)
-            configureGestures()
-        }
+        configurePlayer(uri, mime)
+        configureGestures()
+    }
+
     private fun configurePlayer(uri: Uri, mime: String) {
         player = ExoPlayer.Builder(this).build().also { exo ->
             playerView.player = exo
