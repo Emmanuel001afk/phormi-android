@@ -120,9 +120,19 @@ object PhormiDownloadEngine {
         if (record(context, id) != null) updateState(context, id, State.QUEUED, null)
         start(context, ACTION_RESUME, id)
     }
-    fun cancel(context: Context, id: String) = start(context, ACTION_CANCEL, id)
+    fun cancel(context: Context, id: String) {
+        // Remove the row immediately; the service still receives the command to cancel
+        // the in-flight HTTP call.
+        remove(context, id)
+        start(context, ACTION_CANCEL, id)
+    }
 
     fun record(context: Context, id: String): Record? = records(context).firstOrNull { it.id == id }
+
+    private fun remove(context: Context, id: String) = synchronized(lock) {
+        val kept = records(context).filterNot { it.id == id }
+        writeRecords(context, kept)
+    }
 
     private fun start(context: Context, action: String, id: String) {
         val intent = Intent(context, PhormiDownloadService::class.java).apply {
@@ -130,7 +140,11 @@ object PhormiDownloadEngine {
             putExtra(EXTRA_ID, id)
         }
         try {
-            ContextCompat.startForegroundService(context, intent)
+            if (action == ACTION_PAUSE || action == ACTION_CANCEL) {
+                context.startService(intent)
+            } else {
+                ContextCompat.startForegroundService(context, intent)
+            }
         } catch (e: Exception) {
             // Do not silently lose the linkage. The row stays visible with an actionable error.
             if (action == ACTION_ENQUEUE || action == ACTION_RESUME) {
