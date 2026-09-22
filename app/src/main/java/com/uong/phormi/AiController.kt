@@ -28,7 +28,8 @@ class AiController(private val context: Context) {
     companion object {
         private const val TAG = "AiController"
         private const val PREFS_NAME = "phormi_ai_prefs"
-        private const val KEY_PROVIDERS = "custom_providers_json"\n        private const val KEY_LEGACY_PROVIDERS = "custom_providers_json"
+        private const val KEY_PROVIDERS = "custom_providers_json"
+        private const val KEY_LEGACY_PROVIDERS = "custom_providers_json"
         private const val KEY_ACTIVE = "ai_active"
         private const val MAX_STEPS = 25
         private const val REQUEST_TIMEOUT_SECONDS = 45L
@@ -144,7 +145,11 @@ class AiController(private val context: Context) {
     }
 
     fun listProviders(): List<Provider> {
-        val raw = PhormiSecretStore.get(context) ?: prefs.getString(KEY_LEGACY_PROVIDERS, null)?.also {\n            // Migrate existing plaintext provider records into Keystore-backed storage.\n            PhormiSecretStore.put(context, it)\n            prefs.edit().remove(KEY_LEGACY_PROVIDERS).apply()\n        }
+        val raw = PhormiSecretStore.get(context) ?: prefs.getString(KEY_LEGACY_PROVIDERS, null)?.also {
+            // Migrate existing plaintext provider records into Keystore-backed storage.
+            PhormiSecretStore.put(context, it)
+            prefs.edit().remove(KEY_LEGACY_PROVIDERS).apply()
+        }
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
@@ -164,7 +169,8 @@ class AiController(private val context: Context) {
         list.forEach { p ->
             arr.put(JSONObject().put("id", p.id).put("name", p.name).put("endpoint", p.endpoint).put("model", p.model).put("apiKey", p.apiKey))
         }
-        PhormiSecretStore.put(context, arr.toString())\n        prefs.edit().remove(KEY_LEGACY_PROVIDERS).apply()
+        PhormiSecretStore.put(context, arr.toString())
+        prefs.edit().remove(KEY_LEGACY_PROVIDERS).apply()
     }
 
     fun upsertProvider(provider: Provider) {
@@ -178,20 +184,27 @@ class AiController(private val context: Context) {
     fun hasAnyKey(): Boolean = listProviders().any { it.apiKey.isNotBlank() }
     fun isActive(): Boolean = prefs.getBoolean(KEY_ACTIVE, false) && hasAnyKey()
     fun setActive(active: Boolean) { prefs.edit().putBoolean(KEY_ACTIVE, active).apply() }
-    fun keyStatusSummary(): String = listProviders().takeIf { it.isNotEmpty() }?.joinToString("\n") { "${it.name}: ready" }
-        ?: "No AI providers saved yet.\nAdd a name + API key below."
+    fun keyStatusSummary(): String = listProviders().takeIf { it.isNotEmpty() }?.joinToString("
+") { "${it.name}: ready" }
+        ?: "No AI providers saved yet.
+Add a name + API key below."
 
     suspend fun synthesizeSearchAnswer(query: String, evidence: String): String? = withContext(Dispatchers.IO) {
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
         callTextProvider(provider,
             "You are Phormi's browser search assistant. Combine the supplied evidence accurately, do not invent facts, and clearly mark uncertainty.",
-            "Question: $query\n\nSearch evidence:\n$evidence"
+            "Question: $query
+
+Search evidence:
+$evidence"
         )
     }
 
     suspend fun analyzeVideo(metadata: JSONObject, frames: List<String>): String? = withContext(Dispatchers.IO) {
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
-        val prompt = "Analyze this browser video using only the supplied metadata and sampled frames. State visible evidence and uncertainty.\nMetadata:\n${metadata.toString(2)}"
+        val prompt = "Analyze this browser video using only the supplied metadata and sampled frames. State visible evidence and uncertainty.
+Metadata:
+${metadata.toString(2)}"
         callTextProvider(provider, "You analyze browser video evidence without inventing unseen audio or content.", prompt)
     }
 
@@ -251,7 +264,14 @@ class AiController(private val context: Context) {
                 } else stored
                 val text = callTextProvider(provider,
                     "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
-                    "Goal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
+                    "Goal: $instruction
+
+Previous steps:
+${history.joinToString("
+") { "${it.stepNumber}: ${it.actionTaken}" }}
+
+Current screen JSON:
+$screen"
                 ) ?: continue
                 val cleaned = text.replace("```json", "").replace("```", "").trim()
                 val a = cleaned.indexOf('{'); val b = cleaned.lastIndexOf('}')
@@ -289,14 +309,21 @@ class AiController(private val context: Context) {
             builder.addHeader("x-api-key", provider.apiKey).addHeader("anthropic-version", "2023-06-01")
         } else if (endpoint.contains("generativelanguage.googleapis.com") && !endpoint.contains("/openai/")) {
             body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put(
-                "parts", JSONArray().put(JSONObject().put("text", "$system\n\n$user")))))
+                "parts", JSONArray().put(JSONObject().put("text", "$system
+
+$user")))))
             val separator = if (normalizedEndpoint.contains("?")) "&" else "?"
             builder.url(normalizedEndpoint + separator + "key=" + URLEncoder.encode(provider.apiKey, "UTF-8"))
         } else {
             body = JSONObject().put("model", provider.model).put("messages", JSONArray()
                 .put(JSONObject().put("role", "system").put("content", system))
                 .put(JSONObject().put("role", "user").put("content", user)))
-            builder.addHeader("Authorization", "Bearer ${provider.apiKey}")\n            // OpenRouter uses these optional headers for attribution/routing; they are harmless\n            // for other OpenAI-compatible gateways only when that gateway accepts them.\n            if (endpoint.contains("openrouter.ai")) {\n                builder.addHeader("X-Title", "Phormi")\n            }
+            builder.addHeader("Authorization", "Bearer ${provider.apiKey}")
+            // OpenRouter uses these optional headers for attribution/routing; they are harmless
+            // for other OpenAI-compatible gateways only when that gateway accepts them.
+            if (endpoint.contains("openrouter.ai")) {
+                builder.addHeader("X-Title", "Phormi")
+            }
         }
 
         val request = builder.post(body.toString().toRequestBody("application/json".toMediaType())).build()
