@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.Window
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
@@ -94,12 +95,24 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         super.onStartInput(attribute, restarting); editorInfo = attribute; page = KeyboardPage.LETTERS; capsLock = false; shift = false
         autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute); panel = Panel.KEYBOARD
     }
-    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); editorInfo = info ?: editorInfo; panel = Panel.KEYBOARD; setInputView(render()); applyPendingInput() }
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); editorInfo = info ?: editorInfo; panel = Panel.KEYBOARD; setInputView(render()); applyKeyboardWindowSize(); applyPendingInput() }
     override fun onFinishInput() { stopRepeat(); editorInfo = null; super.onFinishInput() }
     override fun onUnbindInput() { stopRepeat(); editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) { stopRepeat(); super.onFinishInputView(finishingInput) }
     override fun onEvaluateFullscreenMode(): Boolean = false
-    override fun onCreateInputView(): View = render()
+    override fun onCreateInputView(): View = render().also { applyKeyboardWindowSize() }
+
+    override fun onConfigureWindow(win: Window, isFullscreen: Boolean, isCandidatesOnly: Boolean) {
+        super.onConfigureWindow(win, isFullscreen, isCandidatesOnly)
+        if (!isFullscreen && !isCandidatesOnly) applyKeyboardWindowSize(win)
+    }
+
+    private fun applyKeyboardWindowSize(win: Window = getWindow().window) {
+        val height = scaled(baseHeight())
+        val width = (resources.displayMetrics.widthPixels * PhormiKeyboardPreferences.widthScale(this)).roundToInt()
+            .coerceIn(dp(240), getMaxWidth().coerceAtLeast(dp(240)))
+        win.setLayout(width, height)
+    }
 
     private fun density(): Float = resources.displayMetrics.density
     private fun dp(value: Int): Int = (value * density()).roundToInt().coerceAtLeast(1)
@@ -129,7 +142,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun pill(label:String,action:()->Unit):Button=Button(this).apply{text=label;textSize=13f;setTextColor(themeText());typeface=Typeface.DEFAULT_BOLD;minWidth=0;minHeight=0;isAllCaps=false;stateListAnimator=null;setPadding(dp(7),0,dp(7),0);background=rounded(themePill(),dp(13));contentDescription=label;setOnClickListener{feedback(this);action()}}
     private fun keyButton(label:String,weight:Float=1f,action:()->Unit):Button=Button(this).apply{text=label;textSize=when{label.codePointCount(0,label.length)==1->20f;label=="Space"->13f;else->12f};setTextColor(themeText());minWidth=0;minHeight=0;isAllCaps=false;stateListAnimator=null;setPadding(dp(2),0,dp(2),0);background=rounded(themeKey(),dp(9));contentDescription=label;setOnClickListener{feedback(this);action()};layoutParams=LinearLayout.LayoutParams(0,scaled(46),weight).apply{setMargins(dp(2),dp(2),dp(2),dp(2))}}
     private fun shiftButton(action:()->Unit):Button{val state=when{capsLock->2;shift||autoShift->1;else->0};return keyButton(if(state==0)"⇧"else"⇧A",action=action).apply{background=rounded(when(state){2->Color.rgb(220,38,38);1->accent();else->themeKey()},dp(9));setTextColor(Color.WHITE);contentDescription=when(state){2->"Caps lock";1->"One-letter capitalization";else->"Shift"}}}
-    private fun addResizeGrip(root:LinearLayout){val grip=TextView(this).apply{text="↕↔";textSize=16f;gravity=Gravity.CENTER;setTextColor(if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184));background=rounded(themePill(),dp(10));contentDescription="Resize Phormi Keyboard height and width";setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{resizeStartY=event.rawY;resizeStartX=event.rawX;resizeStartHeight=PhormiKeyboardPreferences.heightScale(this@PhormiKeyboardServiceV2);resizeStartWidth=PhormiKeyboardPreferences.widthScale(this@PhormiKeyboardServiceV2);resizePreviewHeight=resizeStartHeight;resizePreviewWidth=resizeStartWidth;true};MotionEvent.ACTION_MOVE->{resizePreviewHeight=(resizeStartHeight+(resizeStartY-event.rawY)/(520f*density())).coerceIn(0.70f,1.35f);resizePreviewWidth=(resizeStartWidth+(event.rawX-resizeStartX)/resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)).coerceIn(0.70f,1.00f);val lp=(root.layoutParams as? LinearLayout.LayoutParams?:LinearLayout.LayoutParams(-1,scaled(baseHeight())));lp.width=(resources.displayMetrics.widthPixels*resizePreviewWidth).roundToInt().coerceAtLeast(dp(240));lp.height=(baseHeight()*density()*resizePreviewHeight).roundToInt().coerceAtLeast(dp(240));lp.gravity=Gravity.CENTER_HORIZONTAL;root.layoutParams=lp;root.minimumHeight=lp.height;root.requestLayout();true};MotionEvent.ACTION_UP->{PhormiKeyboardPreferences.setHeightScale(this@PhormiKeyboardServiceV2,resizePreviewHeight);PhormiKeyboardPreferences.setWidthScale(this@PhormiKeyboardServiceV2,resizePreviewWidth);setInputView(render());true};MotionEvent.ACTION_CANCEL->{setInputView(render());true};else->true}}};root.addView(grip,0,LinearLayout.LayoutParams(dp(64),dp(26)).apply{gravity=Gravity.CENTER_HORIZONTAL;bottomMargin=dp(2)})}
+    private fun addResizeGrip(root:LinearLayout){val grip=TextView(this).apply{text="↕↔";textSize=16f;gravity=Gravity.CENTER;setTextColor(if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184));background=rounded(themePill(),dp(10));contentDescription="Resize Phormi Keyboard height and width";setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{resizeStartY=event.rawY;resizeStartX=event.rawX;resizeStartHeight=PhormiKeyboardPreferences.heightScale(this@PhormiKeyboardServiceV2);resizeStartWidth=PhormiKeyboardPreferences.widthScale(this@PhormiKeyboardServiceV2);resizePreviewHeight=resizeStartHeight;resizePreviewWidth=resizeStartWidth;true};MotionEvent.ACTION_MOVE->{resizePreviewHeight=(resizeStartHeight+(resizeStartY-event.rawY)/(520f*density())).coerceIn(0.70f,1.35f);resizePreviewWidth=(resizeStartWidth+(event.rawX-resizeStartX)/resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)).coerceIn(0.70f,1.00f);val lp=(root.layoutParams as? LinearLayout.LayoutParams?:LinearLayout.LayoutParams(-1,scaled(baseHeight())));lp.width=(resources.displayMetrics.widthPixels*resizePreviewWidth).roundToInt().coerceAtLeast(dp(240));lp.height=(baseHeight()*density()*resizePreviewHeight).roundToInt().coerceAtLeast(dp(240));lp.gravity=Gravity.CENTER_HORIZONTAL;root.layoutParams=lp;root.minimumHeight=lp.height;root.requestLayout();true};MotionEvent.ACTION_UP->{PhormiKeyboardPreferences.setHeightScale(this@PhormiKeyboardServiceV2,resizePreviewHeight);PhormiKeyboardPreferences.setWidthScale(this@PhormiKeyboardServiceV2,resizePreviewWidth);setInputView(render());applyKeyboardWindowSize();true};MotionEvent.ACTION_CANCEL->{setInputView(render());true};else->true}}};root.addView(grip,0,LinearLayout.LayoutParams(dp(64),dp(26)).apply{gravity=Gravity.CENTER_HORIZONTAL;bottomMargin=dp(2)})}
     private fun toolbar(root:LinearLayout){val scroll=HorizontalScrollView(this).apply{isHorizontalScrollBarEnabled=false;overScrollMode=View.OVER_SCROLL_NEVER};val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};fun add(label:String,width:Int=58,action:()->Unit){row.addView(pill(label,action),LinearLayout.LayoutParams(dp(width),scaled(36)).apply{setMargins(dp(2),0,dp(2),0)})};add("😀"){panel=Panel.EMOJI;setInputView(render())};add("📋"){panel=Panel.CLIPBOARD;PhormiKeyboardClipboardStore.capturePrimaryClipboard(this);setInputView(render())};add("▦ Tools",70){panel=Panel.TOOLS;setInputView(render())};add("GIF",52){panel=Panel.MEDIA;setInputView(render())};add("Sticker",68){panel=Panel.MEDIA;setInputView(render())};if(Build.VERSION.SDK_INT>=28&&shouldOfferSwitchingToNextInputMethod())add("🌐",52){runCatching{switchToNextInputMethod(false)}};scroll.addView(row);root.addView(scroll,LinearLayout.LayoutParams(-1,scaled(40)))}
     private fun predictionStrip(root:LinearLayout){
         val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
