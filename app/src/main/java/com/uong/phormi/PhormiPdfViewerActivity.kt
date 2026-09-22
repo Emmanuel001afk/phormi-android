@@ -89,14 +89,19 @@ class PhormiPdfViewerActivity : AppCompatActivity() {
                 }
             }
         }.onFailure {
-            title.text = "Cannot open PDF"
-            pages.removeAllViews()
-            pages.addView(TextView(this).apply {
-                text = "Phormi could not render this PDF. Use an installed PDF app instead."
-                setTextColor(Color.WHITE)
-                textSize = 15f
-                setPadding(24, 32, 24, 32)
-            })
+            val openedExternally = PhormiFileOpener.openExternal(this, uri, "application/pdf")
+            if (openedExternally) {
+                finish()
+            } else {
+                title.text = "Cannot open PDF"
+                pages.removeAllViews()
+                pages.addView(TextView(this).apply {
+                    text = "Phormi could not render this PDF and no installed PDF app accepted it."
+                    setTextColor(Color.WHITE)
+                    textSize = 15f
+                    setPadding(24, 32, 24, 32)
+                })
+            }
         }
     }
 
