@@ -81,7 +81,7 @@ object PhormiFileOpener {
             if (internal) return true
             return openExternal(context, uri, mime)
         }
-        if (mime == "application/vnd.android.package-archive") {
+        if (mime == "application/pdf") {\n            return runCatching {\n                context.startActivity(Intent(context, PhormiPdfViewerActivity::class.java).apply {\n                    putExtra("uri", uri)\n                    putExtra("title", displayName(context, uri))\n                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)\n                })\n                true\n            }.getOrElse { openExternal(context, uri, mime) }\n        }\n        if (mime == "application/vnd.android.package-archive") {
             return runCatching {
                 val installer = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, mime)
