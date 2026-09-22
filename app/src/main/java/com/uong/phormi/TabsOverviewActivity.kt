@@ -153,7 +153,10 @@ class TabsOverviewActivity : AppCompatActivity() {
     }
 
     private fun showEnvironmentChooser(item: TabInfo) {
-        val envs = PhormiEnvironmentManager.list().filter { it != "Ghost" }.toTypedArray()
+        val envs = (listOf(PhormiEnvironmentManager.DEFAULT_ENVIRONMENT) +
+            PhormiEnvironmentManager.list().filter { it != "Ghost" && it != PhormiEnvironmentManager.DEFAULT_ENVIRONMENT })
+            .distinct()
+            .toTypedArray()
         if (envs.isEmpty()) return
         AlertDialog.Builder(this).setTitle("Environment for ${item.title}").setItems(envs) { _, which ->
             setResult(RESULT_OK, Intent().apply {
