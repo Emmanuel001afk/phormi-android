@@ -342,7 +342,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Quick access is rendered as responsive rows. Fixed services are not removable;
-        // personal favorites and most-visited entries can be long-pressed and removed.
+        // Personal Quick Access contains only user-created shortcuts; Favorites and Most Visited stay in their own sections.
         loadQuickAccessRows()
         updateHomeChromeVisibility()
 
@@ -630,16 +630,6 @@ class MainActivity : AppCompatActivity() {
             val item = custom.optJSONObject(i) ?: continue
             val name = item.optString("name").trim(); val url = item.optString("url").trim()
             if (name.isNotBlank() && url.isNotBlank() && personal.none { it.url == url }) personal += QuickSite(name, url, "⌂", true)
-        }
-        val favoriteContexts = runCatching { JSONObject(prefs.getString(KEY_FAVORITE_CONTEXTS, "{}") ?: "{}") }.getOrElse { JSONObject() }
-        BookmarksActivity.getAll(this).forEach { bookmark ->
-            if (personal.none { it.url == bookmark.url }) {
-                val tabId = favoriteContexts.optInt(bookmark.url, -1).takeIf { it > 0 }
-                personal += QuickSite(bookmark.title, bookmark.url, "◇", true, tabId)
-            }
-        }
-        HistoryActivity.getMostVisited(this, 8, 10).forEach { visited ->
-            if (personal.none { it.url == visited.url }) personal += QuickSite(visited.title, visited.url, "•", true)
         }
         val all = fixed + personal.take(18) + QuickSite("Add", "", "+", false)
         val columns = when { resources.displayMetrics.widthPixels >= 900 -> 8; resources.displayMetrics.widthPixels >= 600 -> 7; else -> 6 }
