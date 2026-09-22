@@ -9,9 +9,12 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Icon
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
@@ -2999,6 +3002,7 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_OBJECT_ANCHORS -> showObjectAnchors()
                 MenuActivity.ACTION_SAME_PAGE_SPLIT -> openSamePageSplit()
                 MenuActivity.ACTION_DESKTOP_MODE -> toggleDesktopMode()
+                MenuActivity.ACTION_INSTALL_SITE -> addCurrentSiteToHomeScreen()
                 MenuActivity.ACTION_FAVORITE -> addCurrentPageToBookmarks()
                 MenuActivity.ACTION_HELP -> startActivity(Intent(this, HelpActivity::class.java))
                 MenuActivity.ACTION_KEEP_SCREEN_ON -> {
@@ -3366,6 +3370,34 @@ class MainActivity : AppCompatActivity() {
         webView.settings.loadWithOverviewMode = enabled
         webView.setInitialScale(0)
     }
+    private fun addCurrentSiteToHomeScreen() {
+        val view = activeWebView() ?: return
+        val url = view.url.orEmpty()
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            Toast.makeText(this, "Open a website first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val title = view.title.orEmpty().ifBlank { Uri.parse(url).host.orEmpty().ifBlank { "Phormi site" } }
+        val id = "site_" + Integer.toHexString(url.hashCode())
+        val shortcut = ShortcutInfo.Builder(this, id)
+            .setShortLabel(title.take(25))
+            .setLongLabel("Open $title in Phormi")
+            .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse(url)
+            })
+            .build()
+        val manager = getSystemService(ShortcutManager::class.java)
+        if (manager.isRequestPinShortcutSupported) {
+            manager.requestPinShortcut(shortcut, null)
+            Toast.makeText(this, "Choose where to add the site shortcut.", Toast.LENGTH_SHORT).show()
+        } else {
+            manager.dynamicShortcuts = (manager.dynamicShortcuts + shortcut).take(4)
+            Toast.makeText(this, "Site shortcut added to Phormi shortcuts.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun toggleDesktopMode() {
         val desktop = !prefs.getBoolean("desktop_mode", false)
         prefs.edit().putBoolean("desktop_mode", desktop).apply()
