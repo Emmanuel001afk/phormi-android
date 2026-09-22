@@ -71,6 +71,22 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         }
         root.addView(top, FrameLayout.LayoutParams(-1, 64).apply { gravity = android.view.Gravity.TOP })
 
+        // Images use the same built-in viewer entry point but do not go through ExoPlayer.
+        // This restores Phormi's native image display while keeping video/audio controls intact.
+        if (mime.startsWith("image/")) {
+            playerView.visibility = View.GONE
+            val image = android.widget.ImageView(this).apply {
+                setBackgroundColor(0xFF000000.toInt())
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                adjustViewBounds = true
+                setImageURI(uri)
+                contentDescription = title
+            }
+            root.addView(image, FrameLayout.LayoutParams(-1, -1).apply { topMargin = 64 })
+            setContentView(root)
+            return
+        }
+
         lockButton = TextView(this).apply {
             text = "🔓"
             textSize = 20f
