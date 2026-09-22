@@ -140,11 +140,7 @@ object PhormiDownloadEngine {
             putExtra(EXTRA_ID, id)
         }
         try {
-            if (action == ACTION_PAUSE || action == ACTION_CANCEL) {
-                context.startService(intent)
-            } else {
-                ContextCompat.startForegroundService(context, intent)
-            }
+            ContextCompat.startForegroundService(context, intent)
         } catch (e: Exception) {
             // Do not silently lose the linkage. The row stays visible with an actionable error.
             if (action == ACTION_ENQUEUE || action == ACTION_RESUME) {
