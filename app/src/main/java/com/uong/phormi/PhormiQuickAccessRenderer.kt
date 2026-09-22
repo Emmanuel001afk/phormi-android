@@ -33,7 +33,7 @@ object PhormiQuickAccessRenderer {
 
         if (combined.isEmpty()) {
             rows.addView(TextView(context).apply {
-                text = "Quick Access will fill with pinned sites, Favorites, shortcuts, and frequently visited sites."
+                text = "Quick Access contains pinned sites and shortcuts you add."
                 setTextColor(Color.rgb(148, 163, 184)); textSize = 12f; setPadding(8, 10, 8, 10)
             })
             return
@@ -57,8 +57,6 @@ object PhormiQuickAccessRenderer {
                     setOnClickListener { onOpen(item.url, item.kind == "Pinned") }
                     setOnLongClickListener {
                         when (item.kind) {
-                            "Favorite" -> hide(context, HIDDEN_FAVORITES, item.url)
-                            "Most visited" -> hide(context, HIDDEN_VISITED, item.url)
                             "Pinned" -> return@setOnLongClickListener false
                             else -> hide(context, HIDDEN_CUSTOM, item.url)
                         }
