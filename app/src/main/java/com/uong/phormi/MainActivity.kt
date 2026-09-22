@@ -1309,7 +1309,12 @@ class MainActivity : AppCompatActivity() {
         val button = findViewById<TextView>(R.id.btn_favorite) ?: return
         val url = activeWebView()?.url.orEmpty()
         val favorite = url.startsWith("http") && BookmarksActivity.getAll(this).any { it.url == url }
-        button.alpha = if (favorite) 1f else 0.55f
+        val icon = button.compoundDrawables.getOrNull(1)?.mutate()
+        if (icon != null) {
+            icon.setTint(if (favorite) Color.rgb(56, 189, 248) else Color.rgb(100, 116, 139))
+            button.setCompoundDrawablesWithIntrinsicBounds(null, icon, null, null)
+        }
+        button.alpha = if (favorite) 1f else 0.72f
         button.contentDescription = if (favorite) "Remove current page from favorites" else "Add current page to favorites"
     }
 
