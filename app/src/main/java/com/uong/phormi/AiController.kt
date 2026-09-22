@@ -104,6 +104,7 @@ class AiController(private val context: Context) {
             n.contains("grok") || e.contains("api.x.ai") -> "latest"
             n.contains("openrouter") || e.contains("openrouter.ai") -> "openrouter/free"
             n.contains("deepseek") || e.contains("deepseek.com") -> "deepseek-chat"
+            n.contains("gemini") || e.contains("generativelanguage.googleapis.com") -> "gemini-2.5-flash"
             n.contains("groq") || e.contains("api.groq.com") -> "llama-3.3-70b-versatile"
             else -> null
         }
