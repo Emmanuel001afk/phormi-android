@@ -85,6 +85,8 @@ class DownloadsActivity : AppCompatActivity() {
                     }
                 }
                 delete.visibility = if (!row.legacy) View.VISIBLE else View.GONE
+                delete.text = if (row.state == "COMPLETED") "🗑" else "×"
+                delete.contentDescription = if (row.state == "COMPLETED") "Delete completed download" else "Cancel download"
                 delete.setOnClickListener { PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id) }
                 view.setOnClickListener { openRow(row) }
                 view.setOnLongClickListener {
