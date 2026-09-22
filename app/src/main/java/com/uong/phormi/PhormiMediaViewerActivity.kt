@@ -128,9 +128,16 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             exo.playWhenReady = true
             exo.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    android.widget.Toast.makeText(this@PhormiMediaViewerActivity,
-                        "Phormi could not play this file: ${error.errorCodeName}",
-                        android.widget.Toast.LENGTH_LONG).show()
+                    // The built-in player is always tried first. If it cannot decode the
+                    // downloaded media, immediately hand the same URI to Android installed
+                    // players instead of leaving the user at a dead player screen.
+                    android.widget.Toast.makeText(
+                        this@PhormiMediaViewerActivity,
+                        "Phormi player could not open this media. Choosing another player…",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    val openedExternally = PhormiFileOpener.openExternal(this@PhormiMediaViewerActivity, uri, mime)
+                    if (!openedExternally) finish()
                 }
             })
         }
