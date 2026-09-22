@@ -70,11 +70,15 @@ class TabsOverviewActivity : AppCompatActivity() {
             when (mode) { "vertical" -> tabsVertical; "horizontal" -> tabsHorizontal; else -> tabsGrid }.addView(empty, LinearLayout.LayoutParams(-1, -1)); return
         }
         if (mode == "grid") {
-            items.chunked(2).forEach { pair ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, 160) }
-                pair.forEach { item -> row.addView(makeTab(item, "grid"), LinearLayout.LayoutParams(0, -1, 1f)) }
-                if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
-                tabsGrid.addView(row)
+            val sections = items.groupBy { it.groupName.ifBlank { "Ungrouped" } }
+            sections.forEach { (group, groupItems) ->
+                tabsGrid.addView(groupHeader(group), LinearLayout.LayoutParams(-1, -2))
+                groupItems.chunked(2).forEach { pair ->
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, 160) }
+                    pair.forEach { item -> row.addView(makeTab(item, "grid"), LinearLayout.LayoutParams(0, -1, 1f)) }
+                    if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
+                    tabsGrid.addView(row)
+                }
             }
         } else if (mode == "vertical") {
             var lastGroup = ""
@@ -91,16 +95,28 @@ class TabsOverviewActivity : AppCompatActivity() {
             }
         } else {
             tabsHorizontal.orientation = LinearLayout.VERTICAL
-            val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            items.forEachIndexed { index, item ->
-                val view = makeTab(item, "horizontal")
-                val lp = LinearLayout.LayoutParams(174.dp(), 174.dp()).apply { leftMargin = 6; rightMargin = 6 }
-                if (index % 2 == 0) topRow.addView(view, lp) else bottomRow.addView(view, lp)
+            items.groupBy { it.groupName.ifBlank { "Ungrouped" } }.forEach { (group, groupItems) ->
+                tabsHorizontal.addView(groupHeader(group), LinearLayout.LayoutParams(-1, -2))
+                groupItems.chunked(2).forEach { pair ->
+                    val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                    val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                    pair.forEachIndexed { index, item ->
+                        val view = makeTab(item, "horizontal")
+                        val lp = LinearLayout.LayoutParams(174.dp(), 174.dp()).apply { leftMargin = 6; rightMargin = 6 }
+                        if (index == 0) topRow.addView(view, lp) else bottomRow.addView(view, lp)
+                    }
+                    tabsHorizontal.addView(topRow, LinearLayout.LayoutParams(-2, 182.dp()))
+                    if (bottomRow.childCount > 0) tabsHorizontal.addView(bottomRow, LinearLayout.LayoutParams(-2, 182.dp()))
+                }
             }
-            tabsHorizontal.addView(topRow, LinearLayout.LayoutParams(-2, 182.dp()))
-            tabsHorizontal.addView(bottomRow, LinearLayout.LayoutParams(-2, 182.dp()))
         }
+    }
+
+    private fun groupHeader(group: String): TextView = TextView(this).apply {
+        text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
+        textSize = 12f
+        setTextColor(0xFF38BDF8.toInt())
+        setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp())
     }
 
     private fun makeTab(item: TabInfo, style: String): View {
