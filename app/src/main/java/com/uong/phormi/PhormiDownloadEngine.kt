@@ -42,7 +42,7 @@ object PhormiDownloadEngine {
     private const val KEY_ITEMS = "items"
     private val lock = Any()
 
-    enum class State { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED }
+    enum class State { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
 
     data class Item(
         val id: String,
@@ -121,14 +121,19 @@ object PhormiDownloadEngine {
         start(context, ACTION_RESUME, id)
     }
     fun cancel(context: Context, id: String) {
-        // Remove the row immediately; the service still receives the command to cancel
-        // the in-flight HTTP call. Delete any already-created MediaStore file as well.
+        // Cancellation is a user-visible terminal state. Keep the row so the user can
+        // distinguish "cancelled" from "deleted", then offer a real delete action.
+        if (record(context, id) != null) updateState(context, id, State.CANCELLED, "Download cancelled")
+        start(context, ACTION_CANCEL, id)
+    }
+
+    fun delete(context: Context, id: String) {
         val existing = record(context, id)
         existing?.localUri?.let { uri ->
             runCatching { context.contentResolver.delete(Uri.parse(uri), null, null) }
+                .onFailure { runCatching { Uri.parse(uri).path?.let { java.io.File(it).delete() } } }
         }
         remove(context, id)
-        start(context, ACTION_CANCEL, id)
     }
 
     fun record(context: Context, id: String): Record? = records(context).firstOrNull { it.id == id }
@@ -332,7 +337,11 @@ class PhormiDownloadService : Service() {
         activeCalls[id]?.cancel()
         val record = PhormiDownloadEngine.record(this, id)
         record?.localUri?.let { deleteUri(it) }
-        PhormiDownloadEngine.remove(this, id)
+        // Do not remove the persisted row here: the Downloads screen needs to show
+        // the cancelled state and expose Delete as the next explicit action.
+        if (record != null) {
+            PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.CANCELLED, "Download cancelled")
+        }
     }
 
     private fun download(id: String) {
@@ -356,7 +365,11 @@ class PhormiDownloadService : Service() {
                 PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
                 return
             } catch (cancelled: CancelException) {
-                PhormiDownloadEngine.remove(this, id)
+                val current = PhormiDownloadEngine.record(this, id)
+                if (current != null) {
+                    current.localUri?.let { deleteUri(it) }
+                    PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.CANCELLED, "Download cancelled")
+                }
                 return
             } catch (http: HttpFailure) {
                 if (cancelSignals[id] == Control.CANCEL) return
