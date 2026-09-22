@@ -103,7 +103,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun density(): Float = resources.displayMetrics.density
     private fun dp(value: Int): Int = (value * density()).roundToInt().coerceAtLeast(1)
-    private fun baseHeight(): Int = 360
+    private fun baseHeight(): Int = 300
     private fun scale(level: Int = PhormiKeyboardPreferences.height(this)): Float = PhormiKeyboardPreferences.heightScaleFor(level)
     private fun scaled(value: Int, level: Int = PhormiKeyboardPreferences.height(this)): Int = dp((value * scale(level)).roundToInt())
     private fun theme(): Int = PhormiKeyboardPreferences.theme(this)
