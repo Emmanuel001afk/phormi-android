@@ -19,6 +19,7 @@ object PhormiKeyboardSystemSpellChecker {
     private var session: SpellCheckerSession? = null
     private var sessionLocale: Locale? = null
     private var lastKey = ""
+    private var pendingRequest: Runnable? = null
 
     fun cached(word: String, locale: Locale): List<String> = cache[key(word, locale)].orEmpty()
 
@@ -27,10 +28,20 @@ object PhormiKeyboardSystemSpellChecker {
         if (clean.length < 2) return
         val k = key(clean, locale)
         if (cache.containsKey(k) && cache[k].orEmpty().isNotEmpty()) return
+        // Keyboard input can call this for every character. Debounce the system spell-checker
+        // so its session setup/request never sits directly on the typing path.
+        pendingRequest?.let(main::removeCallbacks)
+        val task = Runnable { requestNow(context.applicationContext, clean, locale) }
+        pendingRequest = task
+        main.postDelayed(task, 140L)
+    }
+
+    @Synchronized
+    private fun requestNow(context: Context, clean: String, locale: Locale) {
+        val k = key(clean, locale)
+        if (cache.containsKey(k) && cache[k].orEmpty().isNotEmpty()) return
         val manager = context.getSystemService(Context.TEXT_SERVICES_MANAGER_SERVICE) as? TextServicesManager ?: return
-        if (Build.VERSION.SDK_INT >= 31) {
-            if (manager.currentSpellCheckerInfo == null) return
-        }
+        if (Build.VERSION.SDK_INT >= 31 && manager.currentSpellCheckerInfo == null) return
         if (session == null || sessionLocale != locale || session?.isSessionDisconnected == true) {
             runCatching { session?.close() }
             session = runCatching { manager.newSpellCheckerSession(null, locale, listener, true) }.getOrNull()
