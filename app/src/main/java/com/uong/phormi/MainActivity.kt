@@ -1364,7 +1364,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateFavoriteButton() {
         val button = findViewById<TextView>(R.id.btn_favorite) ?: return
         val url = activeWebView()?.url.orEmpty()
-        val favorite = url.startsWith("http") && BookmarksActivity.getAll(this).any { it.url == url }
+        val favorite = url.startsWith("http") && PhormiFavorites.contains(this, url)
         val icon = button.compoundDrawables.getOrNull(1)?.mutate()
         if (icon != null) {
             icon.setTint(if (favorite) Color.rgb(56, 189, 248) else Color.rgb(100, 116, 139))
@@ -3403,20 +3403,12 @@ class MainActivity : AppCompatActivity() {
         val view = activeWebView() ?: return
         val url = view.url.orEmpty()
         if (!url.startsWith("http")) return
-        val bookmarks = BookmarksActivity.getAll(this)
-        if (bookmarks.any { it.url == url }) {
-            BookmarksActivity.remove(this, url)
-            val contexts = runCatching { JSONObject(prefs.getString(KEY_FAVORITE_CONTEXTS, "{}") ?: "{}") }.getOrElse { JSONObject() }
-            contexts.remove(url)
-            prefs.edit().putString(KEY_FAVORITE_CONTEXTS, contexts.toString()).apply()
-            Toast.makeText(this, "Removed from favorites", Toast.LENGTH_SHORT).show()
-        } else {
-            BookmarksActivity.add(this, view.title.orEmpty(), url)
-            val contexts = runCatching { JSONObject(prefs.getString(KEY_FAVORITE_CONTEXTS, "{}") ?: "{}") }.getOrElse { JSONObject() }
-            contexts.put(url, activeTabId)
-            prefs.edit().putString(KEY_FAVORITE_CONTEXTS, contexts.toString()).apply()
-            Toast.makeText(this, "Added to favorites", Toast.LENGTH_SHORT).show()
-        }
+        val added = PhormiFavorites.toggle(this, view.title.orEmpty(), url)
+        Toast.makeText(
+            this,
+            if (added) "Added to favorites" else "Removed from favorites",
+            Toast.LENGTH_SHORT
+        ).show()
         loadQuickAccessRows()
         updateFavoriteButton()
     }
