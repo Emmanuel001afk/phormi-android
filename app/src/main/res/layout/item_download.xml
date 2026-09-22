@@ -35,6 +35,8 @@
             android:textColor="#E2E8F0"
             android:textSize="18sp"
             android:background="#182338"
+            android:clickable="true"
+            android:focusable="true"
             android:contentDescription="Pause download" />
 
         <TextView
@@ -45,6 +47,9 @@
             android:text="×"
             android:textColor="#E2E8F0"
             android:textSize="24sp"
+            android:background="#182338"
+            android:clickable="true"
+            android:focusable="true"
             android:contentDescription="Delete download" />
     </LinearLayout>
 
