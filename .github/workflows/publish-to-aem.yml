@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   publish:
-    if: \${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download successful Phormi APK
@@ -23,12 +23,12 @@ jobs:
         with:
           name: phormi-debug-apk
           path: release
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          run-id: \${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Publish APK to AEM
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           SUPABASE_KEY: sb_publishable_Imgtr_W_Z868cBsNEcWpeg_89FE2Mvb
           SUPABASE_URL: https://wfvvmyixqcwosmuldxoq.supabase.co
         shell: bash
@@ -38,7 +38,7 @@ jobs:
           APK="$(find release -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
 
-          AAPT="$(find "\${ANDROID_HOME:-/opt/android-sdk}" -type f -name aapt | sort -V | tail -n 1)"
+          AAPT="$(find "${ANDROID_HOME:-/opt/android-sdk}" -type f -name aapt | sort -V | tail -n 1)"
           test -n "$AAPT"
 
           BADGING="$("$AAPT" dump badging "$APK" | head -n 1)"
@@ -55,13 +55,13 @@ jobs:
           test -n "$VERSION_NAME"
           test -n "$SIGNING_CERT"
 
-          SOURCE_RELEASE_ID="github-actions-\${{ github.event.workflow_run.id }}"
+          SOURCE_RELEASE_ID="github-actions-${{ github.event.workflow_run.id }}"
           FILENAME="$(basename "$APK")"
 
           META="$(jq -n \
             --arg action "prepare" \
             --arg repo "Emmanuel001afk/phormi-android" \
-            --argjson run_id "\${{ github.event.workflow_run.id }}" \
+            --argjson run_id "${{ github.event.workflow_run.id }}" \
             --arg filename "$FILENAME" \
             --arg application_name "$APP_NAME" \
             --arg version_name "$VERSION_NAME" \
@@ -102,7 +102,7 @@ jobs:
           FINALIZE="$(jq -n \
             --arg action "finalize" \
             --arg repo "Emmanuel001afk/phormi-android" \
-            --argjson run_id "\${{ github.event.workflow_run.id }}" \
+            --argjson run_id "${{ github.event.workflow_run.id }}" \
             --arg filename "$FILENAME" \
             --arg application_name "$APP_NAME" \
             --arg version_name "$VERSION_NAME" \
