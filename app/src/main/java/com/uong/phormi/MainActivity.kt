@@ -3329,11 +3329,8 @@ class MainActivity : AppCompatActivity() {
     private fun desktopUserAgent(enabled: Boolean): String {
         val mobile = WebSettings.getDefaultUserAgent(this)
         if (!enabled) return mobile
-        return mobile.replace(Regex("""\s+Mobile\b"""), "")
-            .replace(Regex(""";\s*wv\b"""), "")
-            .replace(Regex("""\s+Version/[0-9.]+"""), "")
-            .replace(Regex("""Android\s+[0-9.]+;\s*"""), "X11; Linux x86_64; ")
-            .replace(Regex("""\s+Build/[A-Za-z0-9._-]+;?"""), "")
+        val major = Regex("Chrome/(\\d+)").find(mobile)?.groupValues?.getOrNull(1) ?: "120"
+        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36"
     }
     private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
         webView.settings.userAgentString = desktopUserAgent(enabled)
