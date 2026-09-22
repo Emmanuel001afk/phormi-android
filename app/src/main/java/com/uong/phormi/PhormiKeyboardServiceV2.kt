@@ -177,7 +177,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val image=android.widget.ImageView(this).apply{scaleType=android.widget.ImageView.ScaleType.FIT_CENTER;contentDescription="Generated AI emoji";visibility=View.GONE}
         list.addView(image,LinearLayout.LayoutParams(-1,dp(150)))
         val controller=PhormiKeyboardAiEmojiController(this){files,loading->
-            post{
+            repeatHandler.post{
                 status.text=if(loading)"Creating emoji…"else if(files.isEmpty())"Generation failed — try again or add the Pollinations key in Tools."else"Emoji ready — tap it to insert"
                 val file=files.firstOrNull()
                 if(file!=null){
