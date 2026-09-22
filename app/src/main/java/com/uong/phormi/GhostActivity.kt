@@ -26,11 +26,17 @@ class GhostActivity : Activity() {
     private lateinit var strip: LinearLayout
     private lateinit var url: EditText
     private lateinit var count: TextView
+    private var ghostProfileName: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         buildUi()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+            ghostProfileName = savedInstanceState?.getString("ghost_profile")?.takeIf { it.isNotBlank() }
+                ?: ("PhormiGhost_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
+            runCatching { ProfileStore.getInstance().getOrCreateProfile(ghostProfileName!!) }
+        }
         val savedUrls = savedInstanceState?.getStringArrayList("ghost_urls").orEmpty()
         val savedActive = savedInstanceState?.getInt("ghost_active", 0) ?: 0
         if (savedUrls.isEmpty()) {
@@ -112,6 +118,10 @@ class GhostActivity : Activity() {
     private fun createTab(initial: String) {
         val id = nextId++
         val webView = WebView(this)
+        if (ghostProfileName != null) {
+            runCatching { WebViewCompat.setProfile(webView, ghostProfileName!!) }
+                .onFailure { Toast.makeText(this, "Ghost mode could not create an isolated session.", Toast.LENGTH_LONG).show() }
+        }
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -128,7 +138,6 @@ class GhostActivity : Activity() {
                 super.onPageFinished(view, pageUrl)
             }
         }
-        CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
 
         val chip = TextView(this).apply {
@@ -170,6 +179,7 @@ class GhostActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putStringArrayList("ghost_urls", ArrayList(tabs.map { it.webView.url ?: "about:blank" }))
         outState.putInt("ghost_active", tabs.indexOfFirst { it.id == activeId }.coerceAtLeast(0))
+        ghostProfileName?.let { outState.putString("ghost_profile", it) }
         super.onSaveInstanceState(outState)
     }
 
@@ -182,6 +192,7 @@ class GhostActivity : Activity() {
         }
         tabs.clear()
         strip.removeAllViews()
+        deleteGhostProfile()
         finish()
     }
 
@@ -191,9 +202,16 @@ class GhostActivity : Activity() {
         if (active()?.canGoBack() == true) active()?.goBack() else finishAndClear()
     }
 
+    private fun deleteGhostProfile() {
+        val name = ghostProfileName ?: return
+        runCatching { ProfileStore.getInstance().deleteProfile(name) }
+        ghostProfileName = null
+    }
+
     override fun onDestroy() {
         tabs.forEach { runCatching { it.webView.destroy() } }
         tabs.clear()
+        deleteGhostProfile()
         super.onDestroy()
     }
 }
