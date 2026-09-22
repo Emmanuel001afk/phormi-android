@@ -11,12 +11,18 @@ android {
         applicationId = "com.uong.phormi"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = providers.environmentVariable("PHORMI_VERSION_CODE").orNull?.toIntOrNull() ?: 1
+        versionName = providers.environmentVariable("PHORMI_VERSION_NAME").orNull ?: "1.0"
     }
 
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            // Use the same Android debug signing identity for this repository until a dedicated
+            // production keystore is configured. This keeps release installs update-compatible
+            // with the existing debug-distributed Phormi APKs.
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
     compileOptions {
