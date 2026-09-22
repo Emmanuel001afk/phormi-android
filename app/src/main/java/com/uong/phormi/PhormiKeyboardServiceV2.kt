@@ -107,11 +107,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (!isFullscreen && !isCandidatesOnly) applyKeyboardWindowSize(win)
     }
 
-    private fun applyKeyboardWindowSize(win: Window = getWindow().window) {
+    private fun applyKeyboardWindowSize(win: Window? = getWindow().window) {
+        val window = win ?: return
         val height = scaled(baseHeight())
         val width = (resources.displayMetrics.widthPixels * PhormiKeyboardPreferences.widthScale(this)).roundToInt()
             .coerceIn(dp(240), getMaxWidth().coerceAtLeast(dp(240)))
-        win.setLayout(width, height)
+        window.setLayout(width, height)
     }
 
     private fun density(): Float = resources.displayMetrics.density
