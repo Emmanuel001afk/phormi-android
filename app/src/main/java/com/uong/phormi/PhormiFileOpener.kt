@@ -81,6 +81,16 @@ object PhormiFileOpener {
             if (internal) return true
             return openExternal(context, uri, mime)
         }
+        if (mime == "application/vnd.android.package-archive") {
+            return runCatching {
+                val installer = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mime)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(Intent.createChooser(installer, "Install APK with"))
+                true
+            }.getOrDefault(false)
+        }
         fun intent(type: String) = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, type)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
