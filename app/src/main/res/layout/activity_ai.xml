@@ -10,6 +10,7 @@
 <EditText android:id="@+id/input_model" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Model ID" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <Button android:id="@+id/btn_template" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Choose provider preset"/>
 <Button android:id="@+id/btn_save_keys" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Test &amp; save connection"/>
+<Button android:id="@+id/btn_web_ai" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Use AI on the web inside Phormi"/>
 <TextView android:id="@+id/key_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:textColor="#CBD5E1"/>
 <EditText android:id="@+id/input_instruction" android:layout_width="match_parent" android:layout_height="110dp" android:layout_marginTop="16dp" android:gravity="top" android:hint="Ask Phormi to do something on the current page" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"><Button android:id="@+id/btn_voice" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Voice"/><Button android:id="@+id/btn_run" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Run"/></LinearLayout>
