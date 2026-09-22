@@ -195,6 +195,7 @@ class MainActivity : AppCompatActivity() {
     private var twoFingerHoldActive = false
     private var twoFingerStartX = 0f
     private var twoFingerStartY = 0f
+    private var twoFingerStartSpan = 0f
     private var threeFingerStartX = 0f
     private var threeFingerTracking = false
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
@@ -3074,13 +3075,20 @@ class MainActivity : AppCompatActivity() {
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
                 if (ev.pointerCount == 2 && !twoFingerHoldActive && customView == null) {
+                    // Reload is a deliberate two-finger hold. Pinch/zoom changes the
+                    // distance between the fingers, so a changing span cancels reload.
                     twoFingerHoldActive = true
                     twoFingerStartX = (ev.getX(0) + ev.getX(1)) / 2f
                     twoFingerStartY = (ev.getY(0) + ev.getY(1)) / 2f
+                    twoFingerStartSpan = kotlin.math.hypot(
+                        ev.getX(1) - ev.getX(0),
+                        ev.getY(1) - ev.getY(0)
+                    )
                     val r = Runnable {
                         if (twoFingerHoldActive) {
                             activeWebView()?.reload()
                             Toast.makeText(this, "Reloading…", Toast.LENGTH_SHORT).show()
+                            twoFingerHoldActive = false
                         }
                     }
                     reloadRunnable = r
@@ -3091,13 +3099,20 @@ class MainActivity : AppCompatActivity() {
                     threeFingerStartX = ev.getX(0)
                     reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
                     reloadRunnable = null
+                    twoFingerHoldActive = false
                 }
             }
             android.view.MotionEvent.ACTION_MOVE -> {
                 if (twoFingerHoldActive && ev.pointerCount >= 2) {
                     val cx = (ev.getX(0) + ev.getX(1)) / 2f
                     val cy = (ev.getY(0) + ev.getY(1)) / 2f
-                    if (kotlin.math.hypot(cx - twoFingerStartX, cy - twoFingerStartY) > 36f) {
+                    val span = kotlin.math.hypot(
+                        ev.getX(1) - ev.getX(0),
+                        ev.getY(1) - ev.getY(0)
+                    )
+                    val centerMoved = kotlin.math.hypot(cx - twoFingerStartX, cy - twoFingerStartY)
+                    val spanChanged = kotlin.math.abs(span - twoFingerStartSpan)
+                    if (centerMoved > 24f || spanChanged > 18f) {
                         twoFingerHoldActive = false
                         reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
                         reloadRunnable = null
@@ -3106,9 +3121,19 @@ class MainActivity : AppCompatActivity() {
                 if (threeFingerTracking && ev.pointerCount >= 3) {
                     val dx = ev.getX(0) - threeFingerStartX
                     if (kotlin.math.abs(dx) >= 120f && customView == null) {
-                        val current = tabs.indexOfFirst { it.id == activeTabId }
-                        val target = if (dx < 0) current + 1 else current - 1
-                        tabs.getOrNull(target)?.let { switchToTab(it.id) }
+                        val activeIndex = tabs.indexOfFirst { it.id == activeTabId }
+                        if (activeIndex >= 0) {
+                            val groupManager = TabGroupManager(this)
+                            val activeGroup = groupManager.groupForTab(activeTabId)
+                            val pool = if (activeGroup != null) {
+                                tabs.filter { groupManager.groupForTab(it.id)?.id == activeGroup.id }
+                            } else {
+                                tabs
+                            }
+                            val current = pool.indexOfFirst { it.id == activeTabId }
+                            val target = if (dx < 0) current + 1 else current - 1
+                            pool.getOrNull(target)?.let { switchToTab(it.id) }
+                        }
                         threeFingerTracking = false
                     }
                 }
@@ -3123,11 +3148,13 @@ class MainActivity : AppCompatActivity() {
                     twoFingerHoldActive = false
                     reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
                     reloadRunnable = null
+                    twoFingerStartSpan = 0f
                 }
             }
         }
         return super.dispatchTouchEvent(ev)
     }
+
     private fun showNavigationLens() {
         val view = activeWebView() ?: return
         PhormiNavigationLens.inspect(view) { objects ->
