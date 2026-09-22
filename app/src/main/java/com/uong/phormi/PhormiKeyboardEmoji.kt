@@ -119,3 +119,5 @@ object PhormiKeyboardEmoji {
             put("✨", all)
         }
     }
+
+}
