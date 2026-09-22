@@ -174,7 +174,12 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         locked = value
         lockButton.text = if (locked) "🔒" else "🔓"
         lockButton.contentDescription = if (locked) "Unlock player controls" else "Lock player controls"
-        if (locked) { playerView.hideController(); brightnessHint.visibility = View.GONE; volumeHint.visibility = View.GONE }
+        playerView.useController = !locked
+        if (locked) {
+            playerView.hideController()
+            brightnessHint.visibility = View.GONE
+            volumeHint.visibility = View.GONE
+        }
     }
 
     private fun makeHint() = TextView(this).apply {
