@@ -15,6 +15,10 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 /** Separate private-browsing task with session-only tabs and normal browser controls. */
 class GhostActivity : Activity() {
