@@ -86,12 +86,26 @@ class AiController(private val context: Context) {
         val inferred = inferProviderConfig(name, endpoint, model)
         if (inferred.endpoint.isBlank()) throw IOException("AI endpoint is required")
         val explicit = inferred.model.takeIf { it.isNotBlank() && !it.equals("auto", true) }
-        val selected = explicit ?: discoverModels(inferred.endpoint, apiKey).maxByOrNull(::modelScore)
-            ?: throw IOException("No text model was discovered. Enter the provider's exact model ID or use a compatible /models endpoint.")
+        val selected = explicit
+            ?: discoverModels(inferred.endpoint, apiKey).maxByOrNull(::modelScore)
+            ?: defaultModelFor(name, inferred.endpoint)
+            ?: throw IOException("No text model was discovered. Enter the provider's exact model ID.")
         val resolved = ProviderConfig(inferred.endpoint, selected)
         val probe = callTextProvider(Provider("probe", name, resolved.endpoint, resolved.model, apiKey), "Reply with OK.", "Reply with OK.")
         if (probe.isNullOrBlank()) throw IOException("AI provider returned an empty response")
         resolved
+    }
+
+    private fun defaultModelFor(name: String, endpoint: String): String? {
+        val n = name.lowercase()
+        val e = endpoint.lowercase()
+        return when {
+            n.contains("grok") || e.contains("api.x.ai") -> "latest"
+            n.contains("openrouter") || e.contains("openrouter.ai") -> "openrouter/free"
+            n.contains("deepseek") || e.contains("deepseek.com") -> "deepseek-chat"
+            n.contains("groq") || e.contains("api.groq.com") -> "llama-3.3-70b-versatile"
+            else -> null
+        }
     }
 
     private fun discoverModels(endpoint: String, apiKey: String): List<String> {
