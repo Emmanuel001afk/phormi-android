@@ -19,17 +19,11 @@ object PhormiQuickAccessRenderer {
     fun render(context: Context, rows: LinearLayout, onOpen: (url: String, newTab: Boolean) -> Unit) {
         rows.removeAllViews()
         val accent = Color.rgb(56, 189, 248)
-        val fixed = listOf(
-            Item("Google", "https://www.google.com", "Pinned"),
-            Item("Bing", "https://www.bing.com", "Pinned"),
-            Item("YouTube", "https://www.youtube.com", "Pinned"),
-            Item("GitHub", "https://github.com", "Pinned")
-        )
         val custom = readCustom(context)
             .filterNot { hidden(context, HIDDEN_CUSTOM).contains(it.url) }
-        // Quick Access is intentionally deterministic: fixed pinned services + user-added shortcuts.
+        // Quick Access is intentionally user-controlled: only manually added/pinned shortcuts appear.
         // Favorites and Most Visited remain available in their own browser sections.
-        val combined = (fixed + custom).distinctBy { it.url }.take(12)
+        val combined = custom.distinctBy { it.url }.take(12)
 
         if (combined.isEmpty()) {
             rows.addView(TextView(context).apply {
