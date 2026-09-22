@@ -30,6 +30,12 @@ class PhormiRepairApplication : Application() {
     }
 
     override fun onCreate() {
+        // GhostActivity runs in a separate process. WebView requires a distinct data
+        // directory for each process before the first WebView/Chromium call.
+        if (android.os.Build.VERSION.SDK_INT >= 28 &&
+            android.app.Application.getProcessName().endsWith(":ghost")) {
+            runCatching { WebView.setDataDirectorySuffix("ghost") }
+        }
         super.onCreate()
         runCatching { PhormiEnvironmentManager.cleanupExpired(this, emptySet()) }
         PhormiKeyboardAiBridge.start(this)
