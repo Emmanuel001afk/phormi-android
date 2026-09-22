@@ -184,27 +184,20 @@ class AiController(private val context: Context) {
     fun hasAnyKey(): Boolean = listProviders().any { it.apiKey.isNotBlank() }
     fun isActive(): Boolean = prefs.getBoolean(KEY_ACTIVE, false) && hasAnyKey()
     fun setActive(active: Boolean) { prefs.edit().putBoolean(KEY_ACTIVE, active).apply() }
-    fun keyStatusSummary(): String = listProviders().takeIf { it.isNotEmpty() }?.joinToString("
-") { "${it.name}: ready" }
-        ?: "No AI providers saved yet.
-Add a name + API key below."
+    fun keyStatusSummary(): String = listProviders().takeIf { it.isNotEmpty() }?.joinToString("\n") { "${it.name}: ready" }
+        ?: "No AI providers saved yet.\nAdd a name + API key below."
 
     suspend fun synthesizeSearchAnswer(query: String, evidence: String): String? = withContext(Dispatchers.IO) {
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
         callTextProvider(provider,
             "You are Phormi's browser search assistant. Combine the supplied evidence accurately, do not invent facts, and clearly mark uncertainty.",
-            "Question: $query
-
-Search evidence:
-$evidence"
+            "Question: $query\n\nSearch evidence:\n$evidence"
         )
     }
 
     suspend fun analyzeVideo(metadata: JSONObject, frames: List<String>): String? = withContext(Dispatchers.IO) {
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
-        val prompt = "Analyze this browser video using only the supplied metadata and sampled frames. State visible evidence and uncertainty.
-Metadata:
-${metadata.toString(2)}"
+        val prompt = "Analyze this browser video using only the supplied metadata and sampled frames. State visible evidence and uncertainty.\nMetadata:\n${metadata.toString(2)}"
         callTextProvider(provider, "You analyze browser video evidence without inventing unseen audio or content.", prompt)
     }
 
@@ -264,14 +257,7 @@ ${metadata.toString(2)}"
                 } else stored
                 val text = callTextProvider(provider,
                     "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
-                    "Goal: $instruction
-
-Previous steps:
-${history.joinToString("
-") { "${it.stepNumber}: ${it.actionTaken}" }}
-
-Current screen JSON:
-$screen"
+                    "Goal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
                 ) ?: continue
                 val cleaned = text.replace("```json", "").replace("```", "").trim()
                 val a = cleaned.indexOf('{'); val b = cleaned.lastIndexOf('}')
@@ -309,9 +295,7 @@ $screen"
             builder.addHeader("x-api-key", provider.apiKey).addHeader("anthropic-version", "2023-06-01")
         } else if (endpoint.contains("generativelanguage.googleapis.com") && !endpoint.contains("/openai/")) {
             body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put(
-                "parts", JSONArray().put(JSONObject().put("text", "$system
-
-$user")))))
+                "parts", JSONArray().put(JSONObject().put("text", "$system\n\n$user")))))
             val separator = if (normalizedEndpoint.contains("?")) "&" else "?"
             builder.url(normalizedEndpoint + separator + "key=" + URLEncoder.encode(provider.apiKey, "UTF-8"))
         } else {
