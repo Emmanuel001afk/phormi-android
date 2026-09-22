@@ -28,14 +28,16 @@ object PhormiPollinationsAiEmojiEngine {
     fun generateAsync(context: Context, prompt: String, variant: Int, onComplete: (File?) -> Unit) {
         val safePrompt = buildPrompt(prompt)
         executor.execute {
-            val local = runCatching { PhormiAiEmojiEngine.generate(context, safePrompt, variant) }.getOrNull()
-            if (local != null) main.post { onComplete(local) }
-
             val key = PhormiKeyboardPreferences.pollinationsKey(context)
-            if (key.isBlank()) return@execute
-
-            val remote = runCatching { download(safePrompt, variant + 1, context, key) }.getOrNull()
-            if (remote != null) main.post { onComplete(remote) }
+            // One request produces one result. Prefer the remote generator when configured;
+            // otherwise (or on failure) use the deterministic local fused-emoji renderer.
+            val result = if (key.isNotBlank()) {
+                runCatching { download(safePrompt, variant, context, key) }.getOrNull()
+                    ?: runCatching { PhormiAiEmojiEngine.generate(context, safePrompt, variant) }.getOrNull()
+            } else {
+                runCatching { PhormiAiEmojiEngine.generate(context, safePrompt, variant) }.getOrNull()
+            }
+            main.post { onComplete(result) }
         }
     }
 
