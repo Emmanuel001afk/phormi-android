@@ -2472,6 +2472,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun configureWebView(webView: WebView) {
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            webView.setRendererPriorityPolicy(
+                WebView.RENDERER_PRIORITY_IMPORTANT,
+                true
+            )
+        }
         webView.settings.apply {
             javaScriptEnabled = prefs.getBoolean("security_javascript", true)
             domStorageEnabled = true
