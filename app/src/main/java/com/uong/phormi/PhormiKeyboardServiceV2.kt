@@ -196,7 +196,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         addBottomRow(root,KeyboardPage.SYMBOLS)
     }
     private fun showSymbolCategory(root:LinearLayout,categories:Map<String,String>,name:String){
-        val scroll=root.getChildAt(2) as? ScrollView ?: return
+        val scroll=root.getChildAt(root.childCount-2) as? ScrollView ?: return
         val grid=scroll.getChildAt(0) as? LinearLayout ?: return
         renderSymbolGrid(grid,categories[name].orEmpty())
     }
