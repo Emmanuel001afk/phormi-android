@@ -416,7 +416,6 @@ class MainActivity : AppCompatActivity() {
         val values = arrayOf(RETENTION_1_MONTH, RETENTION_3_MONTHS, RETENTION_1_YEAR, RETENTION_NEVER)
         val labels = arrayOf("1 month", "3 months", "1 year", "Off / Never")
         val current = prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER
-        val checked = values.indexOf(current).coerceAtLeast(0)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 8, 24, 8)
