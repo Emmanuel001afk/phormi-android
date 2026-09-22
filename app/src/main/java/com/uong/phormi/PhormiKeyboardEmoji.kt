@@ -84,25 +84,25 @@ object PhormiKeyboardEmoji {
         emoji.codePointAt(0) in 0x1F1E6..0x1F1FF && emoji.codePointAt(emoji.offsetByCodePoints(0, 1)) in 0x1F1E6..0x1F1FF
 
     private fun classify(emoji: String): String {
-        if (isFlag(emoji)) return "🇳🇬"
+        if (isFlag(emoji)) return "🏳️"
         val name = unicodeName(emoji)
         val first = emoji.codePointAt(0)
         val face = name.contains("FACE") || name.contains("SMILING") || name.contains("GRINNING") || name.contains("EMOTION") || first in 0x1F600..0x1F64F
         if (face) return "😀"
         if (name.contains("PERSON") || name.contains("PEOPLE") || name.contains("MAN") || name.contains("WOMAN") || name.contains("BOY") || name.contains("GIRL") || name.contains("HAND") || name.contains("BODY") || name.contains("ARM") || name.contains("LEG")) return "👤"
-        if (name.contains("FRUIT") || name.contains("APPLE") || name.contains("BANANA") || name.contains("GRAPES") || name.contains("STRAWBERRY") || name.contains("WATERMELON") || name.contains("PINEAPPLE") || name.contains("MANGO") || name.contains("LEMON") || name.contains("PEACH") || name.contains("PEAR") || name.contains("CHERRIES") || name.contains("KIWI")) return "🍎"
-        if (name.contains("FLOWER") || name.contains("TREE") || name.contains("LEAF") || name.contains("HERB") || name.contains("SEEDLING") || name.contains("CACTUS") || name.contains("PLANT") || name.contains("MUSHROOM")) return "🌿"
-        if (name.contains("ANIMAL") || name.contains("CAT") || name.contains("DOG") || name.contains("MOUSE") || name.contains("RABBIT") || name.contains("FOX") || name.contains("BEAR") || name.contains("MONKEY") || name.contains("BIRD") || name.contains("FISH") || name.contains("BUG") || name.contains("INSECT") || name.contains("WOLF") || name.contains("LION")) return "🐾"
+        if (name.contains("FRUIT") || name.contains("APPLE") || name.contains("BANANA") || name.contains("GRAPES") || name.contains("STRAWBERRY") || name.contains("WATERMELON") || name.contains("PINEAPPLE") || name.contains("MANGO") || name.contains("LEMON") || name.contains("PEACH") || name.contains("PEAR") || name.contains("CHERRIES") || name.contains("KIWI") || name.contains("MELON") || name.contains("BLUEBERR")) return "🍎"
+        if (name.contains("FLOWER") || name.contains("TREE") || name.contains("LEAF") || name.contains("HERB") || name.contains("SEEDLING") || name.contains("CACTUS") || name.contains("PLANT") || name.contains("MUSHROOM") || name.contains("ROSE") || name.contains("BLOSSOM") || name.contains("TULIP") || name.contains("SUNFLOWER")) return "🌿"
+        if (name.contains("ANIMAL") || name.contains("CAT") || name.contains("DOG") || name.contains("MOUSE") || name.contains("RABBIT") || name.contains("FOX") || name.contains("BEAR") || name.contains("MONKEY") || name.contains("BIRD") || name.contains("FISH") || name.contains("BUG") || name.contains("INSECT") || name.contains("WOLF") || name.contains("LION") || name.contains("HORSE") || name.contains("TIGER") || name.contains("ELEPHANT") || name.contains("PANDA") || name.contains("PIG") || name.contains("COW") || name.contains("CHICKEN") || name.contains("SNAKE") || name.contains("TURTLE") || name.contains("DOLPHIN") || name.contains("WHALE")) return "🐾"
         if (name.contains("FOOD") || name.contains("DRINK") || name.contains("MEAL") || name.contains("CAKE") || name.contains("COOKIE") || name.contains("CANDY") || name.contains("CHOCOLATE") || name.contains("BREAD") || name.contains("CHEESE") || name.contains("PIZZA") || name.contains("BURGER") || name.contains("COFFEE") || name.contains("TEA")) return "🍔"
         if (name.contains("CAR") || name.contains("BUS") || name.contains("TRAIN") || name.contains("AIRPLANE") || name.contains("SHIP") || name.contains("BOAT") || name.contains("ROAD") || name.contains("BUILDING") || name.contains("HOUSE") || name.contains("CASTLE") || name.contains("MOUNTAIN") || name.contains("MAP") || name.contains("GLOBE")) return "🚗"
-        if (name.contains("SPORT") || name.contains("BALL") || name.contains("GAME") || name.contains("MEDAL") || name.contains("TROPHY") || name.contains("MUSIC") || name.contains("PARTY") || name.contains("EVENT")) return "⚽"
+        if (name.contains("SPORT") || name.contains("BALL") || name.contains("GAME") || name.contains("MEDAL") || name.contains("TROPHY") || name.contains("MUSIC") || name.contains("PARTY") || name.contains("EVENT") || name.contains("RACING") || name.contains("SKI") || name.contains("SWIM") || name.contains("DANCE") || name.contains("MICROPHONE") || name.contains("GUITAR") || name.contains("DRUM")) return "⚽"
         if (name.contains("ARROW") || name.contains("CHECK") || name.contains("CROSS") || name.contains("PLUS") || name.contains("MINUS") || name.contains("DIVISION") || name.contains("EQUAL") || name.contains("CURRENCY") || name.contains("ZODIAC") || name.contains("SYMBOL") || first in 0x2000..0x2BFF) return "🔣"
         return "💻"
     }
 
     val categories: LinkedHashMap<String, List<String>> by lazy {
         val grouped = linkedMapOf<String, MutableList<String>>()
-        listOf("😀","👤","🐾","🌿","🍎","🍔","🚗","⚽","💻","🔣","🇳🇬").forEach { grouped[it] = mutableListOf() }
+        listOf("😀","👤","🐾","🌿","🍎","🍔","🚗","⚽","💻","🔣","🏳️").forEach { grouped[it] = mutableListOf() }
         all.forEach { emoji -> grouped[classify(emoji)]?.add(emoji) }
         linkedMapOf<String, List<String>>().apply {
             put("😀", grouped["😀"].orEmpty())
@@ -115,7 +115,7 @@ object PhormiKeyboardEmoji {
             put("⚽", grouped["⚽"].orEmpty())
             put("💻", grouped["💻"].orEmpty())
             put("🔣", grouped["🔣"].orEmpty())
-            put("🇳🇬", grouped["🇳🇬"].orEmpty())
+            put("🏳️", grouped["🏳️"].orEmpty())
         }
     }
 
