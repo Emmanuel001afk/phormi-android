@@ -49,6 +49,7 @@
         <TextView android:id="@+id/menu_share" style="@style/PhormiMenuItem" android:text="↗  Share page"/>
         <TextView android:id="@+id/menu_downloads" style="@style/PhormiMenuItem" android:text="⇩  Downloads"/>
         <TextView android:id="@+id/menu_desktop_mode" style="@style/PhormiMenuItem" android:text="▣  Desktop mode"/>
+        <TextView android:id="@+id/menu_install_site" style="@style/PhormiMenuItem" android:text="⌂  Add site to home screen"/>
         <TextView android:id="@+id/menu_keep_screen_on" style="@style/PhormiMenuItem" android:text="◉  Keep screen on"/>
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="TOOLS" android:textColor="#38BDF8" android:textStyle="bold" android:textSize="12sp" android:padding="6dp" android:paddingTop="16dp"/>
