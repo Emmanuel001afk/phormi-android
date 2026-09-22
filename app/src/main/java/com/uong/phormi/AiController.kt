@@ -28,7 +28,7 @@ class AiController(private val context: Context) {
     companion object {
         private const val TAG = "AiController"
         private const val PREFS_NAME = "phormi_ai_prefs"
-        private const val KEY_PROVIDERS = "custom_providers_json"
+        private const val KEY_PROVIDERS = "custom_providers_json"\n        private const val KEY_LEGACY_PROVIDERS = "custom_providers_json"
         private const val KEY_ACTIVE = "ai_active"
         private const val MAX_STEPS = 25
         private const val REQUEST_TIMEOUT_SECONDS = 45L
@@ -144,7 +144,7 @@ class AiController(private val context: Context) {
     }
 
     fun listProviders(): List<Provider> {
-        val raw = prefs.getString(KEY_PROVIDERS, null)
+        val raw = PhormiSecretStore.get(context) ?: prefs.getString(KEY_LEGACY_PROVIDERS, null)?.also {\n            // Migrate existing plaintext provider records into Keystore-backed storage.\n            PhormiSecretStore.put(context, it)\n            prefs.edit().remove(KEY_LEGACY_PROVIDERS).apply()\n        }
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
@@ -164,7 +164,7 @@ class AiController(private val context: Context) {
         list.forEach { p ->
             arr.put(JSONObject().put("id", p.id).put("name", p.name).put("endpoint", p.endpoint).put("model", p.model).put("apiKey", p.apiKey))
         }
-        prefs.edit().putString(KEY_PROVIDERS, arr.toString()).commit()
+        PhormiSecretStore.put(context, arr.toString())\n        prefs.edit().remove(KEY_LEGACY_PROVIDERS).apply()
     }
 
     fun upsertProvider(provider: Provider) {
