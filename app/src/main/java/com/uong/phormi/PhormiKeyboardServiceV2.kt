@@ -183,7 +183,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 if(file!=null){
                     image.setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
                     image.visibility=View.VISIBLE
-                    image.setOnClickListener{commitPickedContent(PhormiKeyboardStickerStore.contentUri(this@PhormiKeyboardServiceV2,file))}
+                    image.setOnClickListener{PhormiKeyboardServiceV2.commitPickedContent(this@PhormiKeyboardServiceV2, PhormiKeyboardStickerStore.contentUri(this@PhormiKeyboardServiceV2,file))}
                 }
             }
         }
