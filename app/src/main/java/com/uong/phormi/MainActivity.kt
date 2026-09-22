@@ -417,16 +417,30 @@ class MainActivity : AppCompatActivity() {
         val labels = arrayOf("1 month", "3 months", "1 year", "Off / Never")
         val current = prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER
         val checked = values.indexOf(current).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("Tab retention")
-            .setMessage("Automatically close normal tabs after they have been inactive for the selected period. Opening a tab resets its inactivity clock.")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.edit().putString(KEY_TAB_RETENTION, values[which]).apply()
-                pruneExpiredTabs()
-                dialog.dismiss()
-                Toast.makeText(this, "Tab retention: ${labels[which]}", Toast.LENGTH_SHORT).show()
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 8)
+        }
+        content.addView(TextView(this).apply {
+            text = "Automatically close normal tabs after they have been inactive for the selected period. Opening a tab resets its inactivity clock."
+            setTextColor(Color.rgb(148, 163, 184))
+            setPadding(0, 0, 0, 12)
+        })
+        val dialog = AlertDialog.Builder(this).setTitle("Tab retention").setView(content).create()
+        labels.forEachIndexed { index, label ->
+            val button = Button(this).apply {
+                text = if (values[index] == current) "✓ " + label else label
+                isAllCaps = false
+                setOnClickListener {
+                    prefs.edit().putString(KEY_TAB_RETENTION, values[index]).apply()
+                    pruneExpiredTabs()
+                    dialog.dismiss()
+                    Toast.makeText(this@MainActivity, "Tab retention: " + label, Toast.LENGTH_SHORT).show()
+                }
             }
-            .show()
+            content.addView(button, LinearLayout.LayoutParams(-1, 52).apply { topMargin = 4; bottomMargin = 4 })
+        }
+        dialog.show()
     }
 
     private fun showPullToRefreshChooser() {
