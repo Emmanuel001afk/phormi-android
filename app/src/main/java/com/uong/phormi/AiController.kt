@@ -31,7 +31,7 @@ class AiController(private val context: Context) {
         private const val KEY_PROVIDERS = "custom_providers_json"
         private const val KEY_ACTIVE = "ai_active"
         private const val MAX_STEPS = 25
-        private const val REQUEST_TIMEOUT_SECONDS = 60L
+        private const val REQUEST_TIMEOUT_SECONDS = 45L
         private const val MAX_HISTORY_ENTRIES = 12
 
         val TEMPLATES = listOf(
@@ -110,7 +110,7 @@ class AiController(private val context: Context) {
 
     private fun discoverModels(endpoint: String, apiKey: String): List<String> {
         val modelsUrl = when {
-            endpoint.contains("/chat/completions") -> endpoint.substringBefore("/chat/completions") + "/models"
+            endpoint.contains("/chat/completions") -> endpoint.substringBefore("/chat/completions").trimEnd('/') + "/models"
             endpoint.endsWith("/") -> endpoint + "models"
             else -> endpoint.substringBeforeLast('/') + "/models"
         }
@@ -296,7 +296,7 @@ class AiController(private val context: Context) {
             body = JSONObject().put("model", provider.model).put("messages", JSONArray()
                 .put(JSONObject().put("role", "system").put("content", system))
                 .put(JSONObject().put("role", "user").put("content", user)))
-            builder.addHeader("Authorization", "Bearer ${provider.apiKey}")
+            builder.addHeader("Authorization", "Bearer ${provider.apiKey}")\n            // OpenRouter uses these optional headers for attribution/routing; they are harmless\n            // for other OpenAI-compatible gateways only when that gateway accepts them.\n            if (endpoint.contains("openrouter.ai")) {\n                builder.addHeader("X-Title", "Phormi")\n            }
         }
 
         val request = builder.post(body.toString().toRequestBody("application/json".toMediaType())).build()
