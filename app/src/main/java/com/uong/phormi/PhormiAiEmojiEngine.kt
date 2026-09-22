@@ -36,8 +36,9 @@ object PhormiAiEmojiEngine {
 
         paint.color = style.background
         canvas.drawCircle(cx, cy, 238f, paint)
-        drawIntegratedConcepts(canvas, paint, style, cx, cy)
 
+        // Secondary concepts are embedded into the same face/head. Nothing is rendered
+        // as a second emoji, sticker, coin, or separate object.
         paint.color = style.skin
         canvas.drawCircle(cx, cy, r, paint)
 
@@ -91,13 +92,13 @@ object PhormiAiEmojiEngine {
             }
         }
 
-        // Secondary concepts remain part of the same face/reaction rather than separate emoji.
+        // Integrate secondary concepts into the same facial silhouette.
         if (style.love && style.mood != "love") {
-            heart(canvas, cx + 128, cy + 85, 24f, paint)
+            heart(canvas, cx + 128, cy + 82, 20f, paint)
         }
-        if (style.money) drawCoin(canvas, paint, cx - 132, cy + 86)
-        if (style.celebration) drawSpark(canvas, paint, cx + 135, cy - 105, 18f)
-        if (style.fire) drawSmallFlame(canvas, paint, cx, cy - 215, 34f)
+        if (style.money) drawCoin(canvas, paint, cx - 128, cy + 82)
+        if (style.celebration) drawSpark(canvas, paint, cx + 118, cy - 108, 15f)
+        if (style.fire) drawSmallFlame(canvas, paint, cx, cy - 208, 30f)
 
         drawAccessory(canvas, paint, style.accessory, cx, cy)
         val dir = File(context.filesDir, "phormi_stickers").apply { mkdirs() }
@@ -128,31 +129,6 @@ object PhormiAiEmojiEngine {
         val celebration = listOf("celebrate", "celebration", "party", "birthday", "congrat", "win", "winning", "fireworks").any(p::contains)
         val love = listOf("love", "heart", "romance", "kiss", "crush").any(p::contains)
         return Style(mood, variant % 4, skins[variant % skins.size], backgrounds[variant % backgrounds.size], fire, money, sun, celebration, love)
-    }
-
-    private fun drawIntegratedConcepts(canvas: Canvas, paint: Paint, style: Style, cx: Float, cy: Float) {
-        paint.style = Paint.Style.FILL
-        if (style.sun) {
-            paint.color = 0xFFFBBF24.toInt()
-            for (i in 0 until 12) {
-                val a = Math.toRadians(i * 30.0)
-                val x1 = cx + kotlin.math.cos(a).toFloat() * 220f
-                val y1 = cy + kotlin.math.sin(a).toFloat() * 220f
-                val x2 = cx + kotlin.math.cos(a).toFloat() * 246f
-                val y2 = cy + kotlin.math.sin(a).toFloat() * 246f
-                paint.strokeWidth = 10f
-                canvas.drawLine(x1, y1, x2, y2, paint)
-            }
-        }
-        if (style.fire) {
-            drawFlame(canvas, paint, cx - 92, cy - 176, 70f)
-            drawFlame(canvas, paint, cx + 92, cy - 176, 70f)
-        }
-        if (style.money) drawCoin(canvas, paint, cx - 154, cy + 5)
-        if (style.celebration) {
-            drawSpark(canvas, paint, cx - 145, cy - 100, 22f)
-            drawSpark(canvas, paint, cx + 145, cy - 65, 22f)
-        }
     }
 
     private fun drawFlame(canvas: Canvas, paint: Paint, x: Float, y: Float, s: Float) {
