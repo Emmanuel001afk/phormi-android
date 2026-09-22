@@ -133,10 +133,6 @@ object PhormiDownloadEngine {
 
     fun record(context: Context, id: String): Record? = records(context).firstOrNull { it.id == id }
 
-    private fun remove(context: Context, id: String) = synchronized(lock) {
-        val kept = records(context).filterNot { it.id == id }
-        writeRecords(context, kept)
-    }
 
     private fun start(context: Context, action: String, id: String) {
         val intent = Intent(context, PhormiDownloadService::class.java).apply {
