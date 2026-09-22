@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -82,8 +83,29 @@ class AiActivity : AppCompatActivity() {
         }
         active.setOnCheckedChangeListener { _, checked -> controller.setActive(checked); refresh() }
         findViewById<Button>(R.id.btn_voice).setOnClickListener { startVoiceInput() }
+        findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
         findViewById<Button>(R.id.btn_run).setOnClickListener { runAssistant() }
         if (intent.getBooleanExtra("auto_voice", false)) window.decorView.postDelayed({ startVoiceInput() }, 350)
+    }
+
+    private fun openWebAi() {
+        val options = arrayOf("ChatGPT", "Gemini", "Grok", "DeepSeek", "Perplexity", "Claude")
+        val urls = arrayOf(
+            "https://chatgpt.com/",
+            "https://gemini.google.com/",
+            "https://grok.com/",
+            "https://chat.deepseek.com/",
+            "https://www.perplexity.ai/",
+            "https://claude.ai/"
+        )
+        AlertDialog.Builder(this).setTitle("Use AI on the web").setItems(options) { _, which ->
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("action", "open_url")
+                putExtra("open_url", urls[which])
+            })
+            finish()
+        }.show()
     }
 
     private fun runAssistant() {
