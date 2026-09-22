@@ -670,8 +670,7 @@ class MainActivity : AppCompatActivity() {
         val outline = Color.rgb(51, 65, 85)
         return TextView(this).apply {
             gravity = android.view.Gravity.CENTER
-            text = if (site.tag.isNotBlank()) site.tag + "
-" + site.name.take(9) else site.name.take(9)
+            text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(9) else site.name.take(9)
             setTextColor(if (site.tag == "+") Color.rgb(56,189,248) else Color.WHITE)
             textSize = 8.5f
             maxLines = 2
@@ -903,12 +902,8 @@ class MainActivity : AppCompatActivity() {
                     }
                     if (done == providers.size && mergedSnapshot.isNotEmpty() && aiController.hasAnyKey()) {
                         lifecycleScope.launch {
-                            val evidence = mergedSnapshot.take(12).joinToString("
-") {
-                                "${it.title}
-${it.url}
-${it.snippet}
-Sources: ${it.source}"
+                            val evidence = mergedSnapshot.take(12).joinToString("\n") {
+                                "${it.title}\n${it.url}\n${it.snippet}\nSources: ${it.source}"
                             }
                             val answer = aiController.synthesizeSearchAnswer(query, evidence)
                             if (generation != unifiedSearchGeneration.get()) return@launch
@@ -1196,8 +1191,7 @@ Sources: ${it.source}"
         } else if (results.isEmpty()) {
             "<div class='status'>No results could be collected. You can open an engine directly below.</div>"
         } else {
-            results.joinToString("
-") { result ->
+            results.joinToString("\n") { result ->
                 val title = Html.escapeHtml(result.title)
                 val url = Html.escapeHtml(result.url)
                 val snippet = Html.escapeHtml(result.snippet)
@@ -2016,8 +2010,7 @@ Sources: ${it.source}"
                     layoutParams = LinearLayout.LayoutParams(0, 72.dp(), 1f).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
-                    text = "${story.title}
-${story.source} · ${story.category}"
+                    text = "${story.title}\n${story.source} · ${story.category}"
                     setTextColor(Color.rgb(226, 232, 240))
                     textSize = 11f
                     maxLines = 3
@@ -3199,8 +3192,7 @@ ${story.source} · ${story.category}"
                         PhormiNavigationLens.focus(view, selected.locator)
                         AlertDialog.Builder(this)
                             .setTitle(selected.label.ifBlank { "Anchored object" })
-                            .setMessage("${selected.kind}
-${selected.href.ifBlank { "Current page" }}")
+                            .setMessage("${selected.kind}\n${selected.href.ifBlank { "Current page" }}")
                             .setPositiveButton("Anchor") { _, _ ->
                                 val url = view.url.orEmpty()
                                 if (url.isNotBlank()) {
@@ -3221,8 +3213,7 @@ ${selected.href.ifBlank { "Current page" }}")
             AlertDialog.Builder(this).setTitle("Object Anchors").setMessage("No anchors saved yet. Open Navigation Lens and anchor a page object.").setPositiveButton("Close", null).show()
             return
         }
-        val labels = anchors.map { "${it.label}
-${it.url}" }.toTypedArray()
+        val labels = anchors.map { "${it.label}\n${it.url}" }.toTypedArray()
         AlertDialog.Builder(this).setTitle("Object Anchors").setItems(labels) { _, which ->
             val anchor = anchors[which]
             createNewTab(anchor.url, anchor.profileName)
