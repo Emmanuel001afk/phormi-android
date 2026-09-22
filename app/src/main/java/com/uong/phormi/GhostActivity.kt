@@ -37,7 +37,13 @@ class GhostActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         buildUi()
         if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
-            ghostProfileName = savedInstanceState?.getString("ghost_profile")?.takeIf { it.isNotBlank() }
+            val savedProfile = savedInstanceState?.getString("ghost_profile")?.takeIf { it.isNotBlank() }
+            runCatching {
+                ProfileStore.getInstance().getAllProfileNames()
+                    .filter { it.startsWith("PhormiGhost_", ignoreCase = true) && it != savedProfile }
+                    .forEach { ProfileStore.getInstance().deleteProfile(it) }
+            }
+            ghostProfileName = savedProfile
                 ?: ("PhormiGhost_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
             runCatching { ProfileStore.getInstance().getOrCreateProfile(ghostProfileName!!) }
         }
