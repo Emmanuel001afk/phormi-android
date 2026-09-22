@@ -1772,10 +1772,10 @@ class MainActivity : AppCompatActivity() {
     private fun availableTabEnvironments(): List<String> {
         if (!isMultiProfileSupported()) return listOf(DEFAULT_PROFILE_NAME)
         return runCatching {
-            ProfileStore.getInstance().getAllProfileNames()
-                .filter { it.isNotBlank() && !it.equals(GHOST_PROFILE_NAME, ignoreCase = true) }.distinct()
+            (listOf(DEFAULT_PROFILE_NAME) + ProfileStore.getInstance().getAllProfileNames()
+                .filter { it.isNotBlank() && !it.equals(GHOST_PROFILE_NAME, ignoreCase = true) })
+                .distinct()
                 .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
-                .ifEmpty { listOf(DEFAULT_PROFILE_NAME) }
         }.getOrDefault(listOf(DEFAULT_PROFILE_NAME))
     }
 
