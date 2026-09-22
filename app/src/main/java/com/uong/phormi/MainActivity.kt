@@ -2993,7 +2993,7 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_SAME_PAGE_SPLIT -> openSamePageSplit()
                 MenuActivity.ACTION_DESKTOP_MODE -> toggleDesktopMode()
                 MenuActivity.ACTION_FAVORITE -> addCurrentPageToBookmarks()
-                MenuActivity.ACTION_HELP -> AlertDialog.Builder(this).setTitle("Phormi Help").setMessage("Use the address bar to search or open a site. Tabs, Ghost mode, split view, downloads, keyboard tools, privacy, and browser settings are available from the menu.").setPositiveButton("OK", null).show()
+                MenuActivity.ACTION_HELP -> startActivity(Intent(this, HelpActivity::class.java))
                 MenuActivity.ACTION_KEEP_SCREEN_ON -> {
                     val enabled = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false)
                     prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, !enabled).apply()
@@ -3008,7 +3008,7 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
                 MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
-                MenuActivity.ACTION_KEYBOARD -> PhormiKeyboardController.showKeyboardPicker(this)
+                MenuActivity.ACTION_KEYBOARD -> startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java))
                 MenuActivity.ACTION_DEFAULT_BROWSER -> PhormiDefaultBrowserController.request(this)
                 MenuActivity.ACTION_TAB_GROUPS -> startActivity(Intent(this, TabGroupsActivity::class.java))
                 else -> {
