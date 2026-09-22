@@ -2478,7 +2478,7 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
             if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
-                runCatching { WebSettingsCompat.setBackForwardCacheEnabled(this@MainActivity.settings, true) }
+                runCatching { WebSettingsCompat.setBackForwardCacheEnabled(this, true) }
             }
             mediaPlaybackRequiresUserGesture = false
             setGeolocationEnabled(true)
