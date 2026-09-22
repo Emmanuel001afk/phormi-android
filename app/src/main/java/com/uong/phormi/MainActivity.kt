@@ -407,13 +407,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTabRetentionChooser() {
-        val values = arrayOf(RETENTION_NEVER, RETENTION_1_MONTH, RETENTION_3_MONTHS, RETENTION_1_YEAR)
-        val labels = arrayOf("Never", "1 month", "3 months", "1 year")
+        val values = arrayOf(RETENTION_1_MONTH, RETENTION_3_MONTHS, RETENTION_1_YEAR, RETENTION_NEVER)
+        val labels = arrayOf("1 month", "3 months", "1 year", "Off / Never")
         val current = prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER
         val checked = values.indexOf(current).coerceAtLeast(0)
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Tab retention")
-            .setMessage("Close each normal tab when its age reaches the selected period. Tab use does not reset the age clock.")
+            .setMessage("Automatically close normal tabs after they have been inactive for the selected period. Opening a tab resets its inactivity clock.")
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 prefs.edit().putString(KEY_TAB_RETENTION, values[which]).apply()
                 pruneExpiredTabs()
