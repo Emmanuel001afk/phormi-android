@@ -68,10 +68,10 @@ class DownloadsActivity : AppCompatActivity() {
                 val delete = view.findViewById<TextView>(R.id.download_delete)
                 action.visibility = if (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED")) View.VISIBLE else View.GONE
                 action.text = when (row.state) {
-                    "RUNNING" -> "Ⅱ"
-                    "PAUSED", "QUEUED" -> "▶"
-                    "FAILED" -> "↻"
-                    else -> "▶"
+                    "RUNNING" -> "Pause"
+                    "PAUSED", "QUEUED" -> "Resume"
+                    "FAILED" -> "Retry"
+                    else -> "Resume"
                 }
                 action.contentDescription = when (row.state) {
                     "RUNNING" -> "Pause download"
@@ -85,7 +85,7 @@ class DownloadsActivity : AppCompatActivity() {
                     }
                 }
                 delete.visibility = if (!row.legacy) View.VISIBLE else View.GONE
-                delete.text = if (row.state == "COMPLETED" || row.state == "CANCELLED") "🗑" else "×"
+                delete.text = if (row.state == "COMPLETED" || row.state == "CANCELLED") "Delete" else "Cancel"
                 delete.contentDescription = if (row.state == "COMPLETED" || row.state == "CANCELLED") "Delete download" else "Cancel download"
                 delete.setOnClickListener {
                     if (row.state == "COMPLETED" || row.state == "CANCELLED") {
