@@ -50,12 +50,8 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
       - name: Set APK path
         run: echo "APK=app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_ENV"
-        env:
-          PHORMI_VERSION_CODE: ${{ steps.version.outputs.version_code }}
-          PHORMI_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-        run: gradle assembleRelease --no-daemon --stacktrace
       - name: Verify APK output
-        run: test -s app/build/outputs/apk/release/app-release.apk
+        run: test -s "$APK"
       - name: Package committed source and APK
         run: |
           mkdir -p dist/phormi-android
