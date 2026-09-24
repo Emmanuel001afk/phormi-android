@@ -140,6 +140,7 @@ object PhormiDownloadEngine {
 
 
     private fun start(context: Context, action: String, id: String) {
+        if (PhormiDownloadService.dispatch(action, id)) return
         val intent = Intent(context, PhormiDownloadService::class.java).apply {
             this.action = action
             putExtra(EXTRA_ID, id)
@@ -147,9 +148,8 @@ object PhormiDownloadEngine {
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: Exception) {
-            // Do not silently lose the linkage. The row stays visible with an actionable error.
             if (action == ACTION_ENQUEUE || action == ACTION_RESUME) {
-                updateState(context, id, State.FAILED, "Download service could not start: ${e.message ?: "Android rejected the transfer"}")
+                updateState(context, id, State.FAILED, "Download service could not start")
             }
         }
     }
@@ -250,6 +250,15 @@ object PhormiDownloadEngine {
 }
 
 class PhormiDownloadService : Service() {
+    companion object {
+        private var live: PhormiDownloadService? = null
+        fun dispatch(action: String, id: String): Boolean {
+            val service = live ?: return false
+            service.handleControl(action, id)
+            return true
+        }
+    }
+
     private val executor = Executors.newCachedThreadPool()
     private val running = ConcurrentHashMap<String, Boolean>()
     private val activeCalls = ConcurrentHashMap<String, Call>()
@@ -270,6 +279,7 @@ class PhormiDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        live = this
         createChannel()
         startForeground(NOTIFICATION_ID, notification("Phormi downloads", "Preparing download…", 0, false))
         // Reconnect persisted queued/running records if Android recreates the service. This is
@@ -281,14 +291,18 @@ class PhormiDownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val id = intent?.getStringExtra(PhormiDownloadEngine.EXTRA_ID)
-        when (intent?.action) {
-            PhormiDownloadEngine.ACTION_ENQUEUE -> if (!id.isNullOrBlank()) launch(id)
-            PhormiDownloadEngine.ACTION_PAUSE -> if (!id.isNullOrBlank()) pause(id)
-            PhormiDownloadEngine.ACTION_RESUME -> if (!id.isNullOrBlank()) resume(id)
-            PhormiDownloadEngine.ACTION_CANCEL -> if (!id.isNullOrBlank()) cancel(id)
+        if (!id.isNullOrBlank()) handleControl(intent?.action.orEmpty(), id)
+        return START_STICKY
+    }
+
+    private fun handleControl(action: String, id: String) {
+        when (action) {
+            PhormiDownloadEngine.ACTION_ENQUEUE -> launch(id)
+            PhormiDownloadEngine.ACTION_PAUSE -> pause(id)
+            PhormiDownloadEngine.ACTION_RESUME -> resume(id)
+            PhormiDownloadEngine.ACTION_CANCEL -> cancel(id)
         }
         refreshNotification()
-        return START_STICKY
     }
 
     private fun launch(id: String) {
@@ -314,21 +328,23 @@ class PhormiDownloadService : Service() {
     }
 
     private fun resume(id: String) {
-        cancelSignals[id] = Control.NONE
         if (!running.containsKey(id)) {
+            cancelSignals[id] = Control.NONE
             launch(id)
             return
         }
-        // If the user taps resume while the pause command is still unwinding, wait for the
-        // old request to release the slot, then start the same record again from its byte offset.
         executor.execute {
-            repeat(25) {
+            repeat(50) {
                 if (!running.containsKey(id)) {
-                    if (PhormiDownloadEngine.record(this, id) != null) launch(id)
+                    if (PhormiDownloadEngine.record(this, id) != null) {
+                        cancelSignals[id] = Control.NONE
+                        launch(id)
+                    }
                     return@execute
                 }
                 Thread.sleep(100L)
             }
+            PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, "Pause is still finishing; tap Resume again.")
         }
     }
 
@@ -609,6 +625,7 @@ class PhormiDownloadService : Service() {
     }
 
     override fun onDestroy() {
+        if (live === this) live = null
         executor.shutdownNow()
         super.onDestroy()
     }
