@@ -15,13 +15,28 @@ android {
         versionName = providers.environmentVariable("PHORMI_VERSION_NAME").orNull ?: "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = providers.environmentVariable("PHORMI_KEYSTORE_PATH").orNull
+            val storePassword = providers.environmentVariable("PHORMI_KEYSTORE_PASSWORD").orNull
+            val keyAlias = providers.environmentVariable("PHORMI_KEY_ALIAS").orNull
+            val keyPassword = providers.environmentVariable("PHORMI_KEY_PASSWORD").orNull
+
+            if (keystorePath != null && storePassword != null && keyAlias != null && keyPassword != null) {
+                storeFile = file(keystorePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            } else if (System.getenv("CI") == "true") {
+                throw GradleException("Persistent Phormi release signing is not configured.")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Use the same Android debug signing identity for this repository until a dedicated
-            // production keystore is configured. This keeps release installs update-compatible
-            // with the existing debug-distributed Phormi APKs.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
