@@ -252,6 +252,9 @@ object PhormiDownloadEngine {
 class PhormiDownloadService : Service() {
     companion object {
         private var live: PhormiDownloadService? = null
+        private const val CHANNEL_ID = "phormi_downloads"
+        private const val NOTIFICATION_ID = 4417
+
         fun dispatch(action: String, id: String): Boolean {
             val service = live ?: return false
             service.handleControl(action, id)
@@ -272,10 +275,6 @@ class PhormiDownloadService : Service() {
     private enum class Control { NONE, PAUSE, CANCEL }
     private val cancelSignals = ConcurrentHashMap<String, Control>()
 
-    companion object {
-        private const val CHANNEL_ID = "phormi_downloads"
-        private const val NOTIFICATION_ID = 4417
-    }
 
     override fun onCreate() {
         super.onCreate()
