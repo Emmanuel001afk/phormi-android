@@ -197,7 +197,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val word=PhormiKeyboardTextEngine.currentWord(ic)
         val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo))
         val suggestions=if(word.isNotBlank()) PhormiKeyboardTextEngine.suggestions(this,word,PhormiKeyboardTextEngine.localeFor(editorInfo)) else PhormiKeyboardTextEngine.nextWordSuggestions(this,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
-        if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI emoji"){openAiEmojiFromContext()},LinearLayout.LayoutParams(dp(78),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
+        if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI expression"){insertAiEmojiExpression()},LinearLayout.LayoutParams(dp(94),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
             val button=pill(value,{})
             button.setOnClickListener{feedback(button);if(word.isNotBlank()){currentInputConnection?.deleteSurroundingText(word.length,0);commitTextToEditor(value)}else commitTextToEditor("$value ");refreshPredictionStrip()}
             row.addView(button,LinearLayout.LayoutParams(0,scaled(32),1f).apply{setMargins(dp(2),0,dp(2),0)})
@@ -262,6 +262,30 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun addBottomRow(root:LinearLayout,currentPage:KeyboardPage){val bottom=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};when(currentPage){KeyboardPage.LETTERS->{bottom.addView(keyButton("?123"){page=KeyboardPage.NUMBERS;setInputView(render())});bottom.addView(shiftButton{toggleShift();setInputView(render())})};KeyboardPage.NUMBERS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())})};KeyboardPage.SYMBOLS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())});bottom.addView(keyButton("123"){page=KeyboardPage.NUMBERS;setInputView(render())})}};bottom.addView(keyButton(","){commitTextToEditor(",");refreshAfterTextKey()});val space=keyButton("Space",3.6f){commitSpace()};space.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{spaceDownX=event.x;spaceMoved=false;true};MotionEvent.ACTION_MOVE->{if(!spaceMoved&&abs(event.x-spaceDownX)>dp(28)){spaceMoved=true;moveCursor(if(event.x>spaceDownX)1 else -1)};true};MotionEvent.ACTION_UP->{if(!spaceMoved)commitSpace();true};MotionEvent.ACTION_CANCEL->{spaceMoved=false;true};else->true}};bottom.addView(space);bottom.addView(keyButton("."){commitTextToEditor(".");refreshAfterTextKey()});val back=keyButton("⌫"){deleteBackward();refreshAfterTextKey()};installRepeat(back){deleteBackward();refreshAfterTextKey()};bottom.addView(back);bottom.addView(keyButton(actionLabel()){sendEditorAction()});root.addView(bottom,LinearLayout.LayoutParams(-1,scaled(44)))}
     private fun buildEmoji():View{val root=root();val nav=HorizontalScrollView(this).apply{isHorizontalScrollBarEnabled=false;overScrollMode=View.OVER_SCROLL_NEVER};val categories=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL};PhormiKeyboardEmoji.categories.keys.forEachIndexed{index,icon->categories.addView(pill(icon){emojiCategory=index;setInputView(render())},LinearLayout.LayoutParams(dp(48),scaled(36)).apply{setMargins(dp(2),0,dp(2),0)})};categories.addView(pill("ABC"){panel=Panel.KEYBOARD;page=KeyboardPage.LETTERS;setInputView(render())},LinearLayout.LayoutParams(dp(58),scaled(36)));nav.addView(categories);root.addView(nav,LinearLayout.LayoutParams(-1,scaled(36)));if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){root.addView(pill("✨ Create unique emoji"){panel=Panel.AI_EMOJI;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(38)).apply{setMargins(dp(2),dp(3),dp(2),dp(3))})};val scroll=ScrollView(this).apply{isFillViewport=true;clipToPadding=true;overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val grid=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};PhormiKeyboardEmoji.categories.values.elementAtOrNull(emojiCategory).orEmpty().chunked(8).forEach{group->val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};group.forEach{emoji->row.addView(keyButton(emoji){commitTextToEditor(emoji)},LinearLayout.LayoutParams(0,scaled(42),1f))};repeat(8-group.size){row.addView(View(this),LinearLayout.LayoutParams(0,scaled(42),1f))};grid.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))};scroll.addView(grid);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildClipboard():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};val items=PhormiKeyboardClipboardStore.list(this);if(items.isEmpty())list.addView(TextView(this).apply{text="Your copied text, screenshots and images will appear here.";setTextColor(themeText());textSize=14f;setPadding(dp(12),dp(18),dp(12),dp(18))});items.forEach{item->val label=item.text.take(60).ifBlank{"Copied item"};list.addView(pill(label){if(item.text.isNotBlank())commitTextToEditor(item.text)else item.uri?.let{commitContentToEditor(Uri.parse(it))}},LinearLayout.LayoutParams(-1,scaled(44)))};scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
+    private fun insertAiEmojiExpression(){
+        val text=PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim()
+        if(text.isBlank()){
+            openAiEmojiFromContext()
+            return
+        }
+        val value=text.lowercase(Locale.getDefault())
+        val expression=when{
+            value.matches(Regex(".*\\b(love|loving|romantic|kiss|heart|crush|adore|sweet)\\b.*"))->"❤️🥰"
+            value.matches(Regex(".*\\b(happy|joy|glad|great|good|wonderful|fun|excited|celebrate|celebration)\\b.*"))->"😊🔥"
+            value.matches(Regex(".*\\b(laugh|laughing|funny|lol|lmao|hilarious)\\b.*"))->"😂🤣"
+            value.matches(Regex(".*\\b(sad|sadness|cry|crying|hurt|lonely|miss|missing|sorry)\\b.*"))->"😔💙"
+            value.matches(Regex(".*\\b(angry|anger|mad|furious|annoyed|hate|frustrated)\\b.*"))->"😤🔥"
+            value.matches(Regex(".*\\b(surprised|surprise|shock|shocked|wow|omg)\\b.*"))->"😮✨"
+            value.matches(Regex(".*\\b(scared|afraid|fear|worried|worry|danger)\\b.*"))->"😨⚠️"
+            value.matches(Regex(".*\\b(proud|win|won|success|successful|achievement)\\b.*"))->"😎🏆"
+            value.matches(Regex(".*\\b(thanks|thankful|grateful|bless)\\b.*"))->"🙏❤️"
+            value.matches(Regex(".*\\b(tired|sleepy|sleep|exhausted)\\b.*"))->"😴💤"
+            else->"🙂✨"
+        }
+        commitTextToEditor(expression)
+        refreshPredictionStrip()
+    }
+
     private fun openAiEmojiFromContext(){
         aiEmojiContext=PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim()
         panel=Panel.AI_EMOJI
