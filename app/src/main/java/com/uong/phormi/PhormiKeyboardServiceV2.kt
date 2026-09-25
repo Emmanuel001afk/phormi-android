@@ -96,6 +96,16 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute); panel = Panel.KEYBOARD
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); editorInfo = info ?: editorInfo; panel = Panel.KEYBOARD; setInputView(render()); applyKeyboardWindowSize(); applyPendingInput() }
+    override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
+        super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
+        if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
+            refreshPredictionStrip()
+            if(PhormiKeyboardPreferences.autoCaps(this)){
+                autoShift=PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection,editorInfo)
+            }
+        }
+    }
+
     override fun onFinishInput() { stopRepeat(); editorInfo = null; super.onFinishInput() }
     override fun onUnbindInput() { stopRepeat(); editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) { stopRepeat(); super.onFinishInputView(finishingInput) }
@@ -137,7 +147,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         setBackgroundColor(themeBackground())
         val width=(resources.displayMetrics.widthPixels*PhormiKeyboardPreferences.widthScale(this@PhormiKeyboardServiceV2)).roundToInt().coerceAtLeast(dp(240))
         val height=scaled(baseHeight())
-        layoutParams=LinearLayout.LayoutParams(width,height).apply{gravity=Gravity.CENTER_HORIZONTAL}
+        layoutParams=LinearLayout.LayoutParams(-1,height).apply{gravity=Gravity.CENTER_HORIZONTAL}
         minimumHeight=height
         applyWallpaper(this)
         addResizeGrip(this)
@@ -187,7 +197,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val word=PhormiKeyboardTextEngine.currentWord(ic)
         val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo))
         val suggestions=if(word.isNotBlank()) PhormiKeyboardTextEngine.suggestions(this,word,PhormiKeyboardTextEngine.localeFor(editorInfo)) else PhormiKeyboardTextEngine.nextWordSuggestions(this,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
-        if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨"){panel=Panel.AI_EMOJI;setInputView(render())},LinearLayout.LayoutParams(dp(48),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
+        if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI emoji"){openAiEmojiFromContext()},LinearLayout.LayoutParams(dp(78),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
             val button=pill(value,{})
             button.setOnClickListener{feedback(button);if(word.isNotBlank()){currentInputConnection?.deleteSurroundingText(word.length,0);commitTextToEditor(value)}else commitTextToEditor("$value ");refreshPredictionStrip()}
             row.addView(button,LinearLayout.LayoutParams(0,scaled(32),1f).apply{setMargins(dp(2),0,dp(2),0)})
@@ -252,13 +262,19 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun addBottomRow(root:LinearLayout,currentPage:KeyboardPage){val bottom=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};when(currentPage){KeyboardPage.LETTERS->{bottom.addView(keyButton("?123"){page=KeyboardPage.NUMBERS;setInputView(render())});bottom.addView(shiftButton{toggleShift();setInputView(render())})};KeyboardPage.NUMBERS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())})};KeyboardPage.SYMBOLS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())});bottom.addView(keyButton("123"){page=KeyboardPage.NUMBERS;setInputView(render())})}};bottom.addView(keyButton(","){commitTextToEditor(",");refreshAfterTextKey()});val space=keyButton("Space",3.6f){commitSpace()};space.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{spaceDownX=event.x;spaceMoved=false;true};MotionEvent.ACTION_MOVE->{if(!spaceMoved&&abs(event.x-spaceDownX)>dp(28)){spaceMoved=true;moveCursor(if(event.x>spaceDownX)1 else -1)};true};MotionEvent.ACTION_UP->{if(!spaceMoved)commitSpace();true};MotionEvent.ACTION_CANCEL->{spaceMoved=false;true};else->true}};bottom.addView(space);bottom.addView(keyButton("."){commitTextToEditor(".");refreshAfterTextKey()});val back=keyButton("⌫"){deleteBackward();refreshAfterTextKey()};installRepeat(back){deleteBackward();refreshAfterTextKey()};bottom.addView(back);bottom.addView(keyButton(actionLabel()){sendEditorAction()});root.addView(bottom,LinearLayout.LayoutParams(-1,scaled(44)))}
     private fun buildEmoji():View{val root=root();val nav=HorizontalScrollView(this).apply{isHorizontalScrollBarEnabled=false;overScrollMode=View.OVER_SCROLL_NEVER};val categories=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL};PhormiKeyboardEmoji.categories.keys.forEachIndexed{index,icon->categories.addView(pill(icon){emojiCategory=index;setInputView(render())},LinearLayout.LayoutParams(dp(48),scaled(36)).apply{setMargins(dp(2),0,dp(2),0)})};categories.addView(pill("ABC"){panel=Panel.KEYBOARD;page=KeyboardPage.LETTERS;setInputView(render())},LinearLayout.LayoutParams(dp(58),scaled(36)));nav.addView(categories);root.addView(nav,LinearLayout.LayoutParams(-1,scaled(36)));if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){root.addView(pill("✨ Create unique emoji"){panel=Panel.AI_EMOJI;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(38)).apply{setMargins(dp(2),dp(3),dp(2),dp(3))})};val scroll=ScrollView(this).apply{isFillViewport=true;clipToPadding=true;overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val grid=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};PhormiKeyboardEmoji.categories.values.elementAtOrNull(emojiCategory).orEmpty().chunked(8).forEach{group->val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};group.forEach{emoji->row.addView(keyButton(emoji){commitTextToEditor(emoji)},LinearLayout.LayoutParams(0,scaled(42),1f))};repeat(8-group.size){row.addView(View(this),LinearLayout.LayoutParams(0,scaled(42),1f))};grid.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))};scroll.addView(grid);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildClipboard():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};val items=PhormiKeyboardClipboardStore.list(this);if(items.isEmpty())list.addView(TextView(this).apply{text="Your copied text, screenshots and images will appear here.";setTextColor(themeText());textSize=14f;setPadding(dp(12),dp(18),dp(12),dp(18))});items.forEach{item->val label=item.text.take(60).ifBlank{"Copied item"};list.addView(pill(label){if(item.text.isNotBlank())commitTextToEditor(item.text)else item.uri?.let{commitContentToEditor(Uri.parse(it))}},LinearLayout.LayoutParams(-1,scaled(44)))};scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
+    private fun openAiEmojiFromContext(){
+        aiEmojiContext=PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection).trim()
+        panel=Panel.AI_EMOJI
+        setInputView(render())
+    }
+
     private fun buildAiEmoji():View{
-        val root=root(); addBackHeader(root,"← Emoji"){panel=Panel.EMOJI;setInputView(render())}
+        val root=root(); addBackHeader(root,"← Emoji"){aiEmojiContext="";panel=Panel.EMOJI;setInputView(render())}
         val scroll=ScrollView(this).apply{isFillViewport=true;overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS}
         val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(8),dp(8),dp(8),dp(8))}
         list.addView(TextView(this).apply{text="Create a unique emoji";textSize=18f;typeface=Typeface.DEFAULT_BOLD;setTextColor(themeText());gravity=Gravity.CENTER})
         list.addView(TextView(this).apply{text="Generate one fused emoji-style reaction from your text. The result appears here so it can be inserted directly.";textSize=13f;setTextColor(themeText());gravity=Gravity.CENTER;setPadding(dp(8),dp(6),dp(8),dp(10))})
-        val input=android.widget.EditText(this).apply{hint="Describe the feeling or idea";setTextColor(themeText());setHintTextColor(Color.GRAY);minLines=2;setSingleLine(false)}
+        val input=android.widget.EditText(this).apply{hint="Describe the feeling or idea";setTextColor(themeText());setHintTextColor(Color.GRAY);minLines=2;setSingleLine(false);setText(aiEmojiContext)}
         list.addView(input,LinearLayout.LayoutParams(-1,dp(72)))
         val status=TextView(this).apply{text="Ready";textSize=12f;setTextColor(themeText());gravity=Gravity.CENTER}
         list.addView(status,LinearLayout.LayoutParams(-1,dp(28)))
@@ -280,7 +296,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             if(clean.isBlank()){android.widget.Toast.makeText(this@PhormiKeyboardServiceV2,"Describe the emoji first",android.widget.Toast.LENGTH_SHORT).show();return}
             controller.generate(clean)
         }
-        list.addView(pill("Use what I'm typing"){generate(PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection))},LinearLayout.LayoutParams(-1,scaled(46)))
+        list.addView(pill(if(aiEmojiContext.isBlank())"Use what I'm typing"else"Create from current text"){generate(if(aiEmojiContext.isBlank())PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection)else aiEmojiContext)},LinearLayout.LayoutParams(-1,scaled(46)))
         list.addView(pill("Generate from description"){generate(input.text.toString())},LinearLayout.LayoutParams(-1,scaled(46)))
         scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root
     }
@@ -288,13 +304,31 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun buildTools():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Settings"){panel=Panel.SETTINGS;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Voice typing"){launchVoice()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Select all"){currentInputConnection?.performContextMenuAction(android.R.id.selectAll)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Copy"){currentInputConnection?.performContextMenuAction(android.R.id.copy)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Paste"){currentInputConnection?.performContextMenuAction(android.R.id.paste)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Share text"){shareSelectedText()},LinearLayout.LayoutParams(-1,scaled(46)));scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Drag ↕↔ at the top edge of the keyboard to resize height and width freely. Presets below control height.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});val labels=listOf("85%","92%","97%","100%","108%","117%","127%");val current=PhormiKeyboardPreferences.height(this);labels.forEachIndexed{index,sizeLabel->list.addView(pill(if(index==current)"✓ $sizeLabel"else sizeLabel){PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardServiceV2,index);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(38)).apply{setMargins(0,dp(2),0,dp(2))})};list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(6))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill(if(PhormiKeyboardPreferences.pollinationsKey(this).isBlank())"Set Pollinations AI key"else"Pollinations AI key ✓"){startActivity(Intent(this,PhormiAiEmojiActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiAiEmojiActivity.EXTRA_CONFIG_ONLY,true)})},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
-    private fun render():View=when(panel){Panel.EMOJI->buildEmoji();Panel.CLIPBOARD->buildClipboard();Panel.AI_EMOJI->buildAiEmoji();Panel.TOOLS->buildTools();Panel.MEDIA->buildMedia();Panel.SETTINGS->buildSettings();Panel.KEYBOARD->buildKeyboard()}
+    private fun render():View{
+        val view=when(panel){
+            Panel.EMOJI->buildEmoji()
+            Panel.CLIPBOARD->buildClipboard()
+            Panel.AI_EMOJI->buildAiEmoji()
+            Panel.TOOLS->buildTools()
+            Panel.MEDIA->buildMedia()
+            Panel.SETTINGS->buildSettings()
+            Panel.KEYBOARD->buildKeyboard()
+        }
+        view.post { applyKeyboardWindowSize() }
+        return view
+    }
     private fun refreshAfterTextKey(){if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS) refreshPredictionStrip()}
     private fun launchMedia(mode:String){startActivity(Intent(this,PhormiKeyboardMediaActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiKeyboardMediaActivity.EXTRA_MODE,mode)})}
     private fun launchVoice(){startActivity(Intent(this,PhormiKeyboardVoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
     private fun shareSelectedText(){val text=currentInputConnection?.getSelectedText(0)?.toString().orEmpty();if(text.isBlank()){android.widget.Toast.makeText(this,"Select text first",android.widget.Toast.LENGTH_SHORT).show();return};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
     private fun applyPendingInput(){val prefs=getSharedPreferences(PREFS,MODE_PRIVATE);prefs.getString(KEY_PENDING_TEXT,null)?.takeIf{it.isNotBlank()}?.let{commitTextToEditor(it)};prefs.edit().remove(KEY_PENDING_TEXT).apply();prefs.getString(KEY_PENDING_URI,null)?.let{runCatching{commitContentToEditor(Uri.parse(it))}};prefs.edit().remove(KEY_PENDING_URI).apply()}
-    private fun commitTextToEditor(text:String){currentInputConnection?.commitText(text,1)}
+    private fun commitTextToEditor(text:String){
+        val ic=currentInputConnection ?: return
+        ic.commitText(text,1)
+        if(PhormiKeyboardPreferences.autoCaps(this) && text.any{it in charArrayOf('.','!','?',':',';','\n')}){
+            autoShift=PhormiKeyboardTextEngine.autoCapitalize(ic,editorInfo)
+        }
+    }
     private fun commitSpace(){val ic=currentInputConnection?:return;val current=PhormiKeyboardTextEngine.currentWord(ic);if(PhormiKeyboardPreferences.autocorrect(this)&&current.isNotBlank()){PhormiKeyboardTextEngine.correctionFor(this,current)?.let{correction->ic.deleteSurroundingText(current.length,0);ic.commitText(correction,1);PhormiKeyboardTextEngine.learnCorrection(this,current,correction,editorInfo)}};val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo));val corrected=PhormiKeyboardTextEngine.currentWord(ic);if(corrected.isNotBlank())PhormiKeyboardTextEngine.learn(this,corrected,editorInfo);ic.commitText(" ",1);if(previous.isNotBlank()&&corrected.isNotBlank())PhormiKeyboardTextEngine.learnPair(this,previous,corrected,editorInfo);if(PhormiKeyboardPreferences.autoCaps(this))autoShift=PhormiKeyboardTextEngine.autoCapitalize(ic,editorInfo);refreshAfterTextKey()}
     private fun deleteBackward(){val ic=currentInputConnection?:return;val selected=ic.getSelectedText(0)?.toString();if(!selected.isNullOrEmpty())ic.commitText("",1)else ic.deleteSurroundingText(1,0)}
     private fun moveCursor(delta:Int){val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
