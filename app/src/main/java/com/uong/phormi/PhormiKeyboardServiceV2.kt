@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.math.abs
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /** Phormi IME. Every panel uses one fixed viewport; long content scrolls inside it. */
