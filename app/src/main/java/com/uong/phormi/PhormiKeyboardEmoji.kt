@@ -102,12 +102,17 @@ object PhormiKeyboardEmoji {
                 "LEG","BODY","SKIN","FINGER","FOOT","EAR","EYE","MOUTH","NOSE",
                 "HAIR","FAMILY","COUPLE","HUMAN")) return "👤"
 
+        if (has("FLOWER","ROSE","TULIP","SUNFLOWER","BLOSSOM","BOUQUET","HIBISCUS",
+                "CHERRY_BLOSSOM","BLOSSOMING")) return "🌸"
+
+        if (has("TREE","LEAF","HERB","SEEDLING","CACTUS","PLANT","MUSHROOM","POTTED",
+                "ROOT","SHAMROCK","FOUR_LEAF","PALM","EVERGREEN","DECIDUOUS","SPROUT")) return "🌿"
+
         if (has("CAT","DOG","MOUSE","RABBIT","FOX","BEAR","MONKEY","BIRD","FISH",
                 "BUG","INSECT","WOLF","LION","HORSE","TIGER","ELEPHANT","PANDA",
                 "PIG","COW","CHICKEN","SNAKE","TURTLE","DOLPHIN","WHALE","ANIMAL",
-                "FLOWER","TREE","LEAF","HERB","SEEDLING","CACTUS","PLANT","MUSHROOM",
-                "ROSE","TULIP","SUNFLOWER","MOON","SUN","STAR","RAIN","CLOUD","SNOW",
-                "FIRE","WATER","EARTH","WEATHER","NATURE")) return "🐾"
+                "MOON","SUN","STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH",
+                "WEATHER","NATURE")) return "🐾"
 
         if (has("FRUIT","APPLE","BANANA","GRAPES","STRAWBERRY","WATERMELON","PINEAPPLE",
                 "MANGO","LEMON","PEACH","PEAR","CHERRY","KIWI","MELON","BLUEBERRY",
@@ -140,11 +145,13 @@ object PhormiKeyboardEmoji {
     }
     val categories: LinkedHashMap<String, List<String>> by lazy {
         val grouped = linkedMapOf<String, MutableList<String>>()
-        listOf("😀","👤","🐾","🍔","🚗","⚽","💻","🔣","🏳️").forEach { grouped[it] = mutableListOf() }
+        listOf("😀","👤","🌿","🌸","🐾","🍔","🚗","⚽","💻","🔣","🏳️").forEach { grouped[it] = mutableListOf() }
         all.forEach { emoji -> grouped[classify(emoji)]?.add(emoji) }
         linkedMapOf<String, List<String>>().apply {
             put("😀", grouped["😀"].orEmpty())
             put("👤", grouped["👤"].orEmpty())
+            put("🌿", grouped["🌿"].orEmpty())
+            put("🌸", grouped["🌸"].orEmpty())
             put("🐾", grouped["🐾"].orEmpty())
             put("🍔", grouped["🍔"].orEmpty())
             put("🚗", grouped["🚗"].orEmpty())
