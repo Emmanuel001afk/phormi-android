@@ -51,7 +51,12 @@ private fun PhormiKeyboardServiceV2.viewportHeightPx(): Int {
 
 private fun PhormiKeyboardServiceV2.normalizeViewport(view: View) {
     val h = viewportHeightPx()
-    val width = (resources.displayMetrics.widthPixels * PhormiKeyboardPreferences.widthScale(this)).toInt().coerceAtLeast((240 * resources.displayMetrics.density).toInt())
+    // InputMethodService supplies the actual safe horizontal viewport through getMaxWidth().
+    // Using raw displayMetrics here can include areas unavailable to the IME and was the
+    // reason the outer letter keys could be rendered past the phone's visible edge.
+    val available = getMaxWidth().coerceAtLeast((240 * resources.displayMetrics.density).toInt())
+    val width = (available * PhormiKeyboardPreferences.widthScale(this)).toInt()
+        .coerceIn((240 * resources.displayMetrics.density).toInt(), available)
     val lp = view.layoutParams ?: LinearLayout.LayoutParams(width, h)
     lp.width = width
     lp.height = h
