@@ -2565,21 +2565,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                val target = url.orEmpty()
-                if (view != null && target.startsWith("http", true)) {
-                    val desktop = isDesktopModeFor(target)
-                    val desiredUa = desktopUserAgent(desktop)
-                    if (view.settings.userAgentString != desiredUa) {
-                        // Chromium applies Request Desktop Site to the navigation/user-agent
-                        // and keeps UA client hints consistent with it. WebView reloads once
-                        // when the UA changes; the equality guard prevents a reload loop.
-                        applyDesktopMode(view, desktop)
-                    }
-                }
-            }
-
             override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                 val targetUri = request?.url ?: return false
                 val target = targetUri.toString()
@@ -2671,6 +2656,17 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
+                val target = url.orEmpty()
+                if (view != null && target.startsWith("http", true)) {
+                    val desktop = isDesktopModeFor(target)
+                    val desiredUa = desktopUserAgent(desktop)
+                    if (view.settings.userAgentString != desiredUa) {
+                        // Chromium applies Request Desktop Site to the navigation/user-agent and
+                        // keeps UA client hints consistent with it. WebView reloads once when the
+                        // UA changes; the equality guard prevents a reload loop.
+                        applyDesktopMode(view, desktop)
+                    }
+                }
             }
 
             override fun onReceivedSslError(
@@ -3462,7 +3458,7 @@ class MainActivity : AppCompatActivity() {
                 builder
                     .setPlatform("Linux")
                     .setArchitecture("x86")
-                    .setBitness(androidx.webkit.UserAgentMetadata.BITNESS_64)
+                    .setBitness(64)
             }
             if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA_FORM_FACTORS)) {
                 builder.setFormFactors(
