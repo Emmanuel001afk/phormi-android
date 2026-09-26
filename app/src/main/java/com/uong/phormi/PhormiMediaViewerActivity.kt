@@ -117,6 +117,25 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             rightMargin = 8
         })
 
+        val openWithButton = TextView(this).apply {
+            text = "↗"
+            textSize = 20f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0x66000000)
+            contentDescription = "Open with another app"
+            setOnClickListener {
+                if (!PhormiFileOpener.openExternal(this@PhormiMediaViewerActivity, uri, mime)) {
+                    android.widget.Toast.makeText(this@PhormiMediaViewerActivity, "No installed app can open this media.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        root.addView(openWithButton, FrameLayout.LayoutParams(56, 56).apply {
+            gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            topMargin = 136
+            rightMargin = 8
+        })
+
         brightnessHint = makeHint()
         volumeHint = makeHint()
         root.addView(brightnessHint, FrameLayout.LayoutParams(180, 52).apply {
