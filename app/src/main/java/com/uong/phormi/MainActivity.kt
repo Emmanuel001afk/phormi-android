@@ -3479,7 +3479,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
         val settings = webView.settings
         settings.userAgentString = desktopUserAgent(enabled)
-        settings.useWideViewPort = true
+        settings.useWideViewPort = enabled
         settings.loadWithOverviewMode = enabled
         settings.textZoom = 100
         settings.builtInZoomControls = true
