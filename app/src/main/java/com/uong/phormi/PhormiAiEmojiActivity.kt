@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.app.Activity
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.EditText
@@ -49,6 +50,14 @@ class PhormiAiEmojiActivity : Activity() {
         })
         prompt = EditText(this).apply { hint = "Optional manual context"; minLines = 2 }
         root.addView(prompt)
+        prompt.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                prompt.postDelayed({
+                    (getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                        .showSoftInput(prompt, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                }, 180L)
+            }
+        }
         root.addView(android.widget.Button(this).apply {
             text = "Generate 4"
             setOnClickListener { generate(false) }
