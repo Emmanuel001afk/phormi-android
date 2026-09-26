@@ -62,9 +62,14 @@ class PhormiZipViewerActivity : AppCompatActivity() {
     }
 
     private fun fileIcon(name: String): String = when (name.substringAfterLast(".", "").lowercase()) {
-        "pdf" -> "📕", "zip","rar","7z" -> "🗜️", "mp4","mkv","webm","mov","avi" -> "🎬",
-        "mp3","wav","m4a","flac","ogg" -> "🎵", "png","jpg","jpeg","gif","webp" -> "🖼️",
-        "kt","java","js","ts","tsx","jsx","py","c","cpp","h","hpp","cs","go","rs","swift","dart","php","rb","sh","html","css","xml","json","yaml","yml","sql","md","txt" -> "💻",
+        "pdf" -> "📕"
+        "zip", "rar", "7z" -> "🗜️"
+        "mp4", "mkv", "webm", "mov", "avi" -> "🎬"
+        "mp3", "wav", "m4a", "flac", "ogg" -> "🎵"
+        "png", "jpg", "jpeg", "gif", "webp" -> "🖼️"
+        "kt", "java", "js", "ts", "tsx", "jsx", "py", "c", "cpp", "h", "hpp",
+        "cs", "go", "rs", "swift", "dart", "php", "rb", "sh", "html", "css",
+        "xml", "json", "yaml", "yml", "sql", "md", "txt" -> "💻"
         else -> "📄"
     }
 
