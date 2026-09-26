@@ -84,11 +84,21 @@ class DownloadsActivity : AppCompatActivity() {
                         "PAUSED", "QUEUED", "FAILED" -> PhormiDownloadEngine.resume(this@DownloadsActivity, row.id)
                     }
                 }
-                delete.visibility = if (!row.legacy) View.VISIBLE else View.GONE
+                // Legacy DownloadManager rows are real files too. Keep Delete available for
+                // them instead of making the old download path impossible to clean up.
+                delete.visibility = View.VISIBLE
                 delete.text = if (row.state == "COMPLETED" || row.state == "CANCELLED") "Delete" else "Cancel"
                 delete.contentDescription = if (row.state == "COMPLETED" || row.state == "CANCELLED") "Delete download" else "Cancel download"
                 delete.setOnClickListener {
-                    if (row.state == "COMPLETED" || row.state == "CANCELLED") {
+                    if (row.legacy && row.id.startsWith("d:")) {
+                        val downloadId = row.id.removePrefix("d:").toLongOrNull()
+                        if (downloadId != null) {
+                            runCatching {
+                                (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(downloadId)
+                            }
+                            loadDownloads()
+                        }
+                    } else if (row.state == "COMPLETED" || row.state == "CANCELLED") {
                         PhormiDownloadEngine.delete(this@DownloadsActivity, row.id)
                     } else {
                         PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
