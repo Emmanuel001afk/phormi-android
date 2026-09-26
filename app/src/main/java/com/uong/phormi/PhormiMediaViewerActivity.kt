@@ -202,6 +202,43 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         }
     }
 
+    private fun retryFromAccessibleCopy(uri: Uri, mime: String) {
+        if (cacheFallbackAttempted) {
+            runOnUiThread {
+                Toast.makeText(this, "This media format could not be played by Phormi.", Toast.LENGTH_LONG).show()
+                if (!PhormiFileOpener.openExternal(this, uri, mime)) finish()
+            }
+            return
+        }
+        cacheFallbackAttempted = true
+        Toast.makeText(this, "Preparing the media for playback…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val cached = runCatching {
+                val name = PhormiFileOpener.displayName(this, uri, "media")
+                val ext = name.substringAfterLast('.', "bin").take(12)
+                val target = File.createTempFile("phormi_media_", ".${ext}", cacheDir)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Media URI could not be opened")
+                Uri.fromFile(target)
+            }.getOrNull()
+            runOnUiThread {
+                if (cached != null) {
+                    player?.apply {
+                        stop()
+                        clearMediaItems()
+                        setMediaItem(MediaItem.fromUri(cached))
+                        prepare()
+                        playWhenReady = true
+                    }
+                } else {
+                    Toast.makeText(this, "Phormi could not access this downloaded media.", Toast.LENGTH_LONG).show()
+                    if (!PhormiFileOpener.openExternal(this, uri, mime)) finish()
+                }
+            }
+        }.start()
+    }
+
     private fun configureGestures() {
         val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean {
