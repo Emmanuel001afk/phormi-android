@@ -63,5 +63,6 @@
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" /></provider>
         <activity android:name=".PhormiMediaViewerActivity" android:exported="false" android:supportsPictureInPicture="true" />
         <activity android:name=".PhormiPdfViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".PhormiZipViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
     </application>
 </manifest>
