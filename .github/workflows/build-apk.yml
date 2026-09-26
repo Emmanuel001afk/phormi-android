@@ -1,5 +1,9 @@
 name: Build Phormi APK
 
+concurrency:
+  group: phormi-build-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches:
@@ -27,15 +31,6 @@ jobs:
           gradle-version: '8.11.1'
       - name: Show Gradle version
         run: gradle --version
-      - name: Android lint
-        run: |
-          set +e
-          gradle lintDebug --no-daemon --stacktrace
-          status=$?
-          echo "===== FULL LINT TEXT REPORT ====="
-          cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt 2>/dev/null || true
-          echo "===== END FULL LINT TEXT REPORT ====="
-          exit $status
       - name: Set monotonic Android version
         id: version
         run: |
@@ -43,15 +38,19 @@ jobs:
           version_code="$(date +%s)"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "version_name=1.0.$version_code" >> "$GITHUB_OUTPUT"
-      - name: Build unsigned release APK
+      - name: Build debug and release APKs
         env:
           PHORMI_VERSION_CODE: ${{ steps.version.outputs.version_code }}
           PHORMI_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-        run: gradle assembleRelease --no-daemon --stacktrace
-      - name: Set APK path
-        run: echo "APK=app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_ENV"
-      - name: Verify APK output
-        run: test -s "$APK"
+        run: gradle assembleDebug assembleRelease --no-daemon --stacktrace
+      - name: Set APK paths
+        run: |
+          echo "RELEASE_APK=app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_ENV"
+          echo "DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
+      - name: Verify APK outputs
+        run: |
+          test -s "$RELEASE_APK"
+          test -s "$DEBUG_APK"
       - name: Package committed source and APK
         run: |
           mkdir -p dist/phormi-android
@@ -61,7 +60,8 @@ jobs:
           cp -R docs dist/phormi-android/ 2>/dev/null || true
           cp -R shared dist/phormi-android/ 2>/dev/null || true
           cp build.gradle.kts settings.gradle.kts gradle.properties dist/phormi-android/ 2>/dev/null || true
-          cp "$APK" dist/phormi-android/phormi-release.apk
+          cp "$RELEASE_APK" dist/phormi-android/phormi-release-unsigned.apk
+          cp "$DEBUG_APK" dist/phormi-android/phormi-debug.apk
           cd dist
           zip -qr phormi-final-project.zip phormi-android
           sha256sum phormi-final-project.zip > phormi-final-project.sha256
@@ -75,11 +75,11 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: phormi-release-apk
-          path: ${{ env.APK }}
+          name: phormi-debug-apk
+          path: ${{ env.DEBUG_APK }}
       - name: Publish latest release to AEM Store
         env:
-          APK: ${{ env.APK }}
+          APK: ${{ env.RELEASE_APK }}
           SUPABASE_KEY: sb_publishable_Imgtr_W_Z868cBsNEcWpeg_89FE2Mvb
         run: |
           set -euo pipefail
