@@ -152,6 +152,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_DAILY_ACCENT = "daily_accent"
         private const val KEY_WALLPAPER_URI = "wallpaper_uri"
+        private const val KEY_DESKTOP_SITES = "desktop_sites"
         private const val KEY_CUSTOM_SHORTCUTS = "custom_shortcuts"
         private const val KEY_PULL_TO_REFRESH = "pull_to_refresh"
         private const val KEY_TAB_VIEW_MODE = "tab_view_mode"
@@ -2103,7 +2104,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val webView = activeWebView()
+        val webView = sourceWebView ?: activeWebView()
         if (webView == null) {
             Toast.makeText(this, "No active browser tab", Toast.LENGTH_SHORT).show()
             return
@@ -2556,13 +2557,29 @@ class MainActivity : AppCompatActivity() {
             setAllowContentAccess(true)
             builtInZoomControls = true
             displayZoomControls = false
-            val desktop = prefs.getBoolean("desktop_mode", false)
+            val desktop = isDesktopModeFor(webView.url.orEmpty())
             userAgentString = desktopUserAgent(desktop)
             loadWithOverviewMode = desktop
             useWideViewPort = desktop
+            applyDesktopUserAgentMetadata(this, desktop)
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                val target = url.orEmpty()
+                if (view != null && target.startsWith("http", true)) {
+                    val desktop = isDesktopModeFor(target)
+                    val desiredUa = desktopUserAgent(desktop)
+                    if (view.settings.userAgentString != desiredUa) {
+                        // Chromium applies Request Desktop Site to the navigation/user-agent
+                        // and keeps UA client hints consistent with it. WebView reloads once
+                        // when the UA changes; the equality guard prevents a reload loop.
+                        applyDesktopMode(view, desktop)
+                    }
+                }
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                 val targetUri = request?.url ?: return false
                 val target = targetUri.toString()
@@ -3420,15 +3437,55 @@ class MainActivity : AppCompatActivity() {
         return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36"
     }
 
+    private fun desktopHost(url: String): String? =
+        runCatching { Uri.parse(url).host?.lowercase(Locale.US)?.removePrefix("www.") }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+
+    private fun isDesktopModeFor(url: String): Boolean {
+        val host = desktopHost(url)
+        val sites = prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty()
+        return if (host != null) host in sites else prefs.getBoolean("desktop_mode", false)
+    }
+
+    private fun setDesktopModeForHost(host: String, enabled: Boolean) {
+        val sites = prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty().toMutableSet()
+        if (enabled) sites += host else sites -= host
+        prefs.edit().putStringSet(KEY_DESKTOP_SITES, sites).apply()
+    }
+
+    private fun applyDesktopUserAgentMetadata(settings: WebSettings, enabled: Boolean) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) return
+        runCatching {
+            val builder = androidx.webkit.UserAgentMetadata.Builder()
+                .setMobile(!enabled)
+            if (enabled) {
+                builder
+                    .setPlatform("Linux")
+                    .setArchitecture("x86")
+                    .setBitness(androidx.webkit.UserAgentMetadata.BITNESS_64)
+            }
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA_FORM_FACTORS)) {
+                builder.setFormFactors(
+                    listOf(
+                        if (enabled) androidx.webkit.UserAgentMetadata.FORM_FACTOR_DESKTOP
+                        else androidx.webkit.UserAgentMetadata.FORM_FACTOR_MOBILE
+                    )
+                )
+            }
+            WebSettingsCompat.setUserAgentMetadata(settings, builder.build())
+        }
+    }
+
     private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
         val settings = webView.settings
         settings.userAgentString = desktopUserAgent(enabled)
-        settings.useWideViewPort = enabled
+        settings.useWideViewPort = true
         settings.loadWithOverviewMode = enabled
         settings.textZoom = 100
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         webView.setInitialScale(0)
+        applyDesktopUserAgentMetadata(settings, enabled)
     }
 
     private fun addCurrentSiteToHomeScreen() {
@@ -3460,10 +3517,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleDesktopMode() {
-        val desktop = !prefs.getBoolean("desktop_mode", false)
-        prefs.edit().putBoolean("desktop_mode", desktop).apply()
-        tabs.forEach { applyDesktopMode(it.webView, desktop); it.webView.reload() }
-        Toast.makeText(this, if (desktop) "Desktop mode: on" else "Desktop mode: off", Toast.LENGTH_SHORT).show()
+        val view = activeWebView() ?: return
+        val host = desktopHost(view.url.orEmpty())
+        if (host == null) {
+            Toast.makeText(this, "Open a website first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val desktop = !isDesktopModeFor(view.url.orEmpty())
+        setDesktopModeForHost(host, desktop)
+        applyDesktopMode(view, desktop)
+        view.reload()
+        Toast.makeText(this, if (desktop) "Desktop site: on for $host" else "Desktop site: off for $host", Toast.LENGTH_SHORT).show()
     }
 
     fun handleCentralHubCommand(command: JSONObject): JSONObject {
