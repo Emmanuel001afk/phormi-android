@@ -3419,8 +3419,27 @@ class MainActivity : AppCompatActivity() {
         val major = Regex("Chrome/(\\d+)").find(mobile)?.groupValues?.getOrNull(1) ?: "120"
         return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36"
     }
+
+    private fun applyDesktopUserAgentMetadata(webView: WebView, enabled: Boolean) {
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.USER_AGENT_METADATA)) return
+        runCatching {
+            val builder = if (enabled) {
+                androidx.webkit.UserAgentMetadata.Builder()
+                    .setMobile(false)
+                    .setPlatform("Linux")
+                    .setArchitecture("x86")
+                    .setBitness(androidx.webkit.UserAgentMetadata.BITNESS_64)
+            } else {
+                // An empty builder restores WebView's platform-derived client hints.
+                androidx.webkit.UserAgentMetadata.Builder()
+            }
+            androidx.webkit.WebSettingsCompat.setUserAgentMetadata(webView.settings, builder.build())
+        }
+    }
+
     private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
         webView.settings.userAgentString = desktopUserAgent(enabled)
+        applyDesktopUserAgentMetadata(webView, enabled)
         webView.settings.useWideViewPort = enabled
         webView.settings.loadWithOverviewMode = enabled
         webView.setInitialScale(0)
