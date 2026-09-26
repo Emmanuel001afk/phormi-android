@@ -30,11 +30,18 @@ object PhormiFileOpener {
         val name = displayName(context, uri, "")
         val ext = name.substringAfterLast('.', "").lowercase()
         val explicit = when (ext) {
-            "mkv" -> "video/x-matroska"
             "webm" -> "video/webm"
             "mp4", "m4v" -> "video/mp4"
             "mov" -> "video/quicktime"
             "avi" -> "video/x-msvideo"
+            "3gp" -> "video/3gpp"
+            "3g2" -> "video/3gpp2"
+            "mkv" -> "video/x-matroska"
+            "ts", "m2ts", "mts" -> "video/mp2t"
+            "mpeg", "mpg" -> "video/mpeg"
+            "ogv" -> "video/ogg"
+            "flv" -> "video/x-flv"
+            "wmv" -> "video/x-ms-wmv"
             "mp3" -> "audio/mpeg"
             "m4a" -> "audio/mp4"
             "flac" -> "audio/flac"
