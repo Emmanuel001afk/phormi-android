@@ -34,6 +34,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlin.math.abs
 import kotlin.math.max
+import java.io.File
 
 /** Full-screen local media player used directly by completed Downloads rows. */
 @UnstableApi
