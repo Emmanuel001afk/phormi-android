@@ -296,7 +296,48 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)).apply{width=-1})
         }
     }
-    private fun addBottomRow(root:LinearLayout,currentPage:KeyboardPage){val bottom=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};when(currentPage){KeyboardPage.LETTERS->{bottom.addView(keyButton("?123"){page=KeyboardPage.NUMBERS;setInputView(render())});bottom.addView(shiftButton{toggleShift();setInputView(render())})};KeyboardPage.NUMBERS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())})};KeyboardPage.SYMBOLS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())});bottom.addView(keyButton("123"){page=KeyboardPage.NUMBERS;setInputView(render())})}};bottom.addView(keyButton(","){commitTextToEditor(",");refreshAfterTextKey()});val space=keyButton("Space",3.6f){commitSpace()};space.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{spaceDownX=event.x;spaceMoved=false;true};MotionEvent.ACTION_MOVE->{if(!spaceMoved&&abs(event.x-spaceDownX)>dp(28)){spaceMoved=true;moveCursor(if(event.x>spaceDownX)1 else -1)};true};MotionEvent.ACTION_UP->{if(!spaceMoved)commitSpace();true};MotionEvent.ACTION_CANCEL->{spaceMoved=false;true};else->true}};bottom.addView(space);bottom.addView(keyButton("."){commitTextToEditor(".");refreshAfterTextKey()});val back=keyButton("⌫"){deleteBackward();refreshAfterTextKey()};installRepeat(back){deleteBackward();refreshAfterTextKey()};bottom.addView(back);bottom.addView(keyButton(actionLabel()){sendEditorAction()});root.addView(bottom,LinearLayout.LayoutParams(-1,scaled(44)))}
+    private fun addBottomRow(root:LinearLayout,currentPage:KeyboardPage){
+        val bottom=LinearLayout(this).apply{
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER
+            weightSum=8f
+            clipChildren=true
+            clipToPadding=false
+        }
+        fun add(label:String,weight:Float=1f,action:()->Unit){
+            bottom.addView(keyButton(label,weight,action),LinearLayout.LayoutParams(0,scaled(44),weight).apply{
+                setMargins(dp(1),dp(1),dp(1),dp(1))
+                width=0
+            })
+        }
+        when(currentPage){
+            KeyboardPage.LETTERS->{
+                add("?123",0.9f){page=KeyboardPage.NUMBERS;setInputView(render())}
+                add(if(capsLock)"⇧A" else "⇧",0.9f){toggleShift();setInputView(render())}
+            }
+            KeyboardPage.NUMBERS->add("ABC",0.9f){page=KeyboardPage.LETTERS;setInputView(render())}
+            KeyboardPage.SYMBOLS->{
+                add("ABC",0.9f){page=KeyboardPage.LETTERS;setInputView(render())}
+                add("123",0.9f){page=KeyboardPage.NUMBERS;setInputView(render())}
+            }
+        }
+        add(",",0.65f){commitTextToEditor(",");refreshAfterTextKey()}
+        val space=keyButton("Space",3.1f){commitSpace()}
+        space.setOnTouchListener{_,event->when(event.actionMasked){
+            MotionEvent.ACTION_DOWN->{spaceDownX=event.x;spaceMoved=false;true}
+            MotionEvent.ACTION_MOVE->{if(!spaceMoved&&abs(event.x-spaceDownX)>dp(28)){spaceMoved=true;moveCursor(if(event.x>spaceDownX)1 else -1)};true}
+            MotionEvent.ACTION_UP->{if(!spaceMoved)commitSpace();true}
+            MotionEvent.ACTION_CANCEL->{spaceMoved=false;true}
+            else->true
+        }}
+        bottom.addView(space,LinearLayout.LayoutParams(0,scaled(44),3.1f).apply{setMargins(dp(1),dp(1),dp(1),dp(1));width=0})
+        add(".",0.65f){commitTextToEditor(".");refreshAfterTextKey()}
+        val back=keyButton("⌫",0.9f){deleteBackward();refreshAfterTextKey()}
+        installRepeat(back){deleteBackward();refreshAfterTextKey()}
+        bottom.addView(back,LinearLayout.LayoutParams(0,scaled(44),0.9f).apply{setMargins(dp(1),dp(1),dp(1),dp(1));width=0})
+        add(actionLabel(),0.9f){sendEditorAction()}
+        root.addView(bottom,LinearLayout.LayoutParams(-1,scaled(44)))
+    }
     private fun buildEmoji():View{val root=root();val nav=HorizontalScrollView(this).apply{isHorizontalScrollBarEnabled=false;overScrollMode=View.OVER_SCROLL_NEVER};val categories=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL};PhormiKeyboardEmoji.categories.keys.forEachIndexed{index,icon->categories.addView(pill(icon){emojiCategory=index;setInputView(render())},LinearLayout.LayoutParams(dp(48),scaled(36)).apply{setMargins(dp(2),0,dp(2),0)})};categories.addView(pill("ABC"){panel=Panel.KEYBOARD;page=KeyboardPage.LETTERS;setInputView(render())},LinearLayout.LayoutParams(dp(58),scaled(36)));nav.addView(categories);root.addView(nav,LinearLayout.LayoutParams(-1,scaled(36)));if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){root.addView(pill("✨ Create unique emoji"){panel=Panel.AI_EMOJI;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(38)).apply{setMargins(dp(2),dp(3),dp(2),dp(3))})};val scroll=ScrollView(this).apply{isFillViewport=true;clipToPadding=true;overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val grid=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};PhormiKeyboardEmoji.categories.values.elementAtOrNull(emojiCategory).orEmpty().chunked(8).forEach{group->val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};group.forEach{emoji->row.addView(keyButton(emoji){commitTextToEditor(emoji)},LinearLayout.LayoutParams(0,scaled(42),1f))};repeat(8-group.size){row.addView(View(this),LinearLayout.LayoutParams(0,scaled(42),1f))};grid.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))};scroll.addView(grid);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildClipboard():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};val items=PhormiKeyboardClipboardStore.list(this);if(items.isEmpty())list.addView(TextView(this).apply{text="Your copied text, screenshots and images will appear here.";setTextColor(themeText());textSize=14f;setPadding(dp(12),dp(18),dp(12),dp(18))});items.forEach{item->val label=item.text.take(60).ifBlank{"Copied item"};list.addView(pill(label){if(item.text.isNotBlank())commitTextToEditor(item.text)else item.uri?.let{commitContentToEditor(Uri.parse(it))}},LinearLayout.LayoutParams(-1,scaled(44)))};scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun insertAiEmojiExpression(){
