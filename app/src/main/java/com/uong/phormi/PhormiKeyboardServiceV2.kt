@@ -296,6 +296,36 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)).apply{width=-1})
         }
     }
+    private fun shiftKey(weight: Float): Button {
+        val state = when {
+            capsLock -> 2
+            shift || autoShift -> 1
+            else -> 0
+        }
+        return keyButton("⇧", weight) {
+            toggleShift()
+            setInputView(render())
+        }.apply {
+            // Keep one universal shift glyph; state is communicated by color.
+            // Purple = one-letter capitalization, red = caps lock.
+            background = rounded(
+                when (state) {
+                    2 -> Color.rgb(220, 38, 38)
+                    1 -> accent()
+                    else -> themeKey()
+                },
+                dp(9)
+            )
+            setTextColor(Color.WHITE)
+            textSize = 21f
+            contentDescription = when (state) {
+                2 -> "Caps lock — all letters uppercase"
+                1 -> "Shift — next letter uppercase"
+                else -> "Shift — next letter uppercase"
+            }
+        }
+    }
+
     private fun addBottomRow(root:LinearLayout,currentPage:KeyboardPage){
         val bottom=LinearLayout(this).apply{
             orientation=LinearLayout.HORIZONTAL
@@ -313,7 +343,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         when(currentPage){
             KeyboardPage.LETTERS->{
                 add("?123",0.9f){page=KeyboardPage.NUMBERS;setInputView(render())}
-                add(if(capsLock)"⇧A" else "⇧",0.9f){toggleShift();setInputView(render())}
+                bottom.addView(shiftKey(0.9f),LinearLayout.LayoutParams(0,scaled(44),0.9f).apply{
+                    setMargins(dp(1),dp(1),dp(1),dp(1))
+                    width=0
+                })
             }
             KeyboardPage.NUMBERS->add("ABC",0.9f){page=KeyboardPage.LETTERS;setInputView(render())}
             KeyboardPage.SYMBOLS->{
