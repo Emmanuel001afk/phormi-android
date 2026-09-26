@@ -239,7 +239,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 val p = player ?: return
                 val speed = if (p.playbackParameters.speed == 1f) 1.5f else 1f
                 p.setPlaybackSpeed(speed)
-                speedButton.text = "\${speed}×"
+                speedButton.text = "${speed}×"
                 showHint(seekHint, if (speed == 1f) "Normal speed" else "1.5× quick play")
             }
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
@@ -252,7 +252,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                         val target = (gestureStartPosition + duration * fraction).coerceIn(0L, duration)
                         player?.seekTo(target)
                         val delta = (target - gestureStartPosition) / 1000L
-                        showHint(seekHint, if (delta >= 0) "Seek +\${delta}s" else "Seek −\${-delta}s")
+                        showHint(seekHint, if (delta >= 0) "Seek +${delta}s" else "Seek −${-delta}s")
                     }
                     return true
                 }
@@ -260,13 +260,13 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 val delta = -distanceY / max(1f, root.height.toFloat())
                 if (e1.x < root.width / 2f) {
                     setBrightness((baseBrightness + delta).coerceIn(0.02f, 1f))
-                    showHint(brightnessHint, "Brightness \${(currentBrightness() * 100).toInt()}%")
+                    showHint(brightnessHint, "Brightness ${(currentBrightness() * 100).toInt()}%")
                 } else {
                     val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                     val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                     val next = (current + (delta * maxVolume * 1.8f).toInt()).coerceIn(0, maxVolume)
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
-                    showHint(volumeHint, "Volume \${((next * 100f) / maxVolume.coerceAtLeast(1)).toInt()}%")
+                    showHint(volumeHint, "Volume ${((next * 100f) / maxVolume.coerceAtLeast(1)).toInt()}%")
                 }
                 return true
             }
@@ -277,12 +277,12 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private fun showSpeedMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
         val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
-        speeds.forEachIndexed { index, speed -> popup.menu.add(Menu.NONE, index, index, "\${speed}×") }
+        speeds.forEachIndexed { index, speed -> popup.menu.add(Menu.NONE, index, index, "${speed}×") }
         popup.setOnMenuItemClickListener {
             val speed = speeds[it.itemId]
             player?.setPlaybackSpeed(speed)
-            speedButton.text = "\${speed}×"
-            showHint(seekHint, "Playback \${speed}×")
+            speedButton.text = "${speed}×"
+            showHint(seekHint, "Playback ${speed}×")
             true
         }
         popup.show()
@@ -320,7 +320,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 else -> {
                     Toast.makeText(
                         this,
-                        "\${PhormiFileOpener.displayName(this, uri)} · \$mime",
+                        "${PhormiFileOpener.displayName(this, uri)} · $mime",
                         Toast.LENGTH_LONG
                     ).show()
                     true
