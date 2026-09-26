@@ -66,19 +66,24 @@ class DownloadsActivity : AppCompatActivity() {
 
                 val action = view.findViewById<TextView>(R.id.download_action)
                 val delete = view.findViewById<TextView>(R.id.download_delete)
-                action.visibility = if (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED")) View.VISIBLE else View.GONE
-                action.text = when (row.state) {
+                val playable = row.state == "COMPLETED" && isPlayable(row.mimeType, row.title)
+                action.visibility = if (playable || (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED"))) View.VISIBLE else View.GONE
+                action.text = if (playable) "Play" else when (row.state) {
                     "RUNNING" -> "Pause"
                     "PAUSED", "QUEUED" -> "Resume"
                     "FAILED" -> "Retry"
                     else -> "Resume"
                 }
-                action.contentDescription = when (row.state) {
+                action.contentDescription = if (playable) "Play media" else when (row.state) {
                     "RUNNING" -> "Pause download"
                     "FAILED" -> "Retry download"
                     else -> "Resume download"
                 }
                 action.setOnClickListener {
+                    if (playable) {
+                        openRow(row)
+                        return@setOnClickListener
+                    }
                     when (row.state) {
                         "RUNNING" -> PhormiDownloadEngine.pause(this@DownloadsActivity, row.id)
                         "PAUSED", "QUEUED", "FAILED" -> PhormiDownloadEngine.resume(this@DownloadsActivity, row.id)
@@ -181,6 +186,16 @@ class DownloadsActivity : AppCompatActivity() {
         if (!PhormiFileOpener.open(this, Uri.parse(row.localUri), row.mimeType)) {
             Toast.makeText(this, "No installed app can open ${row.title}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun isPlayable(mimeType: String?, title: String): Boolean {
+        val mime = mimeType.orEmpty().lowercase()
+        if (mime.startsWith("video/") || mime.startsWith("audio/")) return true
+        return listOf(
+            ".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".3gp", ".3g2",
+            ".ts", ".m2ts", ".mts", ".mpeg", ".mpg", ".ogv", ".flv", ".wmv",
+            ".mp3", ".m4a", ".flac", ".wav", ".ogg", ".oga", ".aac", ".opus"
+        ).any(title.lowercase()::endsWith)
     }
 
     private fun formatBytes(value: Long): String = when {
