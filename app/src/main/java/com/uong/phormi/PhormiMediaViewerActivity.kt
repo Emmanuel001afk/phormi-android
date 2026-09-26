@@ -30,8 +30,9 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private lateinit var lockButton: TextView
     private lateinit var brightnessHint: TextView
     private lateinit var volumeHint: TextView
+    private lateinit var rotateButton: TextView
     private var locked = false
-    private var landscape = false
+    private var autoRotate = true
     private var baseBrightness = 0.5f
     private val hintHandler = Handler(mainLooper)
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -96,6 +97,21 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         root.addView(lockButton, FrameLayout.LayoutParams(56, 56).apply {
             gravity = android.view.Gravity.TOP or android.view.Gravity.END
             topMargin = 8
+            rightMargin = 8
+        })
+
+        rotateButton = TextView(this).apply {
+            text = "↻"
+            textSize = 20f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0x66000000)
+            contentDescription = "Auto rotate on"
+            setOnClickListener { toggleAutoRotate() }
+        }
+        root.addView(rotateButton, FrameLayout.LayoutParams(56, 56).apply {
+            gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            topMargin = 72
             rightMargin = 8
         })
 
@@ -189,6 +205,25 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun toggleAutoRotate() {
+        autoRotate = !autoRotate
+        if (autoRotate) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            rotateButton.text = "↻"
+            rotateButton.contentDescription = "Auto rotate on"
+        } else {
+            requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
+            rotateButton.text = "⛶"
+            rotateButton.contentDescription = "Auto rotate off"
+        }
+        showHint(volumeHint, if (autoRotate) "Auto rotate on" else "Auto rotate off")
+    }
+
     private fun makeHint() = TextView(this).apply {
         gravity = android.view.Gravity.CENTER
         textSize = 15f
@@ -223,12 +258,6 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (landscape) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-            landscape = false
-            return
-        }
         super.onBackPressed()
     }
 
