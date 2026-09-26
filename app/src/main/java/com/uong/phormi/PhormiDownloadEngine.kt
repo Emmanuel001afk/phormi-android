@@ -415,7 +415,7 @@ class PhormiDownloadService : Service() {
                 }
                 // A cancellation caused by Pause followed immediately by Resume is a control
                 // transition, not a network failure. Retry the same byte range immediately.
-                if (activeCalls[id]?.isCanceled == true && cancelSignals[id] == Control.NONE) {
+                if (activeCalls[id]?.isCanceled() == true && cancelSignals[id] == Control.NONE) {
                     continue
                 }
                 // A broken mobile/Wi-Fi connection is not a permanent failure. Keep the row in
