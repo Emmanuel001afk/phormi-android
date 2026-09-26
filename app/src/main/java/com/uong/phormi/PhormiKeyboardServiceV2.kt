@@ -207,10 +207,33 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         row.visibility=if(row.childCount>0) View.VISIBLE else View.GONE
     }
     private fun buildKeyboard():View{val root=root();if(page==KeyboardPage.LETTERS)predictionStrip(root);toolbar(root);val type=editorInfo?.inputType?:InputType.TYPE_CLASS_TEXT;val clazz=type and InputType.TYPE_MASK_CLASS;val variation=type and InputType.TYPE_MASK_VARIATION;val number=clazz==InputType.TYPE_CLASS_NUMBER;val phone=clazz==InputType.TYPE_CLASS_PHONE;val dateTime=clazz==InputType.TYPE_CLASS_DATETIME;val email=variation==InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS||variation==InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS;val uri=variation==InputType.TYPE_TEXT_VARIATION_URI;if((number||phone||dateTime)&&page==KeyboardPage.LETTERS)page=KeyboardPage.NUMBERS;when{phone->responsiveRows(root,listOf("1234567890","*#+","()-"));dateTime->responsiveRows(root,listOf("1234567890","4567890",":/-"));number&&page==KeyboardPage.SYMBOLS->buildSymbolPage(root);number->buildNumberPage(root);page==KeyboardPage.LETTERS->buildLetterPage(root,email,uri);page==KeyboardPage.NUMBERS->buildNumberPage(root);else->buildSymbolPage(root)};return root}
-    private fun buildLetterPage(root:LinearLayout,email:Boolean,uri:Boolean){responsiveRows(root,listOf("qwertyuiop","asdfghjkl","zxcvbnm"));if(email||uri){val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};val tokens=if(email)listOf("@",".com",".net",".org")else listOf("/",".com","https://",".org");tokens.forEach{token->row.addView(keyButton(token){commitTextToEditor(token);refreshAfterTextKey()})};root.addView(row,LinearLayout.LayoutParams(-1,scaled(38)).apply{setMargins(0,dp(1),0,dp(1))})};addBottomRow(root,KeyboardPage.LETTERS)}
+    private fun buildLetterPage(root:LinearLayout,email:Boolean,uri:Boolean){
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        responsiveRows(body,listOf("qwertyuiop","asdfghjkl","zxcvbnm"))
+        if(email||uri){
+            val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+            val tokens=if(email)listOf("@",".com",".net",".org")else listOf("/",".com","https://",".org")
+            tokens.forEach{token->row.addView(keyButton(token){commitTextToEditor(token);refreshAfterTextKey()},LinearLayout.LayoutParams(0,scaled(38),1f).apply{setMargins(dp(1),dp(1),dp(1),dp(1))})}
+            body.addView(row,LinearLayout.LayoutParams(-1,scaled(40)))
+        }
+        val scroll=ScrollView(this).apply{
+            isFillViewport=false
+            clipToPadding=false
+            overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(body)
+        }
+        // Keep the action row outside the scroll area. On short phone IME windows the
+        // old layout let the third-party/URI row push Space, Backspace and Enter below
+        // the visible viewport.
+        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+        addBottomRow(root,KeyboardPage.LETTERS)
+    }
     private fun buildNumberPage(root:LinearLayout){
-        responsiveRows(root,listOf("123","456","789","0.,"))
-        root.addView(keyButton("Symbols",action={page=KeyboardPage.SYMBOLS;setInputView(render())}).apply{layoutParams=LinearLayout.LayoutParams(-1,scaled(44)).apply{setMargins(dp(2),dp(2),dp(2),dp(2))}})
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        responsiveRows(body,listOf("123","456","789","0.,"))
+        body.addView(keyButton("Symbols",action={page=KeyboardPage.SYMBOLS;setInputView(render())}).apply{layoutParams=LinearLayout.LayoutParams(-1,scaled(44)).apply{setMargins(dp(2),dp(2),dp(2),dp(2))}})
+        val scroll=ScrollView(this).apply{isFillViewport=false;clipToPadding=false;addView(body)}
+        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         addBottomRow(root,KeyboardPage.NUMBERS)
     }
     private fun buildSymbolPage(root:LinearLayout){
@@ -312,8 +335,20 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(8),dp(8),dp(8),dp(8))}
         list.addView(TextView(this).apply{text="Create a unique emoji";textSize=18f;typeface=Typeface.DEFAULT_BOLD;setTextColor(themeText());gravity=Gravity.CENTER})
         list.addView(TextView(this).apply{text="Generate one fused emoji-style reaction from your text. The result appears here so it can be inserted directly.";textSize=13f;setTextColor(themeText());gravity=Gravity.CENTER;setPadding(dp(8),dp(6),dp(8),dp(10))})
-        val input=android.widget.EditText(this).apply{hint="Describe the feeling or idea";setTextColor(themeText());setHintTextColor(Color.GRAY);minLines=2;setSingleLine(false);setText(aiEmojiContext)}
-        list.addView(input,LinearLayout.LayoutParams(-1,dp(72)))
+        val contextPreview=TextView(this).apply{
+            text=if(aiEmojiContext.isBlank())"No text captured yet. Type in the current app first, then return here." else "Current text: $aiEmojiContext"
+            textSize=13f
+            setTextColor(themeText())
+            setPadding(dp(10),dp(10),dp(10),dp(10))
+            background=rounded(themePill(),dp(10))
+        }
+        list.addView(contextPreview,LinearLayout.LayoutParams(-1,dp(72)))
+        list.addView(pill("Type a description in AI Emoji Studio"){
+            startActivity(Intent(this@PhormiKeyboardServiceV2, PhormiAiEmojiActivity::class.java).apply{
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(PhormiAiEmojiActivity.EXTRA_CONTEXT, aiEmojiContext)
+            })
+        },LinearLayout.LayoutParams(-1,scaled(44)))
         val status=TextView(this).apply{text="Ready";textSize=12f;setTextColor(themeText());gravity=Gravity.CENTER}
         list.addView(status,LinearLayout.LayoutParams(-1,dp(28)))
         val image=android.widget.ImageView(this).apply{scaleType=android.widget.ImageView.ScaleType.FIT_CENTER;contentDescription="Generated AI emoji";visibility=View.GONE}
@@ -335,7 +370,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             controller.generate(clean)
         }
         list.addView(pill(if(aiEmojiContext.isBlank())"Use what I'm typing"else"Create from current text"){generate(if(aiEmojiContext.isBlank())PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection)else aiEmojiContext)},LinearLayout.LayoutParams(-1,scaled(46)))
-        list.addView(pill("Generate from description"){generate(input.text.toString())},LinearLayout.LayoutParams(-1,scaled(46)))
+        list.addView(pill("Generate from description"){
+            val current=aiEmojiContext.ifBlank { PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection) }
+            generate(current)
+        },LinearLayout.LayoutParams(-1,scaled(46)))
         scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root
     }
     private fun buildMedia():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Import GIF / Image"){launchMedia("gif")},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Import Sticker"){launchMedia("sticker")},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Create AI Emoji"){panel=Panel.AI_EMOJI;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(TextView(this).apply{text="Images/GIFs are inserted only when the focused field accepts the requested MIME type.";setTextColor(themeText());textSize=13f;setPadding(dp(8),dp(12),dp(8),dp(12))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
