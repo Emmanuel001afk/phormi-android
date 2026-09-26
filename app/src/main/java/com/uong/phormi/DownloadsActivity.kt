@@ -96,7 +96,9 @@ class DownloadsActivity : AppCompatActivity() {
                 }
                 view.setOnClickListener { openRow(row) }
                 view.setOnLongClickListener {
-                    if (!row.legacy) PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
+                    if (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED")) {
+                        PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
+                    }
                     true
                 }
                 return view
