@@ -3552,7 +3552,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val fallbackTitle = view.title.orEmpty().ifBlank { Uri.parse(pageUrl).host.orEmpty().ifBlank { "Web app" } }
-        view.evaluateJavascript("(document.querySelector('link[rel~=\\"manifest\\"]')?.href || '')") { raw ->
+                view.evaluateJavascript("""(document.querySelector('link[rel~="manifest"]')?.href || '')""") { raw ->
             val manifestHref = runCatching { org.json.JSONTokener(raw).nextValue() as? String }.getOrNull().orEmpty()
             Thread {
                 val manifest = fetchWebManifest(pageUrl, manifestHref)
