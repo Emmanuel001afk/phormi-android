@@ -347,34 +347,24 @@ class PhormiDownloadService : Service() {
     }
 
     private fun resume(id: String) {
+        cancelSignals[id] = Control.NONE
         if (!running.containsKey(id)) {
-            cancelSignals[id] = Control.NONE
             launch(id)
             return
         }
-        executor.execute {
-            repeat(50) {
-                if (!running.containsKey(id)) {
-                    if (PhormiDownloadEngine.record(this, id) != null) {
-                        cancelSignals[id] = Control.NONE
-                        launch(id)
-                    }
-                    return@execute
-                }
-                Thread.sleep(100L)
-            }
-            PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, "Pause is still finishing; tap Resume again.")
-        }
+        // If the transfer is still unwinding a user-requested pause, let that same worker
+        // continue instead of starting a second worker or making the user wait/retry.
+        PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.QUEUED, null)
     }
 
     private fun cancel(id: String) {
         cancelSignals[id] = Control.CANCEL
         activeCalls[id]?.cancel()
         val record = PhormiDownloadEngine.record(this, id)
-        record?.localUri?.let { deleteUri(it) }
-        // Do not remove the persisted row here: the Downloads screen needs to show
-        // the cancelled state and expose Delete as the next explicit action.
         if (record != null) {
+            // If there is no active worker, remove the file immediately. If a worker is still
+            // writing, the CancelException path deletes it after the stream closes.
+            if (!running.containsKey(id)) record.localUri?.let { deleteUri(it) }
             PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.CANCELLED, "Download cancelled")
         }
     }
@@ -422,6 +412,11 @@ class PhormiDownloadService : Service() {
                 if (cancelSignals[id] == Control.PAUSE) {
                     PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.PAUSED, null)
                     return
+                }
+                // A cancellation caused by Pause followed immediately by Resume is a control
+                // transition, not a network failure. Retry the same byte range immediately.
+                if (activeCalls[id]?.isCanceled == true && cancelSignals[id] == Control.NONE) {
+                    continue
                 }
                 // A broken mobile/Wi-Fi connection is not a permanent failure. Keep the row in
                 // a waiting state and retry quietly until the user pauses or cancels it.
