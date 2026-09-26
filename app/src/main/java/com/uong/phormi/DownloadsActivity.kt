@@ -207,7 +207,7 @@ class DownloadsActivity : AppCompatActivity() {
 
     private fun formatBytes(value: Long): String = when {
         value < 0L -> "unknown size"
-        value < 1024L -> "\$value B"
+        value < 1024L -> "$value B"
         value < 1024L * 1024L -> String.format(Locale.US, "%.1f KB", value / 1024.0)
         value < 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f MB", value / (1024.0 * 1024.0))
         else -> String.format(Locale.US, "%.2f GB", value / (1024.0 * 1024.0 * 1024.0))
