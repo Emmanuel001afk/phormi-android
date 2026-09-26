@@ -251,14 +251,26 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     private fun responsiveRows(root:LinearLayout,rows:List<String>){
         rows.forEach{chars->
-            val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+            val row=LinearLayout(this).apply{
+                orientation=LinearLayout.HORIZONTAL
+                gravity=Gravity.CENTER
+                weightSum=chars.size.toFloat()
+                clipChildren=true
+                clipToPadding=true
+                minimumWidth=0
+            }
             chars.forEach{ch->
                 row.addView(keyButton(ch.toString()){
                     val out=if(shift||capsLock||autoShift)ch.uppercaseChar().toString()else ch.toString()
                     commitTextToEditor(out);if(shift&&!capsLock)shift=false;autoShift=false;refreshAfterTextKey()
-                },LinearLayout.LayoutParams(0,scaled(44),1f).apply{setMargins(dp(2),dp(2),dp(2),dp(2))})
+                }.apply{
+                    // Gboard-style compact letter sizing keeps every key inside the safe
+                    // IME viewport even on narrow screens and reduced-width settings.
+                    textSize=18f
+                    minimumWidth=0
+                },LinearLayout.LayoutParams(0,scaled(44),1f).apply{setMargins(dp(1),dp(2),dp(1),dp(2));width=0})
             }
-            root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))
+            root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)).apply{width=-1})
         }
     }
     private fun addBottomRow(root:LinearLayout,currentPage:KeyboardPage){val bottom=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER};when(currentPage){KeyboardPage.LETTERS->{bottom.addView(keyButton("?123"){page=KeyboardPage.NUMBERS;setInputView(render())});bottom.addView(shiftButton{toggleShift();setInputView(render())})};KeyboardPage.NUMBERS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())})};KeyboardPage.SYMBOLS->{bottom.addView(keyButton("ABC"){page=KeyboardPage.LETTERS;setInputView(render())});bottom.addView(keyButton("123"){page=KeyboardPage.NUMBERS;setInputView(render())})}};bottom.addView(keyButton(","){commitTextToEditor(",");refreshAfterTextKey()});val space=keyButton("Space",3.6f){commitSpace()};space.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{spaceDownX=event.x;spaceMoved=false;true};MotionEvent.ACTION_MOVE->{if(!spaceMoved&&abs(event.x-spaceDownX)>dp(28)){spaceMoved=true;moveCursor(if(event.x>spaceDownX)1 else -1)};true};MotionEvent.ACTION_UP->{if(!spaceMoved)commitSpace();true};MotionEvent.ACTION_CANCEL->{spaceMoved=false;true};else->true}};bottom.addView(space);bottom.addView(keyButton("."){commitTextToEditor(".");refreshAfterTextKey()});val back=keyButton("⌫"){deleteBackward();refreshAfterTextKey()};installRepeat(back){deleteBackward();refreshAfterTextKey()};bottom.addView(back);bottom.addView(keyButton(actionLabel()){sendEditorAction()});root.addView(bottom,LinearLayout.LayoutParams(-1,scaled(44)))}
