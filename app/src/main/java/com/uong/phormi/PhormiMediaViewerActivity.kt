@@ -196,12 +196,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 }
                 override fun onIsPlayingChanged(isPlaying: Boolean) { updatePictureInPictureParams() }
                 override fun onPlayerError(error: PlaybackException) {
-                    Toast.makeText(
-                        this@PhormiMediaViewerActivity,
-                        "Phormi could not decode this media. Trying another installed player…",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    if (!PhormiFileOpener.openExternal(this@PhormiMediaViewerActivity, uri, mime)) finish()
+                    retryFromAccessibleCopy(uri, mime)
                 }
             })
         }
