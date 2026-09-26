@@ -23,6 +23,7 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_ACCOUNTS = "accounts"
         const val ACTION_DESKTOP_MODE = "desktop_mode"
         const val ACTION_INSTALL_SITE = "install_site"
+        const val ACTION_INSTALL_WEB_APP = "install_web_app"
         const val ACTION_FAVORITE = "favorite"
         const val ACTION_FIND = "find"
         const val ACTION_HELP = "help"
@@ -74,6 +75,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_same_page_split) { finishWith(ACTION_SAME_PAGE_SPLIT) }
         wire(R.id.menu_desktop_mode) { finishWith(ACTION_DESKTOP_MODE) }
         wire(R.id.menu_install_site) { finishWith(ACTION_INSTALL_SITE) }
+        wire(R.id.menu_install_web_app) { finishWith(ACTION_INSTALL_WEB_APP) }
         wire(R.id.menu_favorite) { finishWith(ACTION_FAVORITE) }
         wire(R.id.menu_keep_screen_on) { finishWith(ACTION_KEEP_SCREEN_ON) }
         wire(R.id.menu_help) { startActivity(Intent(this, HelpActivity::class.java)) }
