@@ -89,17 +89,6 @@ object PhormiDownloadEngine {
             ?: CookieManager.getInstance().getCookie(referer)
         val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
         val sourceKey = normalizeSourceUrl(info.sourceUrl)
-        val existingActive = synchronized(lock) {
-            records(context).firstOrNull {
-                normalizeSourceUrl(it.sourceUrl) == sourceKey &&
-                    it.state in setOf(State.QUEUED, State.RUNNING, State.PAUSED)
-            }
-        }
-        if (existingActive != null) {
-            // A WebView can emit the same download event more than once. Do not create
-            // another transfer for an already active/paused copy of the same resource.
-            return
-        }
         val id = UUID.randomUUID().toString()
         val record = Record(
             id = id,
@@ -115,7 +104,16 @@ object PhormiDownloadEngine {
             error = null,
             createdAt = System.currentTimeMillis()
         )
-        save(context, record)
+        // WebView download callbacks can arrive concurrently. Keep the duplicate check and
+        // record creation in the same critical section so two callbacks cannot race past it.
+        synchronized(lock) {
+            val existingActive = records(context).firstOrNull {
+                normalizeSourceUrl(it.sourceUrl) == sourceKey &&
+                    it.state in setOf(State.QUEUED, State.RUNNING, State.PAUSED)
+            }
+            if (existingActive != null) return
+            save(context, record)
+        }
         start(context, ACTION_ENQUEUE, id)
     }
 
