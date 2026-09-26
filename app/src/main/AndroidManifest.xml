@@ -64,5 +64,6 @@
         <activity android:name=".PhormiMediaViewerActivity" android:exported="false" android:supportsPictureInPicture="true" />
         <activity android:name=".PhormiPdfViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".PhormiZipViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".PhormiCodeViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
     </application>
 </manifest>
