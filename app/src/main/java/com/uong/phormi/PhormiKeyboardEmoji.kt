@@ -111,8 +111,8 @@ object PhormiKeyboardEmoji {
         if (has("CAT","DOG","MOUSE","RABBIT","FOX","BEAR","MONKEY","BIRD","FISH",
                 "BUG","INSECT","WOLF","LION","HORSE","TIGER","ELEPHANT","PANDA",
                 "PIG","COW","CHICKEN","SNAKE","TURTLE","DOLPHIN","WHALE","ANIMAL",
-                "MOON","SUN","STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH",
-                "WEATHER","NATURE")) return "🐾"
+                "ANIMAL")) return "🐾"
+        if (has("MOON","SUN","STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH","WEATHER","NATURE")) return "🌿"
 
         if (has("FRUIT","APPLE","BANANA","GRAPES","STRAWBERRY","WATERMELON","PINEAPPLE",
                 "MANGO","LEMON","PEACH","PEAR","CHERRY","KIWI","MELON","BLUEBERRY",
