@@ -277,7 +277,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             val row=LinearLayout(this).apply{
                 orientation=LinearLayout.HORIZONTAL
                 gravity=Gravity.CENTER
-                weightSum=chars.size.toFloat()
+                weightSum=chars.length.toFloat()
                 clipChildren=true
                 clipToPadding=true
                 minimumWidth=0
