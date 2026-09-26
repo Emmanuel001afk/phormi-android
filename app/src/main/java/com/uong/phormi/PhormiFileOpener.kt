@@ -59,6 +59,12 @@ object PhormiFileOpener {
         return "application/octet-stream"
     }
 
+    private fun isCodeOrText(name: String, mime: String): Boolean {
+        if (mime.startsWith("text/")) return true
+        val ext = name.lowercase().substringAfterLast('.', "")
+        return ext in setOf("kt","kts","java","js","jsx","ts","tsx","py","c","h","cpp","hpp","cc","cs","go","rs","swift","dart","php","rb","sh","bash","zsh","fish","html","htm","css","scss","sass","xml","json","json5","yaml","yml","toml","ini","cfg","conf","properties","gradle","sql","graphql","gql","md","markdown","txt","log","csv","env","vue","svelte","astro")
+    }
+
     fun openExternal(context: Context, uri: Uri, knownMime: String? = null): Boolean {
         val mime = resolveMimeType(context, uri, knownMime)
         fun view(type: String) = Intent(Intent.ACTION_VIEW).apply {
@@ -87,6 +93,16 @@ object PhormiFileOpener {
             }.getOrDefault(false)
             if (internal) return true
             return openExternal(context, uri, mime)
+        }
+        if (isCodeOrText(displayName(context, uri), mime)) {
+            return runCatching {
+                context.startActivity(Intent(context, PhormiCodeViewerActivity::class.java).apply {
+                    putExtra("uri", uri)
+                    putExtra("title", displayName(context, uri))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                true
+            }.getOrElse { openExternal(context, uri, mime) }
         }
         if (mime == "application/pdf") {
             return runCatching {
