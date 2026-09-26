@@ -55,6 +55,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private var locked = false
     private var baseBrightness = 0.5f
     private var isVideo = false
+    private var cacheFallbackAttempted = false
     private var gestureStartX = 0f
     private var gestureStartPosition = 0L
     private val hintHandler = Handler(mainLooper)
