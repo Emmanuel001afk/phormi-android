@@ -1459,8 +1459,10 @@ class MainActivity : AppCompatActivity() {
             "select" -> intent?.getIntExtra("tab_id", -1)?.let { id -> tabs.firstOrNull { it.id == id }?.let { switchToTab(it.id) } }
             "close" -> intent?.getIntExtra("tab_id", -1)?.let { id -> if (id > 0) closeTab(id) }
         }
+        standaloneWebAppMode = intent?.getBooleanExtra("web_app", false) == true
         if (openUrl.startsWith("http://") || openUrl.startsWith("https://")) createNewTab(openUrl, requestedProfile = profile)
         else intent?.dataString?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { createNewTab(it, requestedProfile = profile) }
+        if (standaloneWebAppMode) applyStandaloneWebAppMode()
     }
 
     private fun setActiveSplitPane(tabId: Int) {
