@@ -2109,7 +2109,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val webView = sourceWebView ?: activeWebView()
+        val webView = activeWebView()
         if (webView == null) {
             Toast.makeText(this, "No active browser tab", Toast.LENGTH_SHORT).show()
             return
