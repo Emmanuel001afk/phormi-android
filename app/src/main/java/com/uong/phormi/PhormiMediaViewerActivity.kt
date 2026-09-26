@@ -6,6 +6,8 @@ import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.graphics.Rect
+import android.util.Rational
 import android.os.Handler
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -128,8 +130,10 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
         setContentView(root)
         setBrightnessFromWindow()
+        playerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updatePictureInPictureParams() }
         configurePlayer(uri, mime)
         configureGestures()
+        updatePictureInPictureParams()
     }
 
     private fun configurePlayer(uri: Uri, mime: String) {
@@ -143,6 +147,11 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             exo.prepare()
             exo.playWhenReady = true
             exo.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                        updatePictureInPictureParams()
+                    }
+                }
                 override fun onPlayerError(error: PlaybackException) {
                     // The built-in player is always tried first. If it cannot decode the
                     // downloaded media, immediately hand the same URI to Android installed
@@ -250,10 +259,45 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         window.attributes = window.attributes.apply { screenBrightness = value }
     }
 
+    private fun updatePictureInPictureParams() {
+        if (android.os.Build.VERSION.SDK_INT < 26 || !::playerView.isInitialized) return
+        val bounds = Rect()
+        playerView.getGlobalVisibleRect(bounds)
+        val video = player?.videoSize
+        val width = video?.width?.takeIf { it > 0 } ?: 16
+        val height = video?.height?.takeIf { it > 0 } ?: 9
+        val ratio = Rational(width, height)
+        runCatching {
+            val builder = android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(ratio)
+                .setSourceRectHint(bounds)
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                builder.setAutoEnterEnabled(player?.isPlaying == true)
+                builder.setSeamlessResizeEnabled(true)
+            }
+            setPictureInPictureParams(builder.build())
+        }
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (android.os.Build.VERSION.SDK_INT >= 26 && player != null && player?.isPlaying == true && !isInPictureInPictureMode) {
+        // Android 12+ uses setAutoEnterEnabled for a smoother gesture-to-PiP transition.
+        // Keep the explicit callback for Android 8–11.
+        if (android.os.Build.VERSION.SDK_INT in 26..30 && player?.isPlaying == true && !isInPictureInPictureMode) {
             runCatching { enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().build()) }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (!::lockButton.isInitialized) return
+        lockButton.visibility = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
+        rotateButton.visibility = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
+        brightnessHint.visibility = View.GONE
+        volumeHint.visibility = View.GONE
+        if (isInPictureInPictureMode) {
+            playerView.useController = true
+            playerView.showController()
         }
     }
 
