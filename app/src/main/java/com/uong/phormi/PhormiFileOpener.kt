@@ -98,6 +98,16 @@ object PhormiFileOpener {
                 true
             }.getOrElse { openExternal(context, uri, mime) }
         }
+        if (mime == "application/zip") {
+            return runCatching {
+                context.startActivity(Intent(context, PhormiZipViewerActivity::class.java).apply {
+                    putExtra("uri", uri)
+                    putExtra("title", displayName(context, uri))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                true
+            }.getOrElse { openExternal(context, uri, mime) }
+        }
         if (mime == "application/vnd.android.package-archive") {
             return runCatching {
                 val installer = Intent(Intent.ACTION_VIEW).apply {
