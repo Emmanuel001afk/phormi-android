@@ -93,7 +93,8 @@ object PhormiKeyboardEmoji {
         // bucket that made unrelated emojis appear in the wrong tab.
         if (first in 0x1F600..0x1F64F || name.contains("FACE") || name.contains("EMOTION") ||
             name.contains("SMILING") || name.contains("GRINNING") || name.contains("KISSING") ||
-            name.contains("CRYING") || name.contains("ANGRY")) return "😀"
+            name.contains("CRYING") || name.contains("ANGRY") || name.contains("HEART") ||
+            name.contains("LOVE") || name.contains("ROMANCE")) return "😀"
 
         if (name.contains("PERSON") || name.contains("PEOPLE") || name.contains("MAN") ||
             name.contains("WOMAN") || name.contains("BOY") || name.contains("GIRL") ||
@@ -130,7 +131,7 @@ object PhormiKeyboardEmoji {
             name.contains("CHOCOLATE") || name.contains("BREAD") || name.contains("CHEESE") ||
             name.contains("PIZZA") || name.contains("BURGER") || name.contains("COFFEE") ||
             name.contains("TEA") || name.contains("BEER") || name.contains("WINE") ||
-            name.contains("BOTTLE") || name.contains("SUSHI")) return "🍔"
+            name.contains("SUSHI") || name.contains("DESSERT")) return "🍔"
 
         if (name.contains("CAR") || name.contains("BUS") || name.contains("TRAIN") ||
             name.contains("AIRPLANE") || name.contains("SHIP") || name.contains("BOAT") ||
@@ -158,7 +159,7 @@ object PhormiKeyboardEmoji {
             name.contains("GIFT") || name.contains("SCISSORS") || name.contains("PENCIL") ||
             name.contains("MEMO") || name.contains("FOLDER") || name.contains("LINK") ||
             name.contains("MAGNIFY") || name.contains("TRASH") || name.contains("TOOL") ||
-            name.contains("OBJECT")) return "💻"
+            name.contains("BOTTLE") || name.contains("OBJECT")) return "💻"
 
         // Use the Unicode block as a safer final fallback than assigning every
         // unknown emoji to a semantically unrelated category.
