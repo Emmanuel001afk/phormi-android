@@ -249,7 +249,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                     val duration = player?.duration ?: 0L
                     if (duration > 0L) {
                         val fraction = (dx / max(1f, root.width.toFloat())) * 0.75f
-                        val target = (gestureStartPosition + duration * fraction).coerceIn(0L, duration)
+                        val target = (gestureStartPosition + (duration.toDouble() * fraction).toLong()).coerceIn(0L, duration)
                         player?.seekTo(target)
                         val delta = (target - gestureStartPosition) / 1000L
                         showHint(seekHint, if (delta >= 0) "Seek +${delta}s" else "Seek −${-delta}s")
