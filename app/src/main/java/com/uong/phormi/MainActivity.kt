@@ -3539,7 +3539,7 @@ class MainActivity : AppCompatActivity() {
         val base = URL(pageUrl)
         val candidates = listOf(
             URL(base, "/favicon.ico").toString(),
-            "https://www.google.com/s2/favicons?sz=128&domain_url=\${URLEncoder.encode(pageUrl, "UTF-8")}"
+            "https://www.google.com/s2/favicons?sz=128&domain_url=${URLEncoder.encode(pageUrl, "UTF-8")}"
         )
         return candidates.asSequence().mapNotNull(::loadBitmap).firstOrNull()
     }
