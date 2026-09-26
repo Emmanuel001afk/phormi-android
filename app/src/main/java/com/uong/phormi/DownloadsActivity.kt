@@ -13,6 +13,7 @@ import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Locale
 import androidx.appcompat.app.AppCompatActivity
 
 /** Chrome-style in-app download list backed by PhormiDownloadEngine. */
@@ -182,9 +183,15 @@ class DownloadsActivity : AppCompatActivity() {
     }
 
     private fun openRow(row: Row) {
-        if (row.state != "COMPLETED" || row.localUri.isNullOrBlank()) return
-        if (!PhormiFileOpener.open(this, Uri.parse(row.localUri), row.mimeType)) {
-            Toast.makeText(this, "No installed app can open ${row.title}", Toast.LENGTH_SHORT).show()
+        if (row.state != "COMPLETED") return
+        val uri = row.localUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        if (uri == null) {
+            Toast.makeText(this, "The downloaded file is no longer available.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val mime = PhormiFileOpener.resolveMimeType(this, uri, row.mimeType)
+        if (!PhormiFileOpener.open(this, uri, mime) && !PhormiFileOpener.openExternal(this, uri, mime)) {
+            Toast.makeText(this, "No installed app can open ${row.title}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -200,9 +207,9 @@ class DownloadsActivity : AppCompatActivity() {
 
     private fun formatBytes(value: Long): String = when {
         value < 0L -> "unknown size"
-        value < 1024 -> "$value B"
-        value < 1024 * 1024 -> "${value / 1024} KB"
-        value < 1024 * 1024 * 1024 -> "${value / (1024 * 1024)} MB"
-        else -> "${value / (1024 * 1024 * 1024)} GB"
+        value < 1024L -> "\$value B"
+        value < 1024L * 1024L -> String.format(Locale.US, "%.1f KB", value / 1024.0)
+        value < 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f MB", value / (1024.0 * 1024.0))
+        else -> String.format(Locale.US, "%.2f GB", value / (1024.0 * 1024.0 * 1024.0))
     }
 }
