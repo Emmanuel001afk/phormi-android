@@ -22,7 +22,7 @@ class PhormiCodeViewerActivity : AppCompatActivity() {
         bar.addView(close, LinearLayout.LayoutParams(48, 48))
         bar.addView(TextView(this).apply { text = title; textSize = 16f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, 48, 1f))
         root.addView(bar)
-        val codeView = TextView(this).apply { setTextColor(Color.rgb(226, 232, 240)); textSize = 13f; typeface = android.graphics.Typeface.MONOSPACE; setPadding(16, 16, 16, 24); isTextSelectable = true }
+        val codeView = TextView(this).apply { setTextColor(Color.rgb(226, 232, 240)); textSize = 13f; typeface = android.graphics.Typeface.MONOSPACE; setPadding(16, 16, 16, 24); setTextIsSelectable(true) }
         val scroll = ScrollView(this)
         scroll.addView(codeView)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
