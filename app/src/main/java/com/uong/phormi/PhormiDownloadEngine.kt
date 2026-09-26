@@ -88,11 +88,23 @@ object PhormiDownloadEngine {
         val cookies = CookieManager.getInstance().getCookie(url)
             ?: CookieManager.getInstance().getCookie(referer)
         val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
+        val sourceKey = normalizeSourceUrl(info.sourceUrl)
+        val existingActive = synchronized(lock) {
+            records(context).firstOrNull {
+                normalizeSourceUrl(it.sourceUrl) == sourceKey &&
+                    it.state in setOf(State.QUEUED, State.RUNNING, State.PAUSED)
+            }
+        }
+        if (existingActive != null) {
+            // A WebView can emit the same download event more than once. Do not create
+            // another transfer for an already active/paused copy of the same resource.
+            return
+        }
         val id = UUID.randomUUID().toString()
         val record = Record(
             id = id,
             title = info.fileName,
-            sourceUrl = info.sourceUrl,
+            sourceUrl = sourceKey,
             mimeType = info.mimeType,
             category = info.category,
             headers = info.headers,
@@ -112,18 +124,24 @@ object PhormiDownloadEngine {
     }.sortedByDescending { it.createdAt }
 
     fun pause(context: Context, id: String) {
-        if (record(context, id) != null) updateState(context, id, State.PAUSED, null)
+        val current = record(context, id) ?: return
+        if (current.state !in setOf(State.QUEUED, State.RUNNING)) return
+        updateState(context, id, State.PAUSED, null)
         start(context, ACTION_PAUSE, id)
     }
 
     fun resume(context: Context, id: String) {
-        if (record(context, id) != null) updateState(context, id, State.QUEUED, null)
+        val current = record(context, id) ?: return
+        if (current.state !in setOf(State.PAUSED, State.QUEUED, State.FAILED)) return
+        updateState(context, id, State.QUEUED, null)
         start(context, ACTION_RESUME, id)
     }
     fun cancel(context: Context, id: String) {
-        // Cancellation is a user-visible terminal state. Keep the row so the user can
-        // distinguish "cancelled" from "deleted", then offer a real delete action.
-        if (record(context, id) != null) updateState(context, id, State.CANCELLED, "Download cancelled")
+        val current = record(context, id) ?: return
+        if (current.state !in setOf(State.QUEUED, State.RUNNING, State.PAUSED, State.FAILED)) return
+        // Cancellation is terminal but intentionally keeps the row until the user presses
+        // Delete, matching the browser download workflow.
+        updateState(context, id, State.CANCELLED, "Download cancelled")
         start(context, ACTION_CANCEL, id)
     }
 
@@ -137,6 +155,10 @@ object PhormiDownloadEngine {
     }
 
     fun record(context: Context, id: String): Record? = records(context).firstOrNull { it.id == id }
+
+    private fun normalizeSourceUrl(value: String): String =
+        runCatching { Uri.parse(value).buildUpon().fragment(null).build().toString() }
+            .getOrDefault(value.trim())
 
 
     private fun start(context: Context, action: String, id: String) {
