@@ -13,6 +13,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
@@ -77,6 +80,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private val repeatHandler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
     private var predictionRow: LinearLayout? = null
+    private var speechRecognizer: SpeechRecognizer? = null
 
     override fun onCreate() {
         super.onCreate(); instance = this
@@ -86,6 +90,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
     }
     override fun onDestroy() {
+        speechRecognizer?.cancel(); speechRecognizer?.destroy(); speechRecognizer = null
         stopRepeat(); aiEmojiRunnable?.let { repeatHandler.removeCallbacks(it) }; aiEmojiRunnable = null
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboardListener?.let { cm?.removePrimaryClipChangedListener(it) }; clipboardListener = null
@@ -636,7 +641,52 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             return
         }
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag()
-        PhormiKeyboardVoiceActivity.launchFromKeyboard(this, locale)
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            PhormiKeyboardVoiceActivity.requestPermissionFromKeyboard(this, locale)
+            return
+        }
+        startIntegratedVoiceRecognition(locale)
+    }
+
+    fun startIntegratedVoiceRecognition(localeTag: String) {
+        if (currentInputConnection == null) return
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            android.widget.Toast.makeText(this, "Speech recognition is not available on this device", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        speechRecognizer?.cancel()
+        speechRecognizer?.destroy()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
+            sr.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: android.os.Bundle?) {}
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onPartialResults(partialResults: android.os.Bundle?) {}
+                override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+                override fun onError(error: Int) {
+                    speechRecognizer?.cancel()
+                }
+                override fun onResults(results: android.os.Bundle?) {
+                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { commitTextToEditor(it) }
+                    speechRecognizer?.cancel()
+                }
+            })
+        }
+        val recognition = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, localeTag)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        }
+        runCatching { speechRecognizer?.startListening(recognition) }
+            .onFailure {
+                speechRecognizer?.cancel()
+                android.widget.Toast.makeText(this, "Unable to start voice typing", android.widget.Toast.LENGTH_SHORT).show()
+            }
     }
     private fun shareSelectedText(){val text=currentInputConnection?.getSelectedText(0)?.toString().orEmpty();if(text.isBlank()){android.widget.Toast.makeText(this,"Select text first",android.widget.Toast.LENGTH_SHORT).show();return};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
     private fun applyPendingInput(){val prefs=getSharedPreferences(PREFS,MODE_PRIVATE);prefs.getString(KEY_PENDING_TEXT,null)?.takeIf{it.isNotBlank()}?.let{commitTextToEditor(it)};prefs.edit().remove(KEY_PENDING_TEXT).apply();prefs.getString(KEY_PENDING_URI,null)?.let{runCatching{commitContentToEditor(Uri.parse(it))}};prefs.edit().remove(KEY_PENDING_URI).apply()}
