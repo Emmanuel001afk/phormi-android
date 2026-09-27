@@ -234,6 +234,7 @@ class MainActivity : AppCompatActivity() {
         if (aiTaskRunning) return
         val task = PhormiAiPendingTask.take(applicationContext) ?: return
         aiTaskRunning = true
+        PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_AI, 7101, "Phormi AI working", task.instruction.take(120), Intent(this, MainActivity::class.java), ongoing = true, autoCancel = false)
         if (task.target.startsWith("http://") || task.target.startsWith("https://")) {
             createNewTab(task.target)
         }
@@ -247,9 +248,12 @@ class MainActivity : AppCompatActivity() {
                 val status = "Phormi AI stopped: ${t.message ?: "unknown error"}"
                 PhormiAiPendingTask.saveStatus(applicationContext, status)
                 Toast.makeText(this@MainActivity, status, Toast.LENGTH_LONG).show()
+                PhormiNotificationManager.post(this@MainActivity, PhormiNotificationManager.CHANNEL_AI, 7102, "Phormi AI stopped", status)
             } finally {
+                PhormiNotificationManager.cancel(this@MainActivity, 7101)
                 aiTaskRunning = false
             }
+            PhormiNotificationManager.post(this@MainActivity, PhormiNotificationManager.CHANNEL_AI, 7103, "Phormi AI finished", "The browser task has finished.")
         }
     }
     override fun onStart() {
