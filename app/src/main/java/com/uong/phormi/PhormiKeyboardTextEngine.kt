@@ -127,6 +127,48 @@ object PhormiKeyboardTextEngine {
         val map = loadLearnedCorrections(context).toMutableMap(); map[a.lowercase(localeFor(info))] = b; saveLearnedCorrections(context, map)
     }
 
+    fun forgetPersonalizedSuggestion(context: Context, value: String, previous: String = "", locale: Locale = activeLocale(context)): Boolean {
+        if (value.isBlank()) return false
+        val target = value.trim().lowercase(locale)
+        var changed = false
+
+        val learned = loadLearned(context).toMutableList()
+        val beforeWords = learned.size
+        learned.removeAll { it.trim().lowercase(locale) == target }
+        if (learned.size != beforeWords) {
+            saveLearned(context, learned)
+            changed = true
+        }
+
+        val next = loadAllNextWords(context).toMutableMap()
+        val previousKey = previous.trim().lowercase(locale)
+        val keys = if (previousKey.isNotBlank()) listOf(previousKey) else next.keys.toList()
+        keys.forEach { key ->
+            val values = next[key].orEmpty()
+            val filtered = values.filterNot { it.trim().lowercase(locale) == target }
+            if (filtered.size != values.size) {
+                changed = true
+                if (filtered.isEmpty()) next.remove(key) else next[key] = filtered
+            }
+        }
+        if (previousKey.isBlank()) {
+            next.entries.removeIf { (_, values) -> values.isEmpty() }
+        }
+        if (changed) saveAllNextWords(context, next)
+
+        val corrections = loadLearnedCorrections(context).toMutableMap()
+        val correctionKeys = corrections.keys.toList()
+        correctionKeys.forEach { key ->
+            val accepted = corrections[key].orEmpty().trim().lowercase(locale)
+            if (key.lowercase(locale) == target || accepted == target) {
+                corrections.remove(key)
+                changed = true
+            }
+        }
+        if (changed) saveLearnedCorrections(context, corrections)
+        return changed
+    }
+
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
         if (ic == null || info == null || isPrivateEditor(info)) return false
         val type = info.inputType
