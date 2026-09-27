@@ -262,6 +262,47 @@ object PhormiDownloadEngine {
         save(context, current.copy(localUri = uri, total = total))
     }
 
+    /** Register a download completed by a browser-native source such as blob: or data:.
+     * These sources cannot be fetched by OkHttp, but they must still appear in the same
+     * Downloads list and use the same completed/open/delete lifecycle.
+     */
+    internal fun recordExternalCompleted(
+        context: Context,
+        sourceUrl: String,
+        title: String,
+        mimeType: String,
+        category: String,
+        localUri: String,
+        total: Long
+    ) {
+        val sourceKey = runCatching {
+            if (sourceUrl.length <= 2048) normalizeSourceUrl(sourceUrl)
+            else "phormi-data:" + java.security.MessageDigest.getInstance("SHA-256")
+                .digest(sourceUrl.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+        }.getOrElse { "phormi-external:" + sourceUrl.hashCode() }
+        synchronized(lock) {
+            val existing = records(context).firstOrNull {
+                normalizeSourceUrl(it.sourceUrl) == sourceKey && it.state == State.COMPLETED
+            }
+            if (existing != null) return
+            save(context, Record(
+                id = UUID.randomUUID().toString(),
+                title = title,
+                sourceUrl = sourceKey,
+                mimeType = mimeType.ifBlank { "application/octet-stream" },
+                category = category,
+                headers = emptyMap(),
+                state = State.COMPLETED,
+                downloaded = total.coerceAtLeast(0L),
+                total = total.coerceAtLeast(0L),
+                localUri = localUri,
+                error = null,
+                createdAt = System.currentTimeMillis()
+            ))
+        }
+    }
+
     const val ACTION_ENQUEUE = "com.uong.phormi.download.ENQUEUE"
     const val ACTION_PAUSE = "com.uong.phormi.download.PAUSE"
     const val ACTION_RESUME = "com.uong.phormi.download.RESUME"
