@@ -630,7 +630,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     private fun refreshAfterTextKey(){if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS) refreshPredictionStrip()}
     private fun launchMedia(mode:String){startActivity(Intent(this,PhormiKeyboardMediaActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiKeyboardMediaActivity.EXTRA_MODE,mode)})}
-    private fun launchVoice(){startActivity(Intent(this,PhormiKeyboardVoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
+    private fun launchVoice() {
+        if (currentInputConnection == null) {
+            android.widget.Toast.makeText(this, "No text field is active", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo).toLanguageTag()
+        PhormiKeyboardVoiceActivity.launchFromKeyboard(this, locale)
+    }
     private fun shareSelectedText(){val text=currentInputConnection?.getSelectedText(0)?.toString().orEmpty();if(text.isBlank()){android.widget.Toast.makeText(this,"Select text first",android.widget.Toast.LENGTH_SHORT).show();return};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
     private fun applyPendingInput(){val prefs=getSharedPreferences(PREFS,MODE_PRIVATE);prefs.getString(KEY_PENDING_TEXT,null)?.takeIf{it.isNotBlank()}?.let{commitTextToEditor(it)};prefs.edit().remove(KEY_PENDING_TEXT).apply();prefs.getString(KEY_PENDING_URI,null)?.let{runCatching{commitContentToEditor(Uri.parse(it))}};prefs.edit().remove(KEY_PENDING_URI).apply()}
     private fun commitTextToEditor(text:String){
