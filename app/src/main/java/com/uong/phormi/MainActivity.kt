@@ -2138,6 +2138,7 @@ class MainActivity : AppCompatActivity() {
         val script = """(async function(){
             try {
                 const response = await fetch($quotedUrl);
+                if (!response.ok) return "ERROR:HTTP " + response.status;
                 const blob = await response.blob();
                 const reader = new FileReader();
                 return await new Promise((resolve, reject) => {
