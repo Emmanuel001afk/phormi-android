@@ -83,10 +83,10 @@ object PhormiDownloadEngine {
         val userAgent = userAgentOverride?.takeIf { it.isNotBlank() }
             ?: webView?.settings?.userAgentString?.takeIf { it.isNotBlank() }
             ?: WebSettings.getDefaultUserAgent(context)
-        val referer = webView?.url?.takeIf { it.startsWith("http", true) } ?: url
+        val referer = webView?.url?.takeIf { it.startsWith("http", true) }
         runCatching { CookieManager.getInstance().flush() }
         val cookies = CookieManager.getInstance().getCookie(url)
-            ?: CookieManager.getInstance().getCookie(referer)
+            ?: referer?.let { CookieManager.getInstance().getCookie(it) }
         val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
         val sourceKey = normalizeSourceUrl(info.sourceUrl)
         val id = UUID.randomUUID().toString()
