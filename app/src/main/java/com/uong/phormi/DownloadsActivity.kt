@@ -29,7 +29,8 @@ class DownloadsActivity : AppCompatActivity() {
         val localUri: String?,
         val mimeType: String?,
         val error: String? = null,
-        val legacy: Boolean = false
+        val legacy: Boolean = false,
+        val createdAt: Long = 0L
     )
 
     private val rows = mutableListOf<Row>()
@@ -140,7 +141,7 @@ class DownloadsActivity : AppCompatActivity() {
                 PhormiDownloadEngine.State.FAILED -> "Failed · ${item.error ?: "Download failed"}"
                 PhormiDownloadEngine.State.CANCELLED -> "Cancelled · Ready to delete"
             }
-            rows += Row("p:${item.id}", item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false)
+            rows += Row("p:${item.id}", item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false, item.createdAt)
         }
 
         // Preserve already-completed downloads created by the older DownloadManager path.
@@ -172,12 +173,13 @@ class DownloadsActivity : AppCompatActivity() {
                         state = "COMPLETED",
                         localUri = local,
                         mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
-                        legacy = true
+                        legacy = true,
+                        createdAt = local?.let { runCatching { contentResolver.openFileDescriptor(Uri.parse(it), "r")?.use { fd -> fd.statSize }.coerceAtLeast(0L) }.getOrDefault(0L) } ?: 0L
                     )
                 }
             }
         }
-        rows.sortByDescending { it.id }
+        rows.sortWith(compareByDescending<Row> { it.createdAt }.thenByDescending { it.id })
         empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
         adapter.notifyDataSetChanged()
