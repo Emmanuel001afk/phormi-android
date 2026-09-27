@@ -2586,6 +2586,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): android.webkit.WebResourceResponse? {
+                request?.url?.toString()?.let {
+                    PhormiDownloadEngine.rememberWebRequestHeaders(it, request.requestHeaders)
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                 val targetUri = request?.url ?: return false
                 val target = targetUri.toString()
