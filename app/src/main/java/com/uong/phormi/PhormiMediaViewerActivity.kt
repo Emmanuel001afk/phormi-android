@@ -68,10 +68,16 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
         val uri = if (Build.VERSION.SDK_INT >= 33) {
             intent.getParcelableExtra("uri", Uri::class.java)
+                ?: intent.getStringExtra("uri")?.let(Uri::parse)
         } else {
             @Suppress("DEPRECATION")
-            intent.getParcelableExtra("uri")
-        } ?: run { finish(); return }
+            intent.getParcelableExtra<Uri>("uri")
+                ?: intent.getStringExtra("uri")?.let(Uri::parse)
+        } ?: run {
+            Toast.makeText(this, "No media file was supplied to the player.", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
 
         val mime = PhormiFileOpener.resolveMimeType(this, uri, intent.getStringExtra("mime"))
         val title = intent.getStringExtra("title").orEmpty()
@@ -186,10 +192,6 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             val item = MediaItem.Builder().setUri(uri).apply {
                 if (mime.isNotBlank() && mime != "application/octet-stream") setMimeType(mime)
             }.build()
-            exo.setMediaItem(item)
-            exo.prepare()
-            exo.playWhenReady = true
-            mediaSession = runCatching { MediaSession.Builder(this, exo).build() }.getOrNull()
             exo.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == androidx.media3.common.Player.STATE_READY) updatePictureInPictureParams()
@@ -199,6 +201,10 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                     retryFromAccessibleCopy(uri, mime, error)
                 }
             })
+            exo.setMediaItem(item)
+            exo.prepare()
+            exo.playWhenReady = true
+            mediaSession = runCatching { MediaSession.Builder(this, exo).build() }.getOrNull()
         }
     }
 
