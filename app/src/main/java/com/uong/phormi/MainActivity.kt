@@ -2099,8 +2099,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val webView = sourceWebView ?: activeWebView()
+
         if (url.startsWith("blob:", ignoreCase = true)) {
-            downloadBlobUrl(url, contentDisposition, mimeType)
+            downloadBlobUrl(url, contentDisposition, mimeType, webView)
             return
         }
 
@@ -2108,8 +2110,6 @@ class MainActivity : AppCompatActivity() {
             downloadDataUrl(url, contentDisposition, mimeType)
             return
         }
-
-        val webView = sourceWebView ?: activeWebView()
         if (webView == null) {
             Toast.makeText(this, "No active browser tab", Toast.LENGTH_SHORT).show()
             return
@@ -2127,8 +2127,8 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Download added", Toast.LENGTH_SHORT).show()
     }
 
-    private fun downloadBlobUrl(url: String, contentDisposition: String?, mimeType: String?) {
-        val webView = activeWebView() ?: run {
+    private fun downloadBlobUrl(url: String, contentDisposition: String?, mimeType: String?, sourceWebView: WebView?) {
+        val webView = sourceWebView ?: run {
             Toast.makeText(this, "No active page", Toast.LENGTH_SHORT).show()
             return
         }
