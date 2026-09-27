@@ -84,7 +84,7 @@ class DownloadsActivity : AppCompatActivity() {
                 }
                 action.setOnClickListener {
                     if (completed) {
-                        openRow(row)
+                        if (playable) playRow(row) else openRow(row)
                         return@setOnClickListener
                     }
                     when (row.state) {
@@ -101,13 +101,20 @@ class DownloadsActivity : AppCompatActivity() {
                     if (row.legacy && row.id.startsWith("d:")) {
                         val downloadId = row.id.removePrefix("d:").toLongOrNull()
                         if (downloadId != null) {
-                            runCatching {
+                            val removed = runCatching {
                                 (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(downloadId)
+                            }.getOrDefault(0)
+                            if (removed <= 0) {
+                                Toast.makeText(this@DownloadsActivity, "Could not delete this download.", Toast.LENGTH_SHORT).show()
                             }
                             loadDownloads()
                         }
                     } else if (row.state == "COMPLETED" || row.state == "CANCELLED") {
                         PhormiDownloadEngine.delete(this@DownloadsActivity, row.id)
+                        rows.removeAll { it.id == row.id }
+                        adapter.notifyDataSetChanged()
+                        empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                        list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
                     } else {
                         PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
                     }
@@ -183,6 +190,29 @@ class DownloadsActivity : AppCompatActivity() {
         empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
         adapter.notifyDataSetChanged()
+    }
+
+    private fun playRow(row: Row) {
+        if (row.state != "COMPLETED") return
+        val uri = row.localUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        if (uri == null) {
+            Toast.makeText(this, "The downloaded media is no longer available.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val mime = PhormiFileOpener.resolveMimeType(this, uri, row.mimeType)
+        if (!mime.startsWith("video/") && !mime.startsWith("audio/")) {
+            openRow(row)
+            return
+        }
+        val intent = android.content.Intent(this, PhormiMediaViewerActivity::class.java).apply {
+            putExtra("uri", uri)
+            putExtra("mime", mime)
+            putExtra("title", row.title)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(intent) }.onFailure {
+            Toast.makeText(this, "Phormi could not start the media player.", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openRow(row: Row) {
