@@ -14,6 +14,7 @@ object PhormiKeyboardPreferences {
     private const val WIDTH_SCALE = "keyboard_width_scale"
     private const val OFFSET_X = "keyboard_offset_x"
     private const val OFFSET_Y = "keyboard_offset_y"
+    private const val FLOATING = "keyboard_floating"
     private const val AI_EMOJI = "ai_emoji"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
@@ -38,6 +39,8 @@ object PhormiKeyboardPreferences {
     fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.55f, 1.00f)
     fun offsetX(context: Context): Float = prefs(context).getFloat(OFFSET_X, 0f).coerceIn(-0.9f, 0.9f)
     fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(-0.9f, 0.9f)
+    fun floating(context: Context): Boolean = prefs(context).getBoolean(FLOATING, false)
+    fun setFloating(context: Context, value: Boolean) = prefs(context).edit().putBoolean(FLOATING, value).apply()
     fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
     fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
     fun wallpaperUri(context: Context): String? = prefs(context).getString(WALLPAPER_URI, null)
@@ -54,6 +57,7 @@ object PhormiKeyboardPreferences {
         .putFloat(WIDTH_SCALE, 1.0f)
         .putFloat(OFFSET_X, 0f)
         .putFloat(OFFSET_Y, 0f)
+        .putBoolean(FLOATING, false)
         .apply()
 
     const val KEY_SUGGESTIONS = SUGGESTIONS
