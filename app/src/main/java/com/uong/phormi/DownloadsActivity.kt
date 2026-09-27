@@ -68,20 +68,21 @@ class DownloadsActivity : AppCompatActivity() {
                 val action = view.findViewById<TextView>(R.id.download_action)
                 val delete = view.findViewById<TextView>(R.id.download_delete)
                 val playable = row.state == "COMPLETED" && isPlayable(row.mimeType, row.title)
-                action.visibility = if (playable || (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED"))) View.VISIBLE else View.GONE
-                action.text = if (playable) "Play" else when (row.state) {
+                val completed = row.state == "COMPLETED"
+                action.visibility = if (completed || (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED"))) View.VISIBLE else View.GONE
+                action.text = if (completed) { if (playable) "Play" else "Open" } else when (row.state) {
                     "RUNNING" -> "Pause"
                     "PAUSED", "QUEUED" -> "Resume"
                     "FAILED" -> "Retry"
                     else -> "Resume"
                 }
-                action.contentDescription = if (playable) "Play media" else when (row.state) {
+                action.contentDescription = if (completed) { if (playable) "Play media" else "Open downloaded file" } else when (row.state) {
                     "RUNNING" -> "Pause download"
                     "FAILED" -> "Retry download"
                     else -> "Resume download"
                 }
                 action.setOnClickListener {
-                    if (playable) {
+                    if (completed) {
                         openRow(row)
                         return@setOnClickListener
                     }
@@ -110,7 +111,7 @@ class DownloadsActivity : AppCompatActivity() {
                         PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
                     }
                 }
-                view.setOnClickListener { openRow(row) }
+                view.setOnClickListener(null)
                 view.setOnLongClickListener {
                     if (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED")) {
                         PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
