@@ -42,6 +42,7 @@ object PhormiDownloadEngine {
     private const val KEY_ITEMS = "items"
     private val lock = Any()
     private val webRequestHeaders = ConcurrentHashMap<String, Map<String, String>>()
+    private val webOriginHeaders = ConcurrentHashMap<String, Map<String, String>>()
 
     enum class State { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
 
@@ -79,11 +80,26 @@ object PhormiDownloadEngine {
         val clean = headers.filterKeys { key ->
             key.isNotBlank() && !key.equals("Host", true) && !key.equals("Content-Length", true)
         }.filterValues { it.isNotBlank() }
-        if (clean.isNotEmpty()) webRequestHeaders[normalizeSourceUrl(url)] = clean
+        if (clean.isNotEmpty()) {
+            webRequestHeaders[normalizeSourceUrl(url)] = clean
+            runCatching {
+                val parsed = Uri.parse(url)
+                if (!parsed.scheme.isNullOrBlank() && !parsed.host.isNullOrBlank()) {
+                    val origin = parsed.scheme + "://" + parsed.host + if (parsed.port > 0) ":" + parsed.port else ""
+                    webOriginHeaders[origin] = clean
+                }
+            }
+        }
     }
 
-    private fun rememberedHeaders(url: String): Map<String, String> =
-        webRequestHeaders[normalizeSourceUrl(url)].orEmpty()
+    private fun rememberedHeaders(url: String): Map<String, String> {
+        webRequestHeaders[normalizeSourceUrl(url)]?.let { return it }
+        return runCatching {
+            val parsed = Uri.parse(url)
+            val origin = parsed.scheme + "://" + parsed.host + if (parsed.port > 0) ":" + parsed.port else ""
+            webOriginHeaders[origin].orEmpty()
+        }.getOrDefault(emptyMap())
+    }
 
     fun enqueue(context: Context, webView: WebView?, url: String, contentDisposition: String?, mimeType: String?, userAgentOverride: String? = null, contentLength: Long = -1L) {
         if (url.isBlank()) return
@@ -471,6 +487,7 @@ class PhormiDownloadService : Service() {
                     }
                 }
                 PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.FAILED, humanHttpError(http.code))
+                PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_DOWNLOADS, 6000 + id.hashCode(), "Download failed", humanHttpError(http.code), Intent(this, DownloadsActivity::class.java))
                 return
             } catch (network: IOException) {
                 if (cancelSignals[id] == Control.CANCEL) return
@@ -490,6 +507,7 @@ class PhormiDownloadService : Service() {
                 Thread.sleep(3000L)
             } catch (t: Throwable) {
                 PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.FAILED, t.message ?: "Download failed")
+                PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_DOWNLOADS, 6000 + id.hashCode(), "Download failed", t.message ?: "Download failed", Intent(this, DownloadsActivity::class.java))
                 return
             }
         }
@@ -566,6 +584,7 @@ class PhormiDownloadService : Service() {
                         }
                         publish(uri)
                         PhormiDownloadEngine.updateState(this, record.id, PhormiDownloadEngine.State.COMPLETED, null)
+                        PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_DOWNLOADS, 5000 + record.id.hashCode(), "Download complete", record.title, Intent(this, DownloadsActivity::class.java))
                         return true
                     }
                 }
