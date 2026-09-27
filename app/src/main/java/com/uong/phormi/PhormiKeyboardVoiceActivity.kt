@@ -43,4 +43,4 @@ class PhormiKeyboardVoiceActivity : Activity() {
                 .putExtra(EXTRA_LOCALE, localeTag))
         }
     }
-
+}
