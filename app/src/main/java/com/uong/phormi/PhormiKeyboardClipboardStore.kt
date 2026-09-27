@@ -12,20 +12,27 @@ object PhormiKeyboardClipboardStore {
     private const val PREFS = "phormi_keyboard_clipboard"
     private const val KEY_ITEMS = "items_v3"
     private const val MAX_ITEMS = 50
+    private const val AUTO_CLEAR_MS = 24L * 60L * 60L * 1000L
 
     @Synchronized fun list(context: Context): List<Item> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY_ITEMS, null) ?: prefs.getString("items_v2", "[]") ?: "[]"
         return runCatching {
             val a = org.json.JSONArray(raw)
-            buildList {
+            val now = System.currentTimeMillis()
+            val loaded = buildList {
                 for (i in 0 until a.length()) {
                     val o = a.optJSONObject(i) ?: continue
                     val text = o.optString("text", "")
                     val uri = o.optString("uri", "").takeIf { it.isNotBlank() }
-                    if (text.isNotEmpty() && !looksSensitive(text)) add(Item(text, o.optBoolean("pinned", false), o.optLong("createdAt", 0L), uri, o.optString("mime", "").takeIf { it.isNotBlank() }))
+                    val createdAt = o.optLong("createdAt", 0L)
+                    if (text.isNotEmpty() && !looksSensitive(text) && (createdAt <= 0L || now - createdAt < AUTO_CLEAR_MS)) {
+                        add(Item(text, o.optBoolean("pinned", false), createdAt, uri, o.optString("mime", "").takeIf { it.isNotBlank() }))
+                    }
                 }
             }
+            if (loaded.size != a.length()) save(context, loaded)
+            loaded
         }.getOrDefault(emptyList())
     }
 
