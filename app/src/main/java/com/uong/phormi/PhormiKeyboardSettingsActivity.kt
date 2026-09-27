@@ -9,14 +9,12 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
 /** Full keyboard settings. All size controls are global percentages of the base keyboard viewport. */
 class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private lateinit var status: TextView
-    private lateinit var heightValue: TextView
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
@@ -43,19 +41,17 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         content.addView(TextView(this).apply{text="Android controls active IME subtypes. Prediction, correction and character long-presses follow the selected locale; installed system spell-check dictionaries are also used when available.";textSize=12f;setTextColor(Color.rgb(148,163,184));setPadding(0,dp(5),0,dp(8))})
 
         content.addView(sectionTitle("Keyboard size"))
-        heightValue=TextView(this).apply{setTextColor(Color.rgb(203,213,225));textSize=13f;setPadding(0,0,0,dp(4))};content.addView(heightValue)
-        val heightSeek=SeekBar(this).apply{
-            max=6;progress=PhormiKeyboardPreferences.height(this@PhormiKeyboardSettingsActivity);contentDescription="Global keyboard height percentage"
-            setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
-                override fun onProgressChanged(seekBar:SeekBar?,progress:Int,fromUser:Boolean){updateHeightLabel(progress)}
-                override fun onStartTrackingTouch(seekBar:SeekBar?)=Unit
-                override fun onStopTrackingTouch(seekBar:SeekBar?){PhormiKeyboardPreferences.setHeight(this@PhormiKeyboardSettingsActivity,seekBar?.progress?:3)}
-            })
-        }
-        content.addView(heightSeek,LinearLayout.LayoutParams(-1,dp(52)))
-        content.addView(TextView(this).apply{text="85%  •  92%  •  97%  •  100%  •  108%  •  117%  •  127%";setTextColor(Color.rgb(148,163,184));textSize=11f;setPadding(0,0,0,dp(8))})
-        updateHeightLabel(heightSeek.progress)
-        content.addView(TextView(this).apply{text="The same global percentage applies to the keyboard viewport and its key geometry. Emoji/media panels remain inside that same viewport and scroll internally.";textSize=12f;setTextColor(Color.rgb(148,163,184));setPadding(0,0,0,dp(8))})
+        content.addView(TextView(this).apply{
+            text="Use the Move and Size controls on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
+            textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
+        })
+        content.addView(Button(this).apply{
+            text="Reset keyboard position and size";isAllCaps=false
+            setOnClickListener{
+                PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardSettingsActivity)
+                ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard position and size reset")
+            }
+        })
 
         content.addView(sectionTitle("Appearance"))
         val themes=arrayOf("Midnight","Graphite","Ocean","Light")
@@ -76,7 +72,6 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     }
 
     private fun sectionTitle(value:String)=TextView(this).apply{text=value;textSize=18f;setTextColor(Color.rgb(56,189,248));setPadding(0,dp(20),0,dp(7))}
-    private fun updateHeightLabel(progress:Int){if(::heightValue.isInitialized){val scales=arrayOf("85%","92%","97%","100%","108%","117%","127%");heightValue.text="${scales[progress.coerceIn(0,6)]} global keyboard height"}}
     private fun updateStatus(){val imm=getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager;val serviceId="$packageName/.PhormiKeyboardServiceV2";val enabled=imm.enabledInputMethodList.any{it.id==serviceId};val selected=Settings.Secure.getString(contentResolver,Settings.Secure.DEFAULT_INPUT_METHOD)==serviceId;status.text=when{selected->"Status: enabled and currently selected as the active keyboard.";enabled->"Status: enabled, but another keyboard is currently selected.";else->"Status: not enabled yet. Enable it in Android settings, then choose Phormi as the active keyboard."};status.setTextColor(if(enabled)Color.rgb(134,239,172)else Color.rgb(248,196,113))}
     private fun option(root:LinearLayout,title:String,summary:String,checked:Boolean,key:String){val row=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(0,dp(7),0,dp(7))};row.addView(CheckBox(this).apply{text=title;isChecked=checked;setTextColor(Color.WHITE);textSize=16f;setOnCheckedChangeListener{_,value->PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity,key,value)}});row.addView(TextView(this).apply{text=summary;setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(dp(48),0,dp(48),dp(6))});root.addView(row)}
 }
