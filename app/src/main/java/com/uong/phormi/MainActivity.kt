@@ -253,7 +253,6 @@ class MainActivity : AppCompatActivity() {
                 PhormiNotificationManager.cancel(this@MainActivity, 7101)
                 aiTaskRunning = false
             }
-            PhormiNotificationManager.post(this@MainActivity, PhormiNotificationManager.CHANNEL_AI, 7103, "Phormi AI finished", "The browser task has finished.")
         }
     }
     override fun onStart() {
