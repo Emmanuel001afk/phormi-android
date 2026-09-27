@@ -155,7 +155,7 @@ class AiActivity : AppCompatActivity() {
     private fun runAssistant() {
         val text = instruction.text.toString().trim()
         if (text.isBlank()) return startVoiceInput()
-        if (!controller.hasAnyKey()) { status.text = "Save an external AI connection first."; return }
+        if (!controller.isActive()) { status.text = "Enable Central Hub or save an external AI connection first."; return }
         if (PhormiAccessibilityService.instance == null) {
             status.text = getString(R.string.accessibility_reminder)
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
