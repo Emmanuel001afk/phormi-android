@@ -300,6 +300,17 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI expression"){insertAiEmojiExpression()},LinearLayout.LayoutParams(dp(94),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
             val button=pill(value,{})
             button.setOnClickListener{feedback(button);if(word.isNotBlank()){currentInputConnection?.deleteSurroundingText(word.length,0);commitTextToEditor(value)}else commitTextToEditor("$value ");refreshPredictionStrip()}
+            button.setOnLongClickListener{
+                val removed=PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this,value,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
+                if(removed) {
+                    android.widget.Toast.makeText(this,"Removed \"$value\" from learned suggestions",android.widget.Toast.LENGTH_SHORT).show()
+                    refreshPredictionStrip()
+                } else {
+                    android.widget.Toast.makeText(this,"Built-in suggestion — nothing learned to remove",android.widget.Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+            button.contentDescription="$value. Tap to insert. Long press to remove it from learned suggestions."
             row.addView(button,LinearLayout.LayoutParams(0,scaled(32),1f).apply{setMargins(dp(2),0,dp(2),0)})
         }
         row.visibility=if(row.childCount>0) View.VISIBLE else View.GONE
