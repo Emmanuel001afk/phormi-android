@@ -47,6 +47,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_URI, uri.toString()).apply()
             return false
         }
+        fun startIntegratedVoiceRecognitionFromContext(context: Context, localeTag: String) { instance?.startIntegratedVoiceRecognition(localeTag) }
         fun commitExternalText(context: Context, text: String): Boolean {
             if (text.isBlank()) return false
             val service = instance
