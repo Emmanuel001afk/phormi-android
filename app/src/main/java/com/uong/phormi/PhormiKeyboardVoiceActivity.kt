@@ -5,11 +5,14 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 
 /** Activity-hosted speech UI used by the system keyboard. */
 class PhormiKeyboardVoiceActivity : Activity() {
     private val localeTag: String get() = intent?.getStringExtra(EXTRA_LOCALE).orEmpty().ifBlank { "en-US" }
+    private var recognizer: SpeechRecognizer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,13 +29,39 @@ class PhormiKeyboardVoiceActivity : Activity() {
     }
 
     private fun launchRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            runCatching { startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), REQUEST_RECOGNITION) }
+                .onFailure { finish() }
+            return
+        }
+        recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
+            sr.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {}
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onError(error: Int) { finish() }
+                override fun onResults(results: Bundle?) {
+                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()?.takeIf { it.isNotBlank() }?.let {
+                            PhormiKeyboardExternalBridge.commitText(this@PhormiKeyboardVoiceActivity, it)
+                        }
+                    finish()
+                }
+                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+        }
         val recognition = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, localeTag)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Phormi Keyboard")
         }
-        runCatching { startActivityForResult(recognition, REQUEST_RECOGNITION) }.onFailure { finish() }
+        runCatching { recognizer?.startListening(recognition) }.onFailure { finish() }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -43,6 +72,13 @@ class PhormiKeyboardVoiceActivity : Activity() {
                 ?.let { PhormiKeyboardExternalBridge.commitText(this, it) }
         }
         finish()
+    }
+
+    override fun onDestroy() {
+        recognizer?.cancel()
+        recognizer?.destroy()
+        recognizer = null
+        super.onDestroy()
     }
 
     companion object {
