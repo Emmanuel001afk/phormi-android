@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Switch
 import android.widget.TextView
+import android.text.InputType
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -38,7 +39,9 @@ class AiActivity : AppCompatActivity() {
         keyStatus = findViewById(R.id.key_status)
         instruction = findViewById(R.id.input_instruction)
         active = findViewById(R.id.switch_ai_active)
-        active.isChecked = controller.isActive()
+        active.isChecked = controller.isActive() && !controller.isCentralHubActive()
+        val centralHub = findViewById<Switch>(R.id.switch_central_hub)
+        centralHub.isChecked = controller.isCentralHubActive()
         refresh()
 
         val name = findViewById<EditText>(R.id.input_provider_name)
@@ -81,7 +84,47 @@ class AiActivity : AppCompatActivity() {
                 finally { button.isEnabled = true }
             }
         }
-        active.setOnCheckedChangeListener { _, checked -> controller.setActive(checked); refresh() }
+        active.setOnCheckedChangeListener { _, checked ->
+            if (checked && controller.isCentralHubActive()) {
+                controller.setCentralHubActive(false)
+                centralHub.isChecked = false
+            }
+            controller.setActive(checked)
+            refresh()
+        }
+        centralHub.setOnCheckedChangeListener { _, checked ->
+            if (checked && !controller.hasCentralHubKey()) {
+                centralHub.isChecked = false
+                status.text = "Save a Central Hub key first."
+                return@setOnCheckedChangeListener
+            }
+            controller.setCentralHubActive(checked)
+            if (checked) { controller.setActive(false); active.isChecked = false }
+            refresh()
+        }
+        findViewById<Button>(R.id.btn_save_hub).setOnClickListener {
+            val keyField = findViewById<EditText>(R.id.input_hub_key)
+            val key = keyField.text.toString().trim()
+            if (key.isBlank()) { status.text = "Paste the Central Hub key first."; return@setOnClickListener }
+            val button = findViewById<Button>(R.id.btn_save_hub)
+            button.isEnabled = false
+            status.text = "Testing Central Hub AI connection…"
+            lifecycleScope.launch {
+                try {
+                    val answer = controller.testCentralHub(key)
+                    controller.saveCentralHubKey(key)
+                    controller.setCentralHubActive(true)
+                    centralHub.isChecked = true
+                    active.isChecked = false
+                    keyField.text.clear()
+                    refresh()
+                    status.text = "Central Hub connected: " + answer.take(80)
+                } catch (t: Throwable) {
+                    status.text = "Central Hub connection failed: " + (t.message ?: "unknown error")
+                } finally { button.isEnabled = true }
+            }
+        }
+        findViewById<Button>(R.id.btn_ai_memory_retention).setOnClickListener { showMemoryRetentionChooser() }
         findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
         findViewById<Button>(R.id.btn_voice).setOnClickListener { startVoiceInput() }
         findViewById<Button>(R.id.btn_run).setOnClickListener { runAssistant() }
@@ -151,6 +194,31 @@ class AiActivity : AppCompatActivity() {
         if (requestCode == voiceRequest && resultCode == Activity.RESULT_OK) data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { instruction.setText(it); instruction.setSelection(it.length) }
     }
 
-    private fun refresh() { keyStatus.text = controller.keyStatusSummary() }
+    private fun refresh() {
+        keyStatus.text = controller.keyStatusSummary() + "\n" + controller.centralHubStatus()
+        findViewById<Switch>(R.id.switch_central_hub)?.isChecked = controller.isCentralHubActive()
+    }
+
+    private fun showMemoryRetentionChooser() {
+        val values = arrayOf(7L * 24L * 60L * 60L * 1000L, 30L * 24L * 60L * 60L * 1000L, 90L * 24L * 60L * 60L * 1000L, 365L * 24L * 60L * 60L * 1000L, 0L)
+        val labels = arrayOf("1 week", "1 month", "3 months", "1 year", "Off / clear")
+        AlertDialog.Builder(this).setTitle("AI memory retention").setItems(labels) { _, which ->
+            if (which < values.lastIndex) {
+                PhormiAiMemoryStore.setRetentionMs(applicationContext, values[which])
+                status.text = "AI memory retention: " + labels[which]
+            } else {
+                PhormiAiMemoryStore.setRetentionMs(applicationContext, 0L)
+                status.text = "AI memory cleared."
+            }
+        }.setNeutralButton("Custom days") { _, _ ->
+            val input = EditText(this).apply { inputType = InputType.TYPE_CLASS_NUMBER; hint = "Number of days" }
+            AlertDialog.Builder(this).setTitle("Custom AI memory retention").setView(input)
+                .setPositiveButton("Save") { _, _ ->
+                    val days = input.text.toString().toLongOrNull()?.coerceIn(1L, 3650L)
+                    if (days == null) status.text = "Enter a valid number of days."
+                    else { PhormiAiMemoryStore.setRetentionMs(applicationContext, days * 24L * 60L * 60L * 1000L); status.text = "AI memory retention: " + days + " days" }
+                }.setNegativeButton("Cancel", null).show()
+        }.setNegativeButton("Cancel", null).show()
+    }
     private fun append(line: String) { runOnUiThread { status.text = if (status.text.isBlank()) line else "${status.text}\n$line" } }
 }
