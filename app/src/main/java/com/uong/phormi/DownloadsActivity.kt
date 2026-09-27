@@ -174,7 +174,7 @@ class DownloadsActivity : AppCompatActivity() {
                         localUri = local,
                         mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
                         legacy = true,
-                        createdAt = local?.let { runCatching { contentResolver.openFileDescriptor(Uri.parse(it), "r")?.use { fd -> fd.statSize }.coerceAtLeast(0L) }.getOrDefault(0L) } ?: 0L
+                        createdAt = 0L
                     )
                 }
             }
