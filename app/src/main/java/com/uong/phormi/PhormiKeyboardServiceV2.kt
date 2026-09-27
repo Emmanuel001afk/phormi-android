@@ -126,16 +126,29 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun applyKeyboardWindowSize(win: Window? = getWindow().window) {
         val window = win ?: return
+        val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(dp(1))
+        val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(dp(1))
         val height = (baseHeight() * density() * PhormiKeyboardPreferences.heightScale(this)).roundToInt()
-            .coerceIn(dp(210), (resources.displayMetrics.heightPixels * 0.82f).roundToInt().coerceAtLeast(dp(240)))
+            .coerceIn(dp(210), (screenH * 0.82f).roundToInt().coerceAtLeast(dp(240)))
         val available = getMaxWidth().coerceAtLeast(dp(240))
         val width = (available * PhormiKeyboardPreferences.widthScale(this)).roundToInt()
             .coerceIn(dp(220), available)
-        window.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+
+        val floating = PhormiKeyboardPreferences.floating(this)
         val attrs = window.attributes
-        attrs.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        attrs.x = (PhormiKeyboardPreferences.offsetX(this) * resources.displayMetrics.widthPixels * 0.45f).roundToInt()
-        attrs.y = (PhormiKeyboardPreferences.offsetY(this) * resources.displayMetrics.heightPixels * 0.40f).roundToInt().coerceAtLeast(-resources.displayMetrics.heightPixels / 2)
+        if (floating) {
+            // Floating mode is a real independent window: its top-left position is
+            // controlled by the drag offsets and is not re-anchored to the IME bottom.
+            attrs.gravity = Gravity.TOP or Gravity.START
+            attrs.x = ((PhormiKeyboardPreferences.offsetX(this) + 0.9f) / 1.8f * (screenW - width))
+                .roundToInt().coerceIn(0, (screenW - width).coerceAtLeast(0))
+            attrs.y = ((PhormiKeyboardPreferences.offsetY(this) + 0.9f) / 1.8f * (screenH - height))
+                .roundToInt().coerceIn(0, (screenH - height).coerceAtLeast(0))
+        } else {
+            attrs.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            attrs.x = 0
+            attrs.y = 0
+        }
         window.attributes = attrs
         window.setLayout(width, height)
     }
@@ -216,18 +229,23 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 setOnTouchListener { view, event -> action(event, view as TextView) }
             }
 
-        val move = control("⠿ Move", "Move Phormi Keyboard") { event, _ ->
+        val move = control(
+            if (PhormiKeyboardPreferences.floating(this)) "⠿ Move" else "⠿ Float",
+            if (PhormiKeyboardPreferences.floating(this)) "Move floating Phormi Keyboard" else "Make Phormi Keyboard floating and move it"
+        ) { event, _ ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     resizeStartX = event.rawX
                     resizeStartY = event.rawY
                     resizePreviewHeight = PhormiKeyboardPreferences.offsetX(this)
                     resizePreviewWidth = PhormiKeyboardPreferences.offsetY(this)
-                    // A full-width IME cannot meaningfully move like Gboard's floating
-                    // keyboard. The first Move gesture enters floating mode by reducing
-                    // the width, then the drag controls its position.
-                    if (PhormiKeyboardPreferences.widthScale(this) >= 0.99f) {
-                        PhormiKeyboardPreferences.setWidthScale(this, 0.78f)
+                    if (!PhormiKeyboardPreferences.floating(this)) {
+                        PhormiKeyboardPreferences.setFloating(this, true)
+                        // Floating mode has an independent width; entering it should not
+                        // mutate the saved width unless it was still the docked full width.
+                        if (PhormiKeyboardPreferences.widthScale(this) >= 0.99f) {
+                            PhormiKeyboardPreferences.setWidthScale(this, 0.78f)
+                        }
                     }
                     applyKeyboardWindowSize()
                     true
@@ -235,14 +253,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(1)
                     val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(1)
-                    if (event.actionMasked == MotionEvent.ACTION_MOVE) {
+                    if (PhormiKeyboardPreferences.floating(this) && event.actionMasked == MotionEvent.ACTION_MOVE) {
                         PhormiKeyboardPreferences.setOffsetX(
                             this,
-                            resizePreviewHeight + (event.rawX - resizeStartX) / (screenW * 0.45f)
+                            resizePreviewHeight + (event.rawX - resizeStartX) / (screenW * 0.55f)
                         )
                         PhormiKeyboardPreferences.setOffsetY(
                             this,
-                            resizePreviewWidth - (event.rawY - resizeStartY) / (screenH * 0.40f)
+                            resizePreviewWidth + (event.rawY - resizeStartY) / (screenH * 0.55f)
                         )
                     }
                     applyKeyboardWindowSize()
