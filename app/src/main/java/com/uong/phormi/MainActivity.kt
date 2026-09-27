@@ -276,6 +276,7 @@ class MainActivity : AppCompatActivity() {
             PhormiEnvironmentManager.ensure(GHOST_PROFILE_NAME)
         }
         CookieManager.getInstance().setAcceptCookie(true)
+        PhormiNotificationManager.ensureChannels(this)
 
         swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
@@ -2560,6 +2561,9 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.COOKIE_INTERCEPT)) {
+                runCatching { WebSettingsCompat.setCookiesIncludedInShouldInterceptRequest(this, true) }
+            }
             if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
                 runCatching { WebSettingsCompat.setBackForwardCacheEnabled(this, true) }
             }
