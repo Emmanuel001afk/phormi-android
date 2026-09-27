@@ -2157,7 +2157,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Download failed", Toast.LENGTH_LONG).show()
                     return@evaluateJavascript
                 }
-                saveDataUrl(value, contentDisposition, mimeType)
+                saveDataUrl(value, contentDisposition, mimeType, url)
             } catch (e: Exception) {
                 Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -2165,10 +2165,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadDataUrl(url: String, contentDisposition: String?, mimeType: String?) {
-        saveDataUrl(url, contentDisposition, mimeType)
+        saveDataUrl(url, contentDisposition, mimeType, url)
     }
 
-    private fun saveDataUrl(dataUrl: String, contentDisposition: String?, mimeType: String?) {
+    private fun saveDataUrl(dataUrl: String, contentDisposition: String?, mimeType: String?, sourceUrl: String = dataUrl) {
         try {
             val comma = dataUrl.indexOf(',')
             if (comma <= 0) throw IllegalArgumentException("Invalid data URL")
@@ -2198,6 +2198,8 @@ class MainActivity : AppCompatActivity() {
                     if (!extension.isNullOrBlank()) ".${extension}" else ""
             }
 
+            var savedUri: String? = null
+
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 val values = android.content.ContentValues().apply {
                     put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -2210,6 +2212,7 @@ class MainActivity : AppCompatActivity() {
                     android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                     values
                 ) ?: throw IllegalStateException("Could not create download")
+                savedUri = uri.toString()
 
                 try {
                     resolver.openOutputStream(uri)?.use { it.write(bytes) }
@@ -2236,10 +2239,22 @@ class MainActivity : AppCompatActivity() {
                     n++
                 }
                 target.outputStream().use { it.write(bytes) }
+                savedUri = target.toURI().toString()
                 android.media.MediaScannerConnection.scanFile(
                     this, arrayOf(target.absolutePath), arrayOf(baseMime), null
                 )
             }
+
+            val completedUri = savedUri ?: throw IllegalStateException("Download location was not created")
+            PhormiDownloadEngine.recordExternalCompleted(
+                context = this,
+                sourceUrl = sourceUrl,
+                title = fileName,
+                mimeType = baseMime,
+                category = PhormiDownloadSupport.category(fileName, baseMime),
+                localUri = completedUri,
+                total = bytes.size.toLong()
+            )
 
             Toast.makeText(this, "Download complete: $fileName", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
