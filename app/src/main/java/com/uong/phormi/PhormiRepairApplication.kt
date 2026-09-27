@@ -37,6 +37,7 @@ class PhormiRepairApplication : Application() {
             runCatching { WebView.setDataDirectorySuffix("ghost") }
         }
         super.onCreate()
+        PhormiNotificationManager.ensureChannels(this)
         runCatching { PhormiEnvironmentManager.cleanupExpired(this, emptySet()) }
         PhormiKeyboardAiBridge.start(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
