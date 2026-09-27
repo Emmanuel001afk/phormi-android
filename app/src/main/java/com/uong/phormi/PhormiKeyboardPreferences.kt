@@ -36,7 +36,7 @@ object PhormiKeyboardPreferences {
         prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
 
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
-    fun heightScale(context: Context): Float = prefs(context).getFloat(HEIGHT_SCALE, heightScaleFor(height(context))).coerceIn(0.70f, 1.35f)
+    fun heightScale(context: Context): Float = prefs(context).getFloat(HEIGHT_SCALE, heightScaleFor(height(context))).coerceIn(0.60f, 1.40f)
     fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.55f, 1.00f)
     fun offsetX(context: Context): Float = prefs(context).getFloat(OFFSET_X, 0f).coerceIn(-0.9f, 0.9f)
     fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(-0.9f, 0.9f)
