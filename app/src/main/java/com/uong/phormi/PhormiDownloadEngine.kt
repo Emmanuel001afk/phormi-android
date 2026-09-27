@@ -41,6 +41,7 @@ object PhormiDownloadEngine {
     private const val PREFS = "phormi_downloads_v2"
     private const val KEY_ITEMS = "items"
     private val lock = Any()
+    private val webRequestHeaders = ConcurrentHashMap<String, Map<String, String>>()
 
     enum class State { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
 
@@ -73,6 +74,17 @@ object PhormiDownloadEngine {
         val createdAt: Long
     )
 
+    fun rememberWebRequestHeaders(url: String, headers: Map<String, String>?) {
+        if (url.isBlank() || headers.isNullOrEmpty()) return
+        val clean = headers.filterKeys { key ->
+            key.isNotBlank() && !key.equals("Host", true) && !key.equals("Content-Length", true)
+        }.filterValues { it.isNotBlank() }
+        if (clean.isNotEmpty()) webRequestHeaders[normalizeSourceUrl(url)] = clean
+    }
+
+    private fun rememberedHeaders(url: String): Map<String, String> =
+        webRequestHeaders[normalizeSourceUrl(url)].orEmpty()
+
     fun enqueue(context: Context, webView: WebView?, url: String, contentDisposition: String?, mimeType: String?, userAgentOverride: String? = null, contentLength: Long = -1L) {
         if (url.isBlank()) return
         if (url.startsWith("blob:", true) || url.startsWith("data:", true)) {
@@ -89,6 +101,18 @@ object PhormiDownloadEngine {
             ?: referer?.let { CookieManager.getInstance().getCookie(it) }
         val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
         val sourceKey = normalizeSourceUrl(info.sourceUrl)
+        val exactWebHeaders = rememberedHeaders(info.sourceUrl)
+        val mergedHeaders = info.headers.toMutableMap().apply {
+            exactWebHeaders.forEach { (key, value) ->
+                if (!key.equals("Host", true) && !key.equals("Content-Length", true)) put(key, value)
+            }
+            put("User-Agent", userAgent)
+            if (!referer.isNullOrBlank() && !containsKey("Referer")) put("Referer", referer)
+            if (!cookies.isNullOrBlank() && !containsKey("Cookie")) put("Cookie", cookies)
+            val u = referer?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            val origin = u?.let { if (!it.scheme.isNullOrBlank() && !it.host.isNullOrBlank()) "${it.scheme}://${it.host}${if (it.port > 0) ":${it.port}" else ""}" else null }
+            if (!origin.isNullOrBlank() && !containsKey("Origin")) put("Origin", origin)
+        }
         val id = UUID.randomUUID().toString()
         val record = Record(
             id = id,
@@ -96,7 +120,7 @@ object PhormiDownloadEngine {
             sourceUrl = sourceKey,
             mimeType = info.mimeType,
             category = info.category,
-            headers = info.headers,
+            headers = mergedHeaders,
             state = State.QUEUED,
             downloaded = 0L,
             total = contentLength.takeIf { it > 0L } ?: -1L,
@@ -477,7 +501,7 @@ class PhormiDownloadService : Service() {
         record.headers.forEach { (key, value) ->
             if (key.isNotBlank() && value.isNotBlank()) requestBuilder.header(key, value)
         }
-        requestBuilder.header("Accept", acceptFor(record.mimeType))
+        requestBuilder.header("Accept", "*/*")
         requestBuilder.header("Accept-Language", java.util.Locale.getDefault().toLanguageTag() + ",en;q=0.8")
         requestBuilder.header("Accept-Encoding", "identity")
         if (existing > 0L) requestBuilder.header("Range", "bytes=$existing-")
