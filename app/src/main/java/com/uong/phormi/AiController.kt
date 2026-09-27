@@ -226,6 +226,7 @@ class AiController(private val context: Context) {
         ?: "No AI providers saved yet.\nAdd a name + API key below."
 
     suspend fun synthesizeSearchAnswer(query: String, evidence: String): String? = withContext(Dispatchers.IO) {
+        if (isCentralHubActive()) return@withContext callCentralHub("You are Phormi's browser search assistant. Combine the supplied evidence accurately, do not invent facts, and clearly mark uncertainty.\nQuestion: $query\n\nSearch evidence:\n$evidence")
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
         callTextProvider(provider,
             "You are Phormi's browser search assistant. Combine the supplied evidence accurately, do not invent facts, and clearly mark uncertainty.",
@@ -234,11 +235,11 @@ class AiController(private val context: Context) {
     }
 
     suspend fun analyzeVideo(metadata: JSONObject, frames: List<String>): String? = withContext(Dispatchers.IO) {
+        if (isCentralHubActive()) return@withContext callCentralHub("Analyze this browser video using only the supplied metadata. State visible evidence and uncertainty.\nMetadata:\n${metadata.toString(2)}")
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
         val prompt = "Analyze this browser video using only the supplied metadata and sampled frames. State visible evidence and uncertainty.\nMetadata:\n${metadata.toString(2)}"
         callTextProvider(provider, "You analyze browser video evidence without inventing unseen audio or content.", prompt)
     }
-
     suspend fun runTask(instruction: String, onStatus: (String) -> Unit) {
         if (!isActive()) { onStatus("AI is inactive. Enable Central Hub or save an external AI provider first."); return }
         val service = PhormiAccessibilityService.instance
