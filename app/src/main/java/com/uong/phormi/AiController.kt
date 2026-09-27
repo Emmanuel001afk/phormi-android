@@ -287,6 +287,17 @@ class AiController(private val context: Context) {
     }
 
     private suspend fun askAiForNextAction(instruction: String, screen: String, onStatus: (String) -> Unit): Pair<JSONObject, String>? {
+        if (isCentralHubActive()) {
+            val taskPrompt = "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.\n\nGoal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
+            val memory = PhormiAiMemoryStore.context(context)
+            val text = callCentralHub(if (memory.isBlank()) taskPrompt else "Short device-local memory from earlier Phormi AI work:\n$memory\n\n$taskPrompt")
+            if (text.isNullOrBlank()) { onStatus("Central Hub AI request failed."); return null }
+            val cleaned = text.replace("```json", "").replace("```", "").trim()
+            val a = cleaned.indexOf('{'); val b = cleaned.lastIndexOf('}')
+            if (a >= 0 && b > a) return JSONObject(cleaned.substring(a, b + 1)) to "Central Hub"
+            onStatus("Central Hub: response was not an action JSON")
+            return null
+        }
         for (stored in listProviders()) {
             if (stored.apiKey.isBlank() || stored.endpoint.isBlank()) continue
             try {
