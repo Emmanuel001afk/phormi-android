@@ -2755,6 +2755,16 @@ class MainActivity : AppCompatActivity() {
                         HistoryActivity.record(this@MainActivity, t, u)
                     }
 
+                if (view != null && url.orEmpty().startsWith("http", true) && isDesktopModeFor(url.orEmpty())) {
+                    view.evaluateJavascript("""
+                        (function(){
+                          var content='width=980';
+                          var m=document.querySelector('meta[name="viewport"]');
+                          if(!m){m=document.createElement('meta');m.name='viewport';document.head && document.head.appendChild(m);}
+                          if(m)m.setAttribute('content',content);
+                        })();
+                    """.trimIndent(), null)
+                }
                 super.onPageFinished(view, url)
                 if (view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
@@ -3481,12 +3491,13 @@ class MainActivity : AppCompatActivity() {
     private fun applyDesktopMode(webView: WebView, enabled: Boolean) {
         val settings = webView.settings
         settings.userAgentString = desktopUserAgent(enabled)
-        settings.useWideViewPort = enabled
-        settings.loadWithOverviewMode = enabled
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = true
         settings.textZoom = 100
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        webView.setInitialScale(0)
+        settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+        webView.setInitialScale(if (enabled) 0 else 0)
         applyDesktopUserAgentMetadata(settings, enabled)
     }
 
