@@ -26,6 +26,7 @@
     <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
         <package android:name="de.blinkt.openvpn" />
         <package android:name="net.openvpn.openvpn" />
         <package android:name="com.openvpn.client" />
