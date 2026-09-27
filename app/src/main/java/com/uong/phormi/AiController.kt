@@ -34,6 +34,7 @@ class AiController(private val context: Context) {
         private const val MAX_STEPS = 25
         private const val REQUEST_TIMEOUT_SECONDS = 45L
         private const val MAX_HISTORY_ENTRIES = 12
+        private const val CENTRAL_HUB_URL = "https://mayobuild-studio.lovable.app/api/hub"
 
         val TEMPLATES = listOf(
             Provider("grok", "Grok", "https://api.x.ai/v1/chat/completions", "", ""),
@@ -183,7 +184,43 @@ class AiController(private val context: Context) {
 
     fun removeProvider(id: String) = saveProviders(listProviders().filterNot { it.id == id })
     fun hasAnyKey(): Boolean = listProviders().any { it.apiKey.isNotBlank() }
-    fun isActive(): Boolean = prefs.getBoolean(KEY_ACTIVE, false) && hasAnyKey()
+    fun isCentralHubActive(): Boolean = prefs.getBoolean("central_hub_active", false) && !PhormiHubStore.get(context).isNullOrBlank()
+    fun setCentralHubActive(active: Boolean) { prefs.edit().putBoolean("central_hub_active", active).apply() }
+    fun hasCentralHubKey(): Boolean = !PhormiHubStore.get(context).isNullOrBlank()
+    fun saveCentralHubKey(key: String) { PhormiHubStore.put(context, key.trim()) }
+    fun clearCentralHubKey() { PhormiHubStore.clear(context); setCentralHubActive(false) }
+    fun centralHubStatus(): String = if (hasCentralHubKey()) "Central Hub key: saved" else "Central Hub key: not configured"
+
+    suspend fun testCentralHub(key: String): String = withContext(Dispatchers.IO) {
+        val clean = key.trim()
+        if (clean.isBlank()) throw IOException("Central Hub key is required")
+        val body = JSONObject().put("message", "Connection test: reply with OK only.").toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url(CENTRAL_HUB_URL).addHeader("Authorization", "Bearer $clean").addHeader("Content-Type", "application/json").post(body).build()
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IOException("Central Hub returned HTTP ${response.code}")
+            val json = runCatching { JSONObject(raw) }.getOrNull()
+            val error = json?.optString("error").orEmpty()
+            if (error.isNotBlank()) throw IOException(error)
+            json?.optString("answer").takeIf { !it.isNullOrBlank() } ?: "Connected"
+        }
+    }
+
+    private fun callCentralHub(message: String): String? {
+        val key = PhormiHubStore.get(context)?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            val body = JSONObject().put("message", message).toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder().url(CENTRAL_HUB_URL).addHeader("Authorization", "Bearer $key").addHeader("Content-Type", "application/json").post(body).build()
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) return@use null
+                val json = JSONObject(raw)
+                if (json.optString("error").isNotBlank()) null else json.optString("answer").takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()
+    }
+
+    fun isActive(): Boolean = if (isCentralHubActive()) true else prefs.getBoolean(KEY_ACTIVE, false) && hasAnyKey()
     fun setActive(active: Boolean) { prefs.edit().putBoolean(KEY_ACTIVE, active).apply() }
     fun keyStatusSummary(): String = listProviders().takeIf { it.isNotEmpty() }?.joinToString("\n") { "${it.name}: ready" }
         ?: "No AI providers saved yet.\nAdd a name + API key below."
@@ -203,7 +240,7 @@ class AiController(private val context: Context) {
     }
 
     suspend fun runTask(instruction: String, onStatus: (String) -> Unit) {
-        if (!isActive()) { onStatus("AI is inactive. Save & Run an AI provider first."); return }
+        if (!isActive()) { onStatus("AI is inactive. Enable Central Hub or save an external AI provider first."); return }
         val service = PhormiAccessibilityService.instance
         if (service == null) { onStatus("Enable Phormi under Settings → Accessibility, then press Run."); return }
 
@@ -243,6 +280,7 @@ class AiController(private val context: Context) {
                 else -> { done = true; onStatus("Step $step ($providerName): unsupported action"); "unsupported" }
             }
             history.add(HistoryEntry(step, providerName, description, screen.take(240)))
+            if (isCentralHubActive()) PhormiAiMemoryStore.add(context, instruction, description)
             if (history.size > MAX_HISTORY_ENTRIES) history.removeAt(0)
         }
         if (!done) onStatus("Stopped after $MAX_STEPS steps.")
@@ -256,10 +294,16 @@ class AiController(private val context: Context) {
                     val cfg = resolveProviderConfig(stored.name, stored.apiKey, stored.endpoint, stored.model)
                     stored.copy(endpoint = cfg.endpoint, model = cfg.model)
                 } else stored
-                val text = callTextProvider(provider,
-                    "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
-                    "Goal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
-                ) ?: continue
+                val taskPrompt = "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.\n\nGoal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
+                val text = if (isCentralHubActive()) {
+                    val memory = PhormiAiMemoryStore.context(context)
+                    callCentralHub(if (memory.isBlank()) taskPrompt else "Short device-local memory from earlier Phormi AI work:\n$memory\n\n$taskPrompt")
+                } else {
+                    callTextProvider(provider,
+                        "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
+                        taskPrompt
+                    )
+                } ?: continue
                 val cleaned = text.replace("```json", "").replace("```", "").trim()
                 val a = cleaned.indexOf('{'); val b = cleaned.lastIndexOf('}')
                 if (a >= 0 && b > a) return JSONObject(cleaned.substring(a, b + 1)) to provider.name
