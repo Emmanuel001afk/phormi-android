@@ -161,7 +161,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         applyWallpaper(this)
     }
     private fun applyWallpaper(root: View) { val value=PhormiKeyboardPreferences.wallpaperUri(this)?:return;runCatching{contentResolver.openInputStream(Uri.parse(value))?.use{BitmapFactory.decodeStream(it)}?.let{root.background=BitmapDrawable(resources,it).apply{alpha=72}}} }
-    private fun feedback(view: View) { if(PhormiKeyboardPreferences.haptic(this))view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);if(PhormiKeyboardPreferences.sound(this))view.playSoundEffect(android.view.SoundEffectConstants.CLICK) }
+    private fun feedback(view: View) {
+        if (PhormiKeyboardPreferences.haptic(this)) {
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP, android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING)
+        }
+        if (PhormiKeyboardPreferences.sound(this)) {
+            (getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager)?.playSoundEffect(android.media.AudioManager.FX_KEY_CLICK, 1.0f)
+        }
+    }
     private fun pill(label:String,action:()->Unit):Button=Button(this).apply{text=label;textSize=13f;setTextColor(themeText());typeface=Typeface.DEFAULT_BOLD;minWidth=0;minHeight=0;isAllCaps=false;stateListAnimator=null;setPadding(dp(7),0,dp(7),0);background=rounded(themePill(),dp(13));contentDescription=label;setOnClickListener{feedback(this);action()}}
     private fun keyButton(label:String,weight:Float=1f,action:()->Unit):Button=Button(this).apply{
         val special=label=="Space"||label=="⌫"||label in setOf("?123","ABC","Symbols","Enter","Go","Search","Send","Next","Done")
