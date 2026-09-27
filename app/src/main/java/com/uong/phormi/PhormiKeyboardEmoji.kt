@@ -112,7 +112,7 @@ object PhormiKeyboardEmoji {
                 "BUG","INSECT","WOLF","LION","HORSE","TIGER","ELEPHANT","PANDA",
                 "PIG","COW","CHICKEN","SNAKE","TURTLE","DOLPHIN","WHALE","ANIMAL",
                 "ANIMAL")) return "🐾"
-        if (has("MOON","SUN","STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH","WEATHER","NATURE")) return "🌿"
+        if (has("MOON","SUN","STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH","WEATHER","NATURE","VOLCANO","TORNADO","WIND","RAINBOW")) return "🌦️"
 
         if (has("FRUIT","APPLE","BANANA","GRAPES","STRAWBERRY","WATERMELON","PINEAPPLE",
                 "MANGO","LEMON","PEACH","PEAR","CHERRY","KIWI","MELON","BLUEBERRY",
@@ -136,16 +136,11 @@ object PhormiKeyboardEmoji {
                 "ZODIAC","SYMBOL","EXCLAMATION","QUESTION","RECYCLE","INFINITY",
                 "WARNING","PROHIBITED") || first in 0x2000..0x2BFF) return "🔣"
 
-        return when {
-            first in 0x1F680..0x1F6FF -> "🚗"
-            first in 0x1F300..0x1F5FF -> "🐾"
-            first in 0x1F900..0x1F9FF -> "💻"
-            else -> "🔣"
-        }
+        return "🔣"
     }
     val categories: LinkedHashMap<String, List<String>> by lazy {
         val grouped = linkedMapOf<String, MutableList<String>>()
-        listOf("😀","👤","🌿","🌸","🐾","🍔","🚗","⚽","💻","🔣","🏳️").forEach { grouped[it] = mutableListOf() }
+        listOf("😀","👤","🌿","🌸","🐾","🌦️","🍔","🚗","⚽","💻","🔣","🏳️").forEach { grouped[it] = mutableListOf() }
         all.forEach { emoji -> grouped[classify(emoji)]?.add(emoji) }
         linkedMapOf<String, List<String>>().apply {
             put("😀", grouped["😀"].orEmpty())
@@ -153,6 +148,7 @@ object PhormiKeyboardEmoji {
             put("🌿", grouped["🌿"].orEmpty())
             put("🌸", grouped["🌸"].orEmpty())
             put("🐾", grouped["🐾"].orEmpty())
+            put("🌦️", grouped["🌦️"].orEmpty())
             put("🍔", grouped["🍔"].orEmpty())
             put("🚗", grouped["🚗"].orEmpty())
             put("⚽", grouped["⚽"].orEmpty())
