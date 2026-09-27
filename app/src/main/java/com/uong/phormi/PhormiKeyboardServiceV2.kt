@@ -217,6 +217,13 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                     resizeStartY = event.rawY
                     resizePreviewHeight = PhormiKeyboardPreferences.offsetX(this)
                     resizePreviewWidth = PhormiKeyboardPreferences.offsetY(this)
+                    // A full-width IME cannot meaningfully move like Gboard's floating
+                    // keyboard. The first Move gesture enters floating mode by reducing
+                    // the width, then the drag controls its position.
+                    if (PhormiKeyboardPreferences.widthScale(this) >= 0.99f) {
+                        PhormiKeyboardPreferences.setWidthScale(this, 0.78f)
+                    }
+                    applyKeyboardWindowSize()
                     true
                 }
                 MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
