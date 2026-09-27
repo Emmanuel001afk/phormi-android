@@ -13,6 +13,8 @@ object PhormiKeyboardPreferences {
     private const val HEIGHT = "keyboard_height"
     private const val HEIGHT_SCALE = "keyboard_height_scale"
     private const val WIDTH_SCALE = "keyboard_width_scale"
+    private const val OFFSET_X = "keyboard_offset_x"
+    private const val OFFSET_Y = "keyboard_offset_y"
     private const val AI_EMOJI = "ai_emoji"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
@@ -35,7 +37,9 @@ object PhormiKeyboardPreferences {
 
     fun height(context: Context): Int = prefs(context).getInt(HEIGHT, 3).coerceIn(0, 6)
     fun heightScale(context: Context): Float = prefs(context).getFloat(HEIGHT_SCALE, heightScaleFor(height(context))).coerceIn(0.70f, 1.35f)
-    fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.70f, 1.00f)
+    fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.55f, 1.00f)
+    fun offsetX(context: Context): Float = prefs(context).getFloat(OFFSET_X, 0f).coerceIn(-0.9f, 0.9f)
+    fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(-0.9f, 0.9f)
     fun heightScaleFor(level: Int): Float = when (level.coerceIn(0, 6)) {
         0 -> 0.85f
         1 -> 0.92f
@@ -54,9 +58,11 @@ object PhormiKeyboardPreferences {
     }.apply()
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
     fun setHeight(context: Context, value: Int) = prefs(context).edit().putInt(HEIGHT, value.coerceIn(0, 6)).putFloat(HEIGHT_SCALE, heightScaleFor(value)).apply()
-    fun setHeightScale(context: Context, value: Float) = prefs(context).edit().putFloat(HEIGHT_SCALE, value.coerceIn(0.70f, 1.35f)).apply()
-    fun setWidthScale(context: Context, value: Float) = prefs(context).edit().putFloat(WIDTH_SCALE, value.coerceIn(0.70f, 1.00f)).apply()
-    fun resetSize(context: Context) = prefs(context).edit().putInt(HEIGHT, 3).putFloat(HEIGHT_SCALE, 1.0f).putFloat(WIDTH_SCALE, 1.0f).apply()
+    fun setHeightScale(context: Context, value: Float) = prefs(context).edit().putFloat(HEIGHT_SCALE, value.coerceIn(0.60f, 1.40f)).apply()
+    fun setWidthScale(context: Context, value: Float) = prefs(context).edit().putFloat(WIDTH_SCALE, value.coerceIn(0.55f, 1.00f)).apply()
+    fun setOffsetX(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_X, value.coerceIn(-0.9f, 0.9f)).apply()
+    fun setOffsetY(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_Y, value.coerceIn(-0.9f, 0.9f)).apply()
+    fun resetSize(context: Context) = prefs(context).edit().putInt(HEIGHT, 3).putFloat(HEIGHT_SCALE, 1.0f).putFloat(WIDTH_SCALE, 1.0f).putFloat(OFFSET_X, 0f).putFloat(OFFSET_Y, 0f).apply()
 
     const val KEY_SUGGESTIONS = SUGGESTIONS
     const val KEY_AUTOCORRECT = AUTOCORRECT
