@@ -196,17 +196,17 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 }
                 override fun onIsPlayingChanged(isPlaying: Boolean) { updatePictureInPictureParams() }
                 override fun onPlayerError(error: PlaybackException) {
-                    retryFromAccessibleCopy(uri, mime)
+                    retryFromAccessibleCopy(uri, mime, error)
                 }
             })
         }
     }
 
-    private fun retryFromAccessibleCopy(uri: Uri, mime: String) {
+    private fun retryFromAccessibleCopy(uri: Uri, mime: String, error: PlaybackException? = null) {
         if (cacheFallbackAttempted) {
             runOnUiThread {
-                Toast.makeText(this, "This media format could not be played by Phormi.", Toast.LENGTH_LONG).show()
-                if (!PhormiFileOpener.openExternal(this, uri, mime)) finish()
+                val detail = error?.errorCodeName?.takeIf { it.isNotBlank() } ?: "unsupported or unreadable media"
+                Toast.makeText(this, "Phormi could not play this file ($detail). Use ⋮ → Open with another app.", Toast.LENGTH_LONG).show()
             }
             return
         }
@@ -232,8 +232,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                         playWhenReady = true
                     }
                 } else {
-                    Toast.makeText(this, "Phormi could not access this downloaded media.", Toast.LENGTH_LONG).show()
-                    if (!PhormiFileOpener.openExternal(this, uri, mime)) finish()
+                    Toast.makeText(this, "Phormi could not read this downloaded media. Use ⋮ → Open with another app.", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
