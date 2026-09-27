@@ -120,10 +120,17 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun applyKeyboardWindowSize(win: Window? = getWindow().window) {
         val window = win ?: return
-        val height = scaled(baseHeight())
+        val height = (baseHeight() * density() * PhormiKeyboardPreferences.heightScale(this)).roundToInt()
+            .coerceIn(dp(210), (resources.displayMetrics.heightPixels * 0.82f).roundToInt().coerceAtLeast(dp(240)))
         val available = getMaxWidth().coerceAtLeast(dp(240))
         val width = (available * PhormiKeyboardPreferences.widthScale(this)).roundToInt()
-            .coerceIn(dp(240), available)
+            .coerceIn(dp(220), available)
+        window.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        val attrs = window.attributes
+        attrs.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        attrs.x = (PhormiKeyboardPreferences.offsetX(this) * resources.displayMetrics.widthPixels * 0.45f).roundToInt()
+        attrs.y = (PhormiKeyboardPreferences.offsetY(this) * resources.displayMetrics.heightPixels * 0.40f).roundToInt().coerceAtLeast(-resources.displayMetrics.heightPixels / 2)
+        window.attributes = attrs
         window.setLayout(width, height)
     }
 
@@ -183,7 +190,98 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         layoutParams=LinearLayout.LayoutParams(0,scaled(42),weight).apply{setMargins(dp(2),dp(1),dp(2),dp(1))}
     }
     private fun shiftButton(action:()->Unit):Button{val state=when{capsLock->2;shift||autoShift->1;else->0};return keyButton(if(state==0)"⇧"else"⇧A",action=action).apply{background=rounded(when(state){2->Color.rgb(220,38,38);1->accent();else->themeKey()},dp(9));setTextColor(Color.WHITE);contentDescription=when(state){2->"Caps lock";1->"One-letter capitalization";else->"Shift"}}}
-    private fun addResizeGrip(root:LinearLayout){val grip=TextView(this).apply{text="↕↔";textSize=16f;gravity=Gravity.CENTER;setTextColor(if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184));background=rounded(themePill(),dp(10));contentDescription="Resize Phormi Keyboard height and width";setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{resizeStartY=event.rawY;resizeStartX=event.rawX;resizeStartHeight=PhormiKeyboardPreferences.heightScale(this@PhormiKeyboardServiceV2);resizeStartWidth=PhormiKeyboardPreferences.widthScale(this@PhormiKeyboardServiceV2);resizePreviewHeight=resizeStartHeight;resizePreviewWidth=resizeStartWidth;true};MotionEvent.ACTION_MOVE->{resizePreviewHeight=(resizeStartHeight+(resizeStartY-event.rawY)/(520f*density())).coerceIn(0.70f,1.35f);resizePreviewWidth=(resizeStartWidth+(event.rawX-resizeStartX)/resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)).coerceIn(0.70f,1.00f);val lp=(root.layoutParams as? LinearLayout.LayoutParams?:LinearLayout.LayoutParams(-1,scaled(baseHeight())));lp.width=(getMaxWidth().coerceAtLeast(dp(240))*resizePreviewWidth).roundToInt().coerceIn(dp(240),getMaxWidth().coerceAtLeast(dp(240)));lp.height=(baseHeight()*density()*resizePreviewHeight).roundToInt().coerceAtLeast(dp(240));lp.gravity=Gravity.CENTER_HORIZONTAL;root.layoutParams=lp;root.minimumHeight=lp.height;root.requestLayout();true};MotionEvent.ACTION_UP->{PhormiKeyboardPreferences.setHeightScale(this@PhormiKeyboardServiceV2,resizePreviewHeight);PhormiKeyboardPreferences.setWidthScale(this@PhormiKeyboardServiceV2,resizePreviewWidth);setInputView(render());applyKeyboardWindowSize();true};MotionEvent.ACTION_CANCEL->{setInputView(render());true};else->true}}};root.addView(grip,0,LinearLayout.LayoutParams(dp(64),scaled(20)).apply{gravity=Gravity.CENTER_HORIZONTAL;bottomMargin=dp(1)})}
+    private fun addResizeGrip(root:LinearLayout){
+        val bar=LinearLayout(this).apply{
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER
+            setPadding(dp(2),0,dp(2),0)
+        }
+        val move=TextView(this).apply{
+            text="⠿  Move"
+            textSize=12f
+            gravity=Gravity.CENTER
+            setTextColor(if(theme()==3)Color.DKGRAY else Color.rgb(203,213,225))
+            background=rounded(themePill(),dp(10))
+            contentDescription="Move floating Phormi Keyboard"
+            var startX=0f
+            var startY=0f
+            var startOffsetX=0f
+            var startOffsetY=0f
+            setOnTouchListener{_,event->
+                when(event.actionMasked){
+                    MotionEvent.ACTION_DOWN->{
+                        startX=event.rawX;startY=event.rawY
+                        startOffsetX=PhormiKeyboardPreferences.offsetX(this@PhormiKeyboardServiceV2)
+                        startOffsetY=PhormiKeyboardPreferences.offsetY(this@PhormiKeyboardServiceV2)
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE->{
+                        val screenW=resources.displayMetrics.widthPixels.coerceAtLeast(1)
+                        val screenH=resources.displayMetrics.heightPixels.coerceAtLeast(1)
+                        PhormiKeyboardPreferences.setOffsetX(this@PhormiKeyboardServiceV2,
+                            startOffsetX+(event.rawX-startX)/(screenW*0.45f))
+                        PhormiKeyboardPreferences.setOffsetY(this@PhormiKeyboardServiceV2,
+                            startOffsetY-(event.rawY-startY)/(screenH*0.40f))
+                        applyKeyboardWindowSize()
+                        true
+                    }
+                    MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{
+                        applyKeyboardWindowSize()
+                        true
+                    }
+                    else->true
+                }
+            }
+        }
+        val resize=TextView(this).apply{
+            text="↘  Size"
+            textSize=12f
+            gravity=Gravity.CENTER
+            setTextColor(if(theme()==3)Color.DKGRAY else Color.rgb(203,213,225))
+            background=rounded(themePill(),dp(10))
+            contentDescription="Resize Phormi Keyboard width and height"
+            var startX=0f
+            var startY=0f
+            var startHeight=1f
+            var startWidth=1f
+            setOnTouchListener{_,event->
+                when(event.actionMasked){
+                    MotionEvent.ACTION_DOWN->{
+                        startX=event.rawX;startY=event.rawY
+                        startHeight=PhormiKeyboardPreferences.heightScale(this@PhormiKeyboardServiceV2)
+                        startWidth=PhormiKeyboardPreferences.widthScale(this@PhormiKeyboardServiceV2)
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE->{
+                        val screenW=resources.displayMetrics.widthPixels.coerceAtLeast(1)
+                        val screenH=resources.displayMetrics.heightPixels.coerceAtLeast(1)
+                        val width=startWidth+(event.rawX-startX)/(screenW*0.55f)
+                        val height=startHeight+(startY-event.rawY)/(screenH*0.40f)
+                        PhormiKeyboardPreferences.setWidthScale(this@PhormiKeyboardServiceV2,width)
+                        PhormiKeyboardPreferences.setHeightScale(this@PhormiKeyboardServiceV2,height)
+                        val lp=root.layoutParams as? LinearLayout.LayoutParams
+                        lp?.let{
+                            it.width=(getMaxWidth().coerceAtLeast(dp(240))*PhormiKeyboardPreferences.widthScale(this@PhormiKeyboardServiceV2)).roundToInt()
+                            it.height=(baseHeight()*density()*PhormiKeyboardPreferences.heightScale(this@PhormiKeyboardServiceV2)).roundToInt()
+                            root.layoutParams=it
+                            root.requestLayout()
+                        }
+                        applyKeyboardWindowSize()
+                        true
+                    }
+                    MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{
+                        setInputView(render())
+                        applyKeyboardWindowSize()
+                        true
+                    }
+                    else->true
+                }
+            }
+        }
+        bar.addView(move,LinearLayout.LayoutParams(0,scaled(24),1f).apply{setMargins(dp(2),0,dp(2),0)})
+        bar.addView(resize,LinearLayout.LayoutParams(0,scaled(24),1f).apply{setMargins(dp(2),0,dp(2),0)})
+        root.addView(bar,0,LinearLayout.LayoutParams(-1,scaled(26)))
+    }
     private fun toolbar(root:LinearLayout){val scroll=HorizontalScrollView(this).apply{isHorizontalScrollBarEnabled=false;overScrollMode=View.OVER_SCROLL_NEVER};val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};fun add(label:String,width:Int=58,action:()->Unit){row.addView(pill(label,action),LinearLayout.LayoutParams(dp(width),scaled(34)).apply{setMargins(dp(2),0,dp(2),0)})};add("😀"){panel=Panel.EMOJI;setInputView(render())};add("📋"){panel=Panel.CLIPBOARD;PhormiKeyboardClipboardStore.capturePrimaryClipboard(this);setInputView(render())};add("▦ Cabinet",76){panel=Panel.TOOLS;setInputView(render())};if(Build.VERSION.SDK_INT>=28&&shouldOfferSwitchingToNextInputMethod())add("🌐",52){runCatching{switchToNextInputMethod(false)}};scroll.addView(row);root.addView(scroll,LinearLayout.LayoutParams(-1,scaled(36)))}
     private fun predictionStrip(root:LinearLayout){
         val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
