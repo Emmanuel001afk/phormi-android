@@ -2,7 +2,6 @@ package com.uong.phormi
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
@@ -2550,7 +2549,6 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    @SuppressLint("WrongConstant")
     @SuppressLint("WrongConstant")
     private fun configureWebView(webView: WebView) {
         if (android.os.Build.VERSION.SDK_INT >= 26) {
