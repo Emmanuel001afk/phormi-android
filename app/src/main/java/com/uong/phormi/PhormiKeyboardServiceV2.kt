@@ -108,7 +108,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
         if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
-            refreshPredictionStrip()
+            schedulePredictionRefresh()
             if(PhormiKeyboardPreferences.autoCaps(this)){
                 autoShift=PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection,editorInfo)
             }
@@ -292,16 +292,13 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 }
                 MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (event.actionMasked == MotionEvent.ACTION_MOVE) {
-                        PhormiKeyboardPreferences.setWidthScale(
-                            this,
-                            resizeStartWidth + (event.rawX - resizeStartX) /
-                                (resources.displayMetrics.widthPixels.coerceAtLeast(1) * 0.55f)
-                        )
-                        PhormiKeyboardPreferences.setHeightScale(
-                            this,
-                            resizeStartHeight + (resizeStartY - event.rawY) /
-                                (resources.displayMetrics.heightPixels.coerceAtLeast(1) * 0.40f)
-                        )
+                        val dx = (event.rawX - resizeStartX) /
+                            resources.displayMetrics.widthPixels.coerceAtLeast(1).toFloat() * 1.8f
+                        val dy = (resizeStartY - event.rawY) /
+                            resources.displayMetrics.heightPixels.coerceAtLeast(1).toFloat() * 1.8f
+                        val delta = maxOf(dx, dy).coerceIn(-0.45f, 0.45f)
+                        PhormiKeyboardPreferences.setWidthScale(this, (resizeStartWidth + delta).coerceIn(0.55f, 1.0f))
+                        PhormiKeyboardPreferences.setHeightScale(this, (resizeStartHeight + delta).coerceIn(0.60f, 1.40f))
                     }
                     applyKeyboardWindowSize()
                     true
@@ -362,11 +359,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun refreshPredictionStrip(){
         val row=predictionRow ?: return
-        row.removeAllViews()
-        if(!PhormiKeyboardPreferences.suggestions(this) || !PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) return
         val ic=currentInputConnection
         val word=PhormiKeyboardTextEngine.currentWord(ic)
         val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo))
+        if (word == lastPredictionWord && previous == lastPredictionPrevious && row.childCount > 0) return
+        lastPredictionWord = word
+        lastPredictionPrevious = previous
+        row.removeAllViews()
+        if(!PhormiKeyboardPreferences.suggestions(this) || !PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) return
         val suggestions=if(word.isNotBlank()) PhormiKeyboardTextEngine.suggestions(this,word,PhormiKeyboardTextEngine.localeFor(editorInfo)) else PhormiKeyboardTextEngine.nextWordSuggestions(this,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
         if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI expression"){insertAiEmojiExpression()},LinearLayout.LayoutParams(dp(94),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
             val button=pill(value,{})
@@ -376,9 +376,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 if (ic != null) {
                     val liveWord = PhormiKeyboardTextEngine.currentWord(ic)
                     if (liveWord.isNotBlank()) {
-                        ic.deleteSurroundingText(liveWord.length, 0)
-                        ic.commitText(value, 1)
-                        commitSpace()
+                        ic.beginBatchEdit()
+                        try {
+                            ic.finishComposingText()
+                            ic.deleteSurroundingText(liveWord.length, 0)
+                            ic.commitText(value, 1)
+                            commitSpace()
+                        } finally {
+                            ic.endBatchEdit()
+                        }
                     } else {
                         val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
                         if (before.isNotEmpty() && !before.last().isWhitespace()) ic.commitText(" ", 1)
@@ -392,7 +398,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 val removed=PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this,value,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
                 if(removed) {
                     android.widget.Toast.makeText(this,"Removed \"$value\" from learned suggestions",android.widget.Toast.LENGTH_SHORT).show()
-                    refreshPredictionStrip()
+                    schedulePredictionRefresh()
                 } else {
                     android.widget.Toast.makeText(this,"Built-in suggestion — nothing learned to remove",android.widget.Toast.LENGTH_SHORT).show()
                 }
