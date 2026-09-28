@@ -207,6 +207,9 @@ class MainActivity : AppCompatActivity() {
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
     private val aiController by lazy { AiController(applicationContext) }
     private var aiTaskRunning = false
+    /** Tabs currently executing AI work. They stay rendered/resumed but transparent to the user. */
+    private val aiBackgroundTabIds = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+    private val aiRunningTaskIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val mainExecutor = java.util.concurrent.Executor { command -> Handler(Looper.getMainLooper()).post(command) }
     private val unifiedSearchGeneration = AtomicInteger(0)
     private val unifiedSearchLock = Any()
@@ -232,30 +235,183 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runPendingAiTask() {
-        if (aiTaskRunning) return
-        val task = PhormiAiPendingTask.take(applicationContext) ?: return
+        val pending = PhormiAiPendingTask.takeAll(applicationContext)
+        if (pending.isEmpty()) return
+        val available = pending.filter { aiRunningTaskIds.add(it.id) }.take(3)
+        if (available.isEmpty()) return
         aiTaskRunning = true
-        PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_AI, 7101, "Phormi AI working", task.instruction.take(120), Intent(this, MainActivity::class.java), ongoing = true, autoCancel = false)
-        if (task.target.startsWith("http://") || task.target.startsWith("https://")) {
-            createNewTab(task.target)
-        }
-        lifecycleScope.launch {
-            try {
-                aiController.runTask(task.instruction) { status ->
+        PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_AI, 7101, "Phormi AI working", available.joinToString(" • ") { it.instruction.take(55) }, Intent(this, MainActivity::class.java), ongoing = true, autoCancel = false)
+        available.forEach { task ->
+            lifecycleScope.launch {
+                try {
+                    runBrowserAiTask(task)
+                } catch (t: Throwable) {
+                    val status = "Phormi AI task stopped: " + (t.message ?: "unknown error")
                     PhormiAiPendingTask.saveStatus(applicationContext, status)
-                    runOnUiThread { Toast.makeText(this@MainActivity, status, Toast.LENGTH_SHORT).show() }
+                    Toast.makeText(this@MainActivity, status, Toast.LENGTH_LONG).show()
+                } finally {
+                    aiRunningTaskIds.remove(task.id)
+                    if (aiRunningTaskIds.isEmpty()) {
+                        aiTaskRunning = false
+                        PhormiNotificationManager.cancel(this@MainActivity, 7101)
+                    }
                 }
-            } catch (t: Throwable) {
-                val status = "Phormi AI stopped: ${t.message ?: "unknown error"}"
-                PhormiAiPendingTask.saveStatus(applicationContext, status)
-                Toast.makeText(this@MainActivity, status, Toast.LENGTH_LONG).show()
-                PhormiNotificationManager.post(this@MainActivity, PhormiNotificationManager.CHANNEL_AI, 7102, "Phormi AI stopped", status)
-            } finally {
-                PhormiNotificationManager.cancel(this@MainActivity, 7101)
-                aiTaskRunning = false
             }
         }
     }
+
+    private suspend fun runBrowserAiTask(task: PhormiAiPendingTask.Task) {
+        if (!aiController.isActive()) {
+            PhormiAiPendingTask.saveStatus(applicationContext, "AI is inactive.")
+            return
+        }
+        if (tabs.isEmpty()) {
+            PhormiAiPendingTask.saveStatus(applicationContext, "No browser tabs are available.")
+            return
+        }
+        val tabCatalog = readAiTabCatalog()
+        var previous = ""
+        var targetTabId = -1
+        var finished = false
+
+        repeat(30) { step ->
+            if (finished) return@repeat
+            val screen = if (targetTabId > 0) readAiTabScreen(targetTabId) else tabCatalog
+            val action = aiController.planBrowserAction(task.instruction, tabCatalog, screen, previous)
+            if (action == null) {
+                PhormiAiPendingTask.saveStatus(applicationContext, "AI could not produce a browser action.")
+                finished = true
+                return@repeat
+            }
+            val proposedTab = action.optInt("tabId", -1)
+            if (targetTabId <= 0) targetTabId = proposedTab
+            if (proposedTab > 0 && proposedTab != targetTabId) {
+                PhormiAiPendingTask.saveStatus(applicationContext, "AI tried to change browser tabs mid-task.")
+                finished = true
+                return@repeat
+            }
+            if (targetTabId <= 0 || tabs.none { it.id == targetTabId }) {
+                PhormiAiPendingTask.saveStatus(applicationContext, "AI could not identify the correct open tab.")
+                finished = true
+                return@repeat
+            }
+            aiBackgroundTabIds.add(targetTabId)
+            updateAiBackgroundTabVisibility()
+
+            val actionName = action.optString("action").lowercase(Locale.getDefault())
+            if (actionName == "done") {
+                PhormiAiPendingTask.saveStatus(applicationContext, action.optString("summary", "Task completed."))
+                finished = true
+                return@repeat
+            }
+            if (actionName == "stuck") {
+                PhormiAiPendingTask.saveStatus(applicationContext, action.optString("summary", "Task could not continue."))
+                finished = true
+                return@repeat
+            }
+
+            val ok = executeAiBrowserAction(targetTabId, action)
+            previous = "Step " + (step + 1) + ": " + actionName + " (" + (if (ok) "ok" else "failed") + ")"
+            PhormiAiPendingTask.saveStatus(applicationContext, previous)
+            if (!ok) {
+                finished = true
+                return@repeat
+            }
+            kotlinx.coroutines.delay(350)
+        }
+
+        if (!finished) PhormiAiPendingTask.saveStatus(applicationContext, "AI stopped after 30 browser actions.")
+        if (targetTabId > 0) aiBackgroundTabIds.remove(targetTabId)
+        updateAiBackgroundTabVisibility()
+    }
+
+    private suspend fun readAiTabCatalog(): String {
+        val rows = mutableListOf<String>()
+        for (tab in tabs.take(20)) {
+            val snapshot = readAiTabScreen(tab.id)
+            rows += "TAB " + tab.id + " | title=" + tab.title + " | url=" + tab.webView.url.orEmpty() + "\n" + snapshot
+        }
+        return rows.joinToString("\n---\n").take(30000)
+    }
+
+    private suspend fun readAiTabScreen(tabId: Int): String {
+        val tab = tabs.firstOrNull { it.id == tabId } ?: return "TAB_NOT_FOUND"
+        val webView = tab.webView
+        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            runOnUiThread {
+                webView.onResume()
+                webView.evaluateJavascript(
+                    "(function(){return JSON.stringify({title:document.title||'',url:location.href||'',text:(document.body&&document.body.innerText||'').slice(0,12000),controls:Array.from(document.querySelectorAll('input,textarea,button,[role=button],[contenteditable=true]')).slice(0,160).map(function(e){return {tag:e.tagName,text:(e.innerText||e.value||e.getAttribute('aria-label')||e.getAttribute('placeholder')||'').trim().slice(0,160),placeholder:e.getAttribute('placeholder')||'',aria:e.getAttribute('aria-label')||'',editable:!!(e.isContentEditable||e.tagName==='INPUT'||e.tagName==='TEXTAREA')}})})})()"
+                ) { raw ->
+                    val decoded = runCatching { org.json.JSONTokener(raw).nextValue().toString() }.getOrDefault(raw)
+                    if (continuation.isActive) continuation.resume(decoded) {}
+                }
+            }
+        }
+    }
+
+    private suspend fun executeAiBrowserAction(tabId: Int, action: JSONObject): Boolean {
+        val tab = tabs.firstOrNull { it.id == tabId } ?: return false
+        val webView = tab.webView
+        val name = action.optString("action").lowercase(Locale.getDefault())
+        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            runOnUiThread {
+                webView.onResume()
+                val script = when (name) {
+                    "navigate" -> {
+                        val url = action.optString("url").trim()
+                        if (url.isBlank() || !(url.startsWith("http://") || url.startsWith("https://"))) return@runOnUiThread continuation.resume(false) {}
+                        webView.loadUrl(url)
+                        return@runOnUiThread continuation.resume(true) {}
+                    }
+                    "click" -> {
+                        val q = JSONObject.quote(action.optString("text").trim())
+                        "(function(){var q=" + q + ".toLowerCase();var es=[...document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit],label')];var e=es.find(function(x){var s=((x.innerText||x.value||x.getAttribute('aria-label')||x.getAttribute('title')||'')+'').trim().toLowerCase();return s===q||s.includes(q)||(q.includes(s)&&s.length>0)});if(!e)return false;e.click();return true})()"
+                    }
+                    "type" -> {
+                        val text = JSONObject.quote(action.optString("text"))
+                        "(function(){var e=document.activeElement;if(!e||!(e.tagName==='INPUT'||e.tagName==='TEXTAREA'||e.isContentEditable)){e=document.querySelector('textarea,input:not([type=password]):not([type=hidden]),[contenteditable=true]')}if(!e)return false;e.focus();var v=" + text + ";try{var p=Object.getOwnPropertyDescriptor(e.constructor.prototype,'value');if(p&&p.set)p.set.call(e,v);else e.value=v}catch(_){e.value=v}e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()"
+                    }
+                    "press_enter" -> "(function(){var e=document.activeElement;if(!e)return false;e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));e.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return true})()"
+                    "scroll" -> if (action.optString("direction","down").equals("up", true)) "window.scrollBy(0,-700);true" else "window.scrollBy(0,700);true"
+                    "back" -> { webView.goBack(); return@runOnUiThread continuation.resume(true) {} }
+                    else -> return@runOnUiThread continuation.resume(false) {}
+                }
+                webView.evaluateJavascript(script) { raw ->
+                    val ok = raw == "true" || raw == "1"
+                    if (continuation.isActive) continuation.resume(ok) {}
+                }
+            }
+        }
+    }
+
+    private fun updateAiBackgroundTabVisibility() {
+        if (!::webViewContainer.isInitialized) return
+        val visibleActive = activeTabId
+        tabs.forEach { tab ->
+            val bg = tab.id in aiBackgroundTabIds && tab.id != visibleActive
+            if (bg) {
+                tab.webView.visibility = View.VISIBLE
+                tab.webView.alpha = 0f
+                tab.webView.isClickable = false
+                tab.webView.isFocusable = false
+                tab.webView.onResume()
+            } else if (tab.id == visibleActive) {
+                tab.webView.visibility = View.VISIBLE
+                tab.webView.alpha = 1f
+                tab.webView.isClickable = true
+                tab.webView.isFocusable = true
+                tab.webView.onResume()
+            } else {
+                tab.webView.visibility = View.GONE
+                tab.webView.alpha = 1f
+                tab.webView.isClickable = true
+                tab.webView.isFocusable = true
+                tab.webView.onPause()
+            }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         if (::prefs.isInitialized && browserLockManager.isEnabled(prefs) &&
