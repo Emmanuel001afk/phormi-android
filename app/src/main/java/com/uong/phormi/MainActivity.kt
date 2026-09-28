@@ -1465,7 +1465,6 @@ class MainActivity : AppCompatActivity() {
         standaloneWebAppMode = intent?.getBooleanExtra("web_app", false) == true
         if (openUrl.startsWith("http://") || openUrl.startsWith("https://")) createNewTab(openUrl, requestedProfile = profile)
         else intent?.dataString?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { createNewTab(it, requestedProfile = profile) }
-        if (standaloneWebAppMode) applyStandaloneWebAppMode()
     }
 
     private fun setActiveSplitPane(tabId: Int) {
@@ -3634,6 +3633,42 @@ class MainActivity : AppCompatActivity() {
         candidates += "https://www.google.com/s2/favicons?sz=128&domain_url=${URLEncoder.encode(pageUrl, "UTF-8")}"
         return candidates.distinct().asSequence().mapNotNull(::loadBitmap).firstOrNull()
     }
+
+    private fun fetchWebManifest(pageUrl: String, manifestHref: String): JSONObject? {
+        val candidates = mutableListOf<String>()
+        if (manifestHref.isNotBlank()) {
+            candidates += runCatching { URL(URL(pageUrl), manifestHref).toString() }.getOrDefault(manifestHref)
+        }
+        val base = URL(pageUrl)
+        candidates += URL(base, "/manifest.json").toString()
+        candidates += URL(base, "/site.webmanifest").toString()
+        return candidates.distinct().asSequence().mapNotNull { url ->
+            runCatching {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    instanceFollowRedirects = true
+                    requestMethod = "GET"
+                    setRequestProperty("Accept", "application/manifest+json,application/json,*/*")
+                    setRequestProperty("User-Agent", WebSettings.getDefaultUserAgent(this@MainActivity))
+                }
+                val body = connection.inputStream.bufferedReader().use { it.readText().take(1_000_000) }
+                    .also { connection.disconnect() }
+                JSONObject(body)
+            }.getOrNull()
+        }.firstOrNull()
+    }
+
+    private fun fetchBitmap(iconUrl: String): Bitmap? = runCatching {
+        val connection = (URL(iconUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 5000
+            readTimeout = 5000
+            instanceFollowRedirects = true
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", WebSettings.getDefaultUserAgent(this@MainActivity))
+        }
+        connection.inputStream.use { BitmapFactory.decodeStream(it) }.also { connection.disconnect() }
+    }.getOrNull()
 
     private fun toggleDesktopMode() {
         val view = activeWebView() ?: return
