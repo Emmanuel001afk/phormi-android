@@ -199,7 +199,7 @@ object PhormiDownloadEngine {
                 } else {
                     if (uri.path?.let { java.io.File(it).delete() } == true) 1 else 0
                 }
-                if (removed <= 0 && uri.scheme == "content") {
+                if (removed <= 0 && uri.scheme == "content" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     uri.path?.let { path ->
                         val idPart = path.substringAfterLast('/').toLongOrNull()
                         if (idPart != null) {
