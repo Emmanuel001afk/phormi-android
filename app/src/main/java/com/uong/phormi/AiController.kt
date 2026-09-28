@@ -318,6 +318,38 @@ class AiController(private val context: Context) {
         val prompt = "Analyze this browser video using only the supplied metadata and sampled frames. State visible evidence and uncertainty.\nMetadata:\n${metadata.toString(2)}"
         callTextProvider(provider, "You analyze browser video evidence without inventing unseen audio or content.", prompt)
     }
+    suspend fun planBrowserAction(instruction: String, tabs: String, screen: String, previousSteps: String): JSONObject? = withContext(Dispatchers.IO) {
+        val prompt = "You are the Phormi browser action planner. Return ONLY one JSON object. " +
+            "Understand natural language and existing site names. 'search on life' means search inside the existing Life tab/service, not a generic search for the word life. " +
+            "If asked to tell ChatGPT something about GitHub, use the already-open ChatGPT tab and leave the user's visible tab alone. " +
+            "Allowed actions: navigate(url), click(text), type(text), press_enter, scroll(direction), back, done(summary), stuck(summary). " +
+            "Every action must include a valid tabId from the tab list. Never use a different tab just because it is active. Never request passwords, PINs, OTPs, CVVs or secrets. " +
+            "Goal: " + instruction + "\nTabs: " + tabs + "\nCurrent screen: " + screen + "\nPrevious steps: " + previousSteps
+
+        fun parse(raw: String): JSONObject? {
+            val a = raw.indexOf('{')
+            val b = raw.lastIndexOf('}')
+            return if (a >= 0 && b > a) runCatching { JSONObject(raw.substring(a, b + 1)) }.getOrNull() else null
+        }
+
+        if (isCentralHubActive()) return@withContext callCentralHub(prompt)?.let(::parse)
+
+        for (stored in listProviders()) {
+            if (stored.apiKey.isBlank() || stored.endpoint.isBlank()) continue
+            try {
+                val provider = if (stored.model.isBlank() || stored.model.equals("auto", true)) {
+                    val cfg = resolveProviderConfig(stored.name, stored.apiKey, stored.endpoint, stored.model)
+                    stored.copy(endpoint = cfg.endpoint, model = cfg.model)
+                } else stored
+                callTextProvider(provider, "Plan safe browser actions and return ONLY JSON.", prompt)
+                    ?.let(::parse)?.let { return@withContext it }
+            } catch (e: Exception) {
+                Log.w(TAG, stored.name + " browser planner failed: " + e.message)
+            }
+        }
+        null
+    }
+
     suspend fun runTask(instruction: String, onStatus: (String) -> Unit) {
         if (!isActive()) { onStatus("AI is inactive. Enable Central Hub or save an external AI provider first."); return }
         val service = PhormiAccessibilityService.instance
