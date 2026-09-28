@@ -74,18 +74,29 @@ class AiActivity : AppCompatActivity() {
         }
         centralHub.setOnCheckedChangeListener { _, checked ->
             if (checked) {
-                if (!controller.hasCentralHubTunnel()) {
-                    centralHub.isChecked = false
-                    status.text = "Connect Central Hub AI first."
-                    return@setOnCheckedChangeListener
+                centralHub.isEnabled = false
+                status.text = "Connecting to Central Hub AI…"
+                lifecycleScope.launch {
+                    try {
+                        val answer = controller.connectCentralHub()
+                        controller.setActive(false)
+                        active.isChecked = false
+                        centralHub.isChecked = true
+                        refresh()
+                        status.text = "Central Hub AI connected: " + answer.take(80)
+                    } catch (t: Throwable) {
+                        controller.setCentralHubActive(false)
+                        centralHub.isChecked = false
+                        refresh()
+                        status.text = "Central Hub AI connection failed: " + (t.message ?: "unknown error")
+                    } finally {
+                        centralHub.isEnabled = true
+                    }
                 }
-                controller.setCentralHubActive(true)
-                controller.setActive(false)
-                active.isChecked = false
             } else {
                 controller.setCentralHubActive(false)
+                refresh()
             }
-            refresh()
         }
         findViewById<Button>(R.id.btn_ai_memory_retention).setOnClickListener { showMemoryRetentionChooser() }
         findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
