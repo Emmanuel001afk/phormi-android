@@ -185,10 +185,54 @@ object PhormiDownloadEngine {
 
     fun delete(context: Context, id: String) {
         val existing = record(context, id)
-        existing?.localUri?.let { uri ->
-            runCatching { context.contentResolver.delete(Uri.parse(uri), null, null) }
-                .onFailure { runCatching { Uri.parse(uri).path?.let { java.io.File(it).delete() } } }
+        val localUri = existing?.localUri?.takeIf { it.isNotBlank() }
+
+        // Delete the actual MediaStore/file entry first. Do not treat a zero-row delete
+        // as success: the visible row must not disappear while the physical file remains.
+        localUri?.let { uriString ->
+            runCatching {
+                val uri = Uri.parse(uriString)
+                val removed = if (uri.scheme == "content") {
+                    context.contentResolver.delete(uri, null, null)
+                } else {
+                    if (uri.path?.let { java.io.File(it).delete() } == true) 1 else 0
+                }
+                if (removed <= 0 && uri.scheme == "content") {
+                    uri.path?.let { path ->
+                        val idPart = path.substringAfterLast('/').toLongOrNull()
+                        if (idPart != null) {
+                            runCatching {
+                                context.contentResolver.delete(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    MediaStore.Downloads._ID + " = ?",
+                                    arrayOf(idPart.toString())
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        // Older Phormi builds used Android DownloadManager. If the same local URI is still
+        // registered there, remove that record too; otherwise it gets re-imported on refresh.
+        runCatching {
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            manager.query(android.app.DownloadManager.Query()).use { cursor ->
+                val idCol = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_ID)
+                val uriCol = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_LOCAL_URI)
+                if (idCol >= 0) {
+                    while (cursor.moveToNext()) {
+                        val legacyId = cursor.getLong(idCol)
+                        val legacyUri = if (uriCol >= 0) cursor.getString(uriCol) else null
+                        if (!localUri.isNullOrBlank() && legacyUri == localUri) {
+                            manager.remove(legacyId)
+                        }
+                    }
+                }
+            }
+        }
+
         remove(context, id)
     }
 
