@@ -185,6 +185,7 @@ object PhormiDownloadEngine {
         start(context, ACTION_CANCEL, id)
     }
 
+    @android.annotation.SuppressLint("NewApi")
     fun delete(context: Context, id: String) {
         val existing = record(context, id)
         val localUri = existing?.localUri?.takeIf { it.isNotBlank() }
