@@ -59,6 +59,7 @@ class AiController(private val context: Context) {
         .writeTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
     private val history = mutableListOf<HistoryEntry>()
+    @Volatile private var lastCentralHubError: String? = null
 
     fun inferProviderConfig(name: String, endpoint: String = "", model: String = ""): ProviderConfig {
         val n = name.trim().lowercase()
@@ -196,7 +197,7 @@ class AiController(private val context: Context) {
     }
     fun centralHubStatus(): String =
         if (hasCentralHubTunnel()) "Central Hub AI tunnel: connected"
-        else "Central Hub AI tunnel: not connected"
+        else "Central Hub AI tunnel: not connected" + (lastCentralHubError?.let { " — $it" } ?: "")
 
     private fun tunnelDeviceId(): String {
         val existing = prefs.getString(KEY_HUB_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
@@ -215,6 +216,7 @@ class AiController(private val context: Context) {
             .put("deviceLabel", "Phormi Android")
             .toString()
             .toRequestBody("application/json".toMediaType())
+        lastCentralHubError = null
         return runCatching {
             val request = Request.Builder()
                 .url(CENTRAL_HUB_TUNNEL_URL)
@@ -223,19 +225,30 @@ class AiController(private val context: Context) {
                 .post(body)
                 .build()
             client.newCall(request).execute().use { response ->
-                val json = JSONObject(response.body?.string().orEmpty())
-                if (!response.isSuccessful || !json.optBoolean("ok", false)) return@use false
+                val raw = response.body?.string().orEmpty()
+                val json = runCatching { JSONObject(raw) }.getOrNull()
+                if (!response.isSuccessful || json?.optBoolean("ok", false) != true) {
+                    val detail = json?.optString("error").orEmpty().ifBlank {
+                        raw.replace(Regex("\\s+"), " ").take(220)
+                    }
+                    lastCentralHubError = "HTTP ${response.code}" + if (detail.isNotBlank()) ": $detail" else ""
+                    return@use false
+                }
                 val token = json.optString("token").trim()
-                if (token.isBlank()) return@use false
+                if (token.isBlank()) {
+                    lastCentralHubError = "Server returned no tunnel session token"
+                    return@use false
+                }
                 PhormiHubStore.put(context, token)
                 true
             }
+        }.onFailure {
+            lastCentralHubError = it.message?.take(220) ?: "network request failed"
         }.getOrDefault(false)
     }
-
     suspend fun connectCentralHub(): String = withContext(Dispatchers.IO) {
         if (!registerCentralHubTunnel() && !hasCentralHubTunnel()) {
-            throw IOException("Central Hub AI tunnel could not be connected")
+            throw IOException(lastCentralHubError ?: "Central Hub AI tunnel could not be connected")
         }
         val answer = callCentralHub("Connection test: reply with OK only.")
             ?: throw IOException("Central Hub AI tunnel did not respond")
