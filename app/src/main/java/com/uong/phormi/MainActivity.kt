@@ -2964,7 +2964,11 @@ class MainActivity : AppCompatActivity() {
                 if (view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                     updateStartPageVisibility()
-                    if (!url.isNullOrBlank() && url != "about:blank") {
+                    // Do not let an old/current page completion overwrite text while
+                    // the user is actively editing the unified URL/search field. WebView can
+                    // finish a previous navigation after the user has already started typing;
+                    // replacing the field here made it look as if Phormi jumped back to an old tab.
+                    if (!urlBar.hasFocus() && !url.isNullOrBlank() && url != "about:blank") {
                         urlBar.setText(url)
                     }
                     updateNavButtons()
