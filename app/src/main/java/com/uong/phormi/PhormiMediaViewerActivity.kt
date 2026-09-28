@@ -194,6 +194,44 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         }
 
     private fun configurePlayer(uri: Uri, mime: String) {
+        // Downloads stored through MediaStore are content:// URIs. ExoPlayer can normally
+        // read them directly, but a provider can expose a descriptor that is not seekable
+        // or whose lifetime changes when the Downloads screen/activity is replaced. That
+        // was the source of the black/blank player path. Materialize the completed local
+        // download into Phormi's private cache first, then give Media3 a stable local file.
+        if (uri.scheme == "content") {
+            Toast.makeText(this, "Preparing media…", Toast.LENGTH_SHORT).show()
+            Thread {
+                val cached = runCatching {
+                    val name = PhormiFileOpener.displayName(this, uri, "media")
+                    val safeExt = name.substringAfterLast('.', "bin").replace(Regex("[^A-Za-z0-9]"), "").take(12)
+                    val suffix = if (safeExt.isBlank()) ".bin" else ".$safeExt"
+                    val target = File.createTempFile("phormi_play_", suffix, cacheDir)
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw IllegalStateException("Downloaded media could not be read")
+                    target
+                }.getOrNull()
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) {
+                        cached?.delete()
+                        return@runOnUiThread
+                    }
+                    if (cached != null) {
+                        configurePlayerFromUri(Uri.fromFile(cached), mime, uri)
+                    } else {
+                        // Keep one direct-URI attempt as a compatibility fallback for
+                        // providers that intentionally disallow copying but support playback.
+                        configurePlayerFromUri(uri, mime, uri)
+                    }
+                }
+            }.start()
+            return
+        }
+        configurePlayerFromUri(uri, mime, uri)
+    }
+
+    private fun configurePlayerFromUri(playUri: Uri, mime: String, originalUri: Uri) {
         val exo = ExoPlayer.Builder(this).build()
         player = exo
         playerView.player = exo
@@ -207,7 +245,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             true
         )
         exo.setHandleAudioBecomingNoisy(true)
-        val item = MediaItem.Builder().setUri(uri).apply {
+        val item = MediaItem.Builder().setUri(playUri).apply {
             if (mime.isNotBlank() && mime != "application/octet-stream") setMimeType(mime)
         }.build()
         exo.addListener(object : androidx.media3.common.Player.Listener {
@@ -221,7 +259,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 updatePictureInPictureParams()
             }
             override fun onPlayerError(error: PlaybackException) {
-                retryFromAccessibleCopy(uri, mime, error)
+                retryFromAccessibleCopy(originalUri, mime, error)
             }
         })
         exo.setMediaItem(item)
