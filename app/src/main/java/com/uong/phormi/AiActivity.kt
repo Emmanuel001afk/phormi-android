@@ -19,7 +19,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.util.Locale
-import java.util.UUID
 
 /** Phormi browser AI: configurable HTTPS providers with foreground-browser execution. */
 class AiActivity : AppCompatActivity() {
@@ -93,35 +92,29 @@ class AiActivity : AppCompatActivity() {
             refresh()
         }
         centralHub.setOnCheckedChangeListener { _, checked ->
-            if (checked && !controller.hasCentralHubKey()) {
-                centralHub.isChecked = false
-                status.text = "Save a Central Hub key first."
-                return@setOnCheckedChangeListener
-            }
-            controller.setCentralHubActive(checked)
-            if (checked) { controller.setActive(false); active.isChecked = false }
-            refresh()
-        }
-        findViewById<Button>(R.id.btn_save_hub).setOnClickListener {
-            val keyField = findViewById<EditText>(R.id.input_hub_key)
-            val key = keyField.text.toString().trim()
-            if (key.isBlank()) { status.text = "Paste the Central Hub key first."; return@setOnClickListener }
-            val button = findViewById<Button>(R.id.btn_save_hub)
-            button.isEnabled = false
-            status.text = "Testing Central Hub AI connection…"
-            lifecycleScope.launch {
-                try {
-                    val answer = controller.testCentralHub(key)
-                    controller.saveCentralHubKey(key)
-                    controller.setCentralHubActive(true)
-                    centralHub.isChecked = true
-                    active.isChecked = false
-                    keyField.text.clear()
-                    refresh()
-                    status.text = "Central Hub connected: " + answer.take(80)
-                } catch (t: Throwable) {
-                    status.text = "Central Hub connection failed: " + (t.message ?: "unknown error")
-                } finally { button.isEnabled = true }
+            if (checked) {
+                controller.setCentralHubActive(false)
+                active.isChecked = false
+                centralHub.isEnabled = false
+                status.text = "Connecting to Central Hub AI…"
+                lifecycleScope.launch {
+                    try {
+                        val answer = controller.connectCentralHub()
+                        centralHub.isChecked = true
+                        active.isChecked = false
+                        status.text = "Central Hub connected: " + answer.take(80)
+                        refresh()
+                    } catch (t: Throwable) {
+                        controller.setCentralHubActive(false)
+                        centralHub.isChecked = false
+                        status.text = "Central Hub connection failed: " + (t.message ?: "unknown error")
+                    } finally {
+                        centralHub.isEnabled = true
+                    }
+                }
+            } else {
+                controller.setCentralHubActive(false)
+                refresh()
             }
         }
         findViewById<Button>(R.id.btn_ai_memory_retention).setOnClickListener { showMemoryRetentionChooser() }
