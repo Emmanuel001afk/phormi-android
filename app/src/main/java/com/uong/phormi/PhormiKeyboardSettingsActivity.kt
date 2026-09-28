@@ -69,10 +69,10 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         val themeRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
         themes.forEachIndexed{index,name->themeRow.addView(Button(this).apply{text=name;isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity,index);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"$name appearance saved")}},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(2),0,dp(2),0)})}
         content.addView(themeRow)
-        content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})})
+        content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
         content.addView(Button(this).apply{text="Choose keyboard wallpaper";isAllCaps=false;setOnClickListener{wallpaperPicker.launch(arrayOf("image/*"))}})
         content.addView(Button(this).apply{text="Remove keyboard wallpaper";isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setWallpaperUri(this@PhormiKeyboardSettingsActivity,null);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard wallpaper removed")}})
-        content.addView(TextView(this).apply{text="Wallpaper is selected from your device and kept as a persistent document URI so the keyboard can reuse it after restart.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))}
+        content.addView(TextView(this).apply{text="Wallpaper is selected from your device and kept as a persistent document URI so the keyboard can reuse it after restart.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
 
         content.addView(sectionTitle("Keyboard behavior"))
         option(content,"Suggestions","Show word suggestions when the editor does not provide its own completions.",PhormiKeyboardPreferences.suggestions(this),PhormiKeyboardPreferences.KEY_SUGGESTIONS)
