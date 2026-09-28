@@ -90,75 +90,31 @@ object PhormiKeyboardEmoji {
         val tokens = name.split(Regex("[^A-Z0-9]+")).filter { it.isNotBlank() }.toSet()
         fun has(vararg values: String): Boolean = values.any { it in tokens }
 
-        if (first in 0x1F600..0x1F64F ||
-            has("FACE","EMOTION","SMILING","GRINNING","KISSING","CRYING","ANGRY",
-                "HEART","LOVE","ROMANCE","SWEAT","TEAR","LAUGH","EXPRESSION")) return "😀"
+        if (first in 0x1F600..0x1F64F || has("FACE","EMOTION","SMILING","GRINNING","KISSING","CRYING","ANGRY","LAUGH","EXPRESSION")) return "😀"
+        if (has("HEART","LOVE","ROMANCE","BROKEN_HEART","SPARKLING_HEART","TWO_HEARTS","HEART_DECORATION")) return "❤️"
+        if (has("PERSON","PEOPLE","MAN","WOMAN","BOY","GIRL","BABY","HAND","ARM","LEG","BODY","SKIN","FINGER","FOOT","EAR","EYE","MOUTH","NOSE","HAIR","FAMILY","COUPLE","HUMAN")) return "👤"
 
-        if (has("PERSON","PEOPLE","MAN","WOMAN","BOY","GIRL","BABY","HAND","ARM",
-                "LEG","BODY","SKIN","FINGER","FOOT","EAR","EYE","MOUTH","NOSE",
-                "HAIR","FAMILY","COUPLE","HUMAN")) return "👤"
+        // Keep flower names separate from the broader plant group, matching Unicode/CLDR's
+        // plant-flower vs plant-other subgroups instead of lumping all nature together.
+        if (has("FLOWER","ROSE","TULIP","SUNFLOWER","BLOSSOM","HIBISCUS","CHERRY_BLOSSOM","LOTUS","BOUQUET","DAISY","FLOWERS")) return "🌸"
+        if (has("TREE","LEAF","HERB","SEEDLING","CACTUS","PLANT","MUSHROOM","POTTED","ROOT","SHAMROCK","PALM","EVERGREEN","DECIDUOUS","SPROUT","SEED","FERN")) return "🌿"
+        if (has("CAT","DOG","MOUSE","RABBIT","FOX","BEAR","MONKEY","BIRD","FISH","BUG","INSECT","WOLF","LION","HORSE","TIGER","ELEPHANT","PANDA","PIG","COW","CHICKEN","SNAKE","TURTLE","DOLPHIN","WHALE","ANIMAL","BAT","OTTER","FROG","OCTOPUS","BUTTERFLY")) return "🐾"
+        if (has("MOON","SUN","STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH","WEATHER","VOLCANO","TORNADO","WIND","RAINBOW","LIGHTNING","COMET")) return "☀️"
 
-        // Flowers, plants, animals, weather and natural phenomena are one
-        // Unicode top-level family: Animals & Nature.
-        if (has("FLOWER","ROSE","TULIP","SUNFLOWER","BLOSSOM","BOUQUET","HIBISCUS",
-                "CHERRY","TREE","LEAF","HERB","SEEDLING","CACTUS","PLANT","MUSHROOM",
-                "POTTED","ROOT","SHAMROCK","FOUR_LEAF","PALM","EVERGREEN","DECIDUOUS",
-                "SPROUT","CAT","DOG","MOUSE","RABBIT","FOX","BEAR","MONKEY","BIRD","FISH",
-                "BUG","INSECT","WOLF","LION","HORSE","TIGER","ELEPHANT","PANDA","PIG",
-                "COW","CHICKEN","SNAKE","TURTLE","DOLPHIN","WHALE","ANIMAL","MOON","SUN",
-                "STAR","RAIN","CLOUD","SNOW","FIRE","WATER","EARTH","WEATHER","NATURE",
-                "VOLCANO","TORNADO","WIND","RAINBOW")) return "🐾"
-
-        if (has("FRUIT","APPLE","BANANA","GRAPES","STRAWBERRY","WATERMELON","PINEAPPLE",
-                "MANGO","LEMON","PEACH","PEAR","CHERRY","KIWI","MELON","BLUEBERRY",
-                "FOOD","DRINK","MEAL","CAKE","COOKIE","CANDY","CHOCOLATE","BREAD",
-                "CHEESE","PIZZA","BURGER","COFFEE","TEA","BEER","WINE","SUSHI","DESSERT",
-                "HOTDOG","POPCORN","RAMEN")) return "🍔"
-
-        if (has("CAR","TAXI","BUS","TRAIN","AIRPLANE","SHIP","BOAT","BICYCLE",
-                "MOTORCYCLE","ROAD","BUILDING","HOUSE","CASTLE","MOUNTAIN","MAP",
-                "GLOBE","TRAVEL","STATION","HOTEL","BRIDGE","ROCKET")) return "🚗"
-
-        if (has("SPORT","BALL","GAME","MEDAL","TROPHY","MUSIC","PARTY","RACING","SKI",
-                "SWIM","DANCE","MICROPHONE","GUITAR","DRUM","THEATER","ART","CRAFT")) return "⚽"
-
-        if (has("PHONE","COMPUTER","KEYBOARD","LIGHT","BOOK","PAPER","MONEY","LOCK",
-                "KEY","CLOCK","CAMERA","BELL","GIFT","SCISSORS","PENCIL","MEMO","FOLDER",
-                "LINK","MAGNIFY","TRASH","TOOL","BOTTLE","OBJECT","BATTERY","WATCH",
-                "TELEVISION","HEADPHONE","PRINTER")) return "💻"
-
-        if (has("ARROW","CHECK","CROSS","PLUS","MINUS","DIVISION","EQUAL","CURRENCY",
-                "ZODIAC","SYMBOL","EXCLAMATION","QUESTION","RECYCLE","INFINITY",
-                "WARNING","PROHIBITED") || first in 0x2000..0x2BFF) return "🔣"
-
+        if (has("FRUIT","APPLE","BANANA","GRAPES","STRAWBERRY","WATERMELON","PINEAPPLE","MANGO","LEMON","PEACH","PEAR","CHERRY","KIWI","MELON","BLUEBERRY","FOOD","MEAL","CAKE","COOKIE","CANDY","CHOCOLATE","BREAD","CHEESE","PIZZA","BURGER","COFFEE","TEA","BEER","WINE","SUSHI","DESSERT","HOTDOG","POPCORN","RAMEN","DRINK","PLATE","BOWL")) return "🍔"
+        if (has("CAR","TAXI","BUS","TRAIN","AIRPLANE","SHIP","BOAT","BICYCLE","MOTORCYCLE","ROAD","BUILDING","HOUSE","CASTLE","MOUNTAIN","MAP","GLOBE","TRAVEL","STATION","HOTEL","BRIDGE","ROCKET","SIGN","LOCATIONS")) return "🚗"
+        if (has("SPORT","BALL","GAME","MEDAL","TROPHY","MUSIC","PARTY","RACING","SKI","SWIM","DANCE","MICROPHONE","GUITAR","DRUM","THEATER","ART","CRAFT")) return "⚽"
+        if (has("PHONE","COMPUTER","KEYBOARD","LIGHT","BOOK","PAPER","MONEY","LOCK","KEY","CLOCK","CAMERA","BELL","GIFT","SCISSORS","PENCIL","MEMO","FOLDER","LINK","MAGNIFY","TRASH","TOOL","BOTTLE","BATTERY","WATCH","TELEVISION","HEADPHONE","PRINTER","OBJECT")) return "💻"
+        if (has("ARROW","CHECK","CROSS","PLUS","MINUS","DIVISION","EQUAL","CURRENCY","ZODIAC","SYMBOL","EXCLAMATION","QUESTION","RECYCLE","INFINITY","WARNING","PROHIBITED") || first in 0x2000..0x2BFF) return "🔣"
         return "🔣"
     }
+
     val categories: LinkedHashMap<String, List<String>> by lazy {
+        val order = listOf("😀","❤️","👤","🌸","🌿","🐾","☀️","🍔","🚗","⚽","💻","🔣","🏳️")
         val grouped = linkedMapOf<String, MutableList<String>>()
-        listOf("😀","👤","🐾","🍔","🚗","⚽","💻","🔣","🏳️").forEach { grouped[it] = mutableListOf() }
+        order.forEach { grouped[it] = mutableListOf() }
         all.forEach { emoji -> grouped[classify(emoji)]?.add(emoji) }
-        linkedMapOf<String, List<String>>().apply {
-            put("😀", grouped["😀"].orEmpty())
-            put("👤", grouped["👤"].orEmpty())
-            put("🐾", grouped["🐾"].orEmpty())
-            put("🍔", grouped["🍔"].orEmpty())
-            put("🚗", grouped["🚗"].orEmpty())
-            put("⚽", grouped["⚽"].orEmpty())
-            put("💻", grouped["💻"].orEmpty())
-            put("🔣", grouped["🔣"].orEmpty())
-            put("🏳️", grouped["🏳️"].orEmpty())
-
-
-
-
-
-
-
-
-
-
-
-        }
+        LinkedHashMap<String, List<String>>().apply { order.forEach { put(it, grouped[it].orEmpty()) } }
     }
 
 }
