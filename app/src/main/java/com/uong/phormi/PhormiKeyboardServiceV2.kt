@@ -353,7 +353,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         root.addView(row,LinearLayout.LayoutParams(-1,scaled(30)))
         refreshPredictionStrip()
     }
-    private private fun schedulePredictionRefresh() {
+    private fun schedulePredictionRefresh() {
         predictionRefreshRunnable?.let { repeatHandler.removeCallbacks(it) }
         val task = Runnable { refreshPredictionStrip() }
         predictionRefreshRunnable = task
