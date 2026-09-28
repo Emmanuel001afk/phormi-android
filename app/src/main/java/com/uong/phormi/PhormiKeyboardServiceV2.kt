@@ -140,15 +140,32 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             .coerceIn(dp(220), available)
 
         val floating = PhormiKeyboardPreferences.floating(this)
+        val resizeMode = keyboardResizeMode
         val attrs = window.attributes
+        // A floating/resizeable keyboard must not participate in the app's IME inset.
+        // Otherwise Android moves/resizes the page underneath it, which is unlike a
+        // floating Gboard window and makes dragging/resizing feel attached to the page.
+        window.setSoftInputMode(
+            if (floating || resizeMode) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        )
+        // Disable the IME window transition animation so dismissing it does not briefly
+        // flash a miniature/preview copy before the window disappears.
+        runCatching { window.setWindowAnimations(0) }
         if (floating) {
-            // Floating mode is a real independent window: its top-left position is
-            // controlled by the drag offsets and is not re-anchored to the IME bottom.
             attrs.gravity = Gravity.TOP or Gravity.START
             attrs.x = ((PhormiKeyboardPreferences.offsetX(this) + 0.9f) / 1.8f * (screenW - width))
                 .roundToInt().coerceIn(0, (screenW - width).coerceAtLeast(0))
             attrs.y = ((PhormiKeyboardPreferences.offsetY(this) + 0.9f) / 1.8f * (screenH - height))
                 .roundToInt().coerceIn(0, (screenH - height).coerceAtLeast(0))
+        } else if (resizeMode) {
+            // During resize, use a top-left positioned window while retaining the
+            // centered starting position (offsetX=0). This lets an edge stay anchored
+            // while only the dragged edge changes size.
+            attrs.gravity = Gravity.BOTTOM or Gravity.START
+            attrs.x = ((PhormiKeyboardPreferences.offsetX(this) + 0.9f) / 1.8f * (screenW - width))
+                .roundToInt().coerceIn(0, (screenW - width).coerceAtLeast(0))
+            attrs.y = 0
         } else {
             attrs.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             attrs.x = 0
