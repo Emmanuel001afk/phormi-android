@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.util.Locale
+import java.util.UUID
 
 /** Phormi browser AI: configurable HTTPS providers with foreground-browser execution. */
 class AiActivity : AppCompatActivity() {
