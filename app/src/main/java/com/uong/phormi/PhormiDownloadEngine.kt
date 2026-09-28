@@ -57,7 +57,9 @@ object PhormiDownloadEngine {
         val total: Long,
         val localUri: String?,
         val error: String?,
-        val createdAt: Long
+        val createdAt: Long,
+        val etag: String? = null,
+        val lastModified: String? = null
     )
 
     data class Record(
@@ -292,7 +294,9 @@ object PhormiDownloadEngine {
                 total = o.optLong("total", -1L),
                 localUri = o.optString("localUri").takeIf { it.isNotBlank() },
                 error = o.optString("error").takeIf { it.isNotBlank() },
-                createdAt = o.optLong("createdAt", 0L)
+                createdAt = o.optLong("createdAt", 0L),
+                etag = o.optString("etag").takeIf { it.isNotBlank() },
+                lastModified = o.optString("lastModified").takeIf { it.isNotBlank() }
             )
         }
         out.filter { it.id.isNotBlank() }
@@ -326,7 +330,9 @@ object PhormiDownloadEngine {
                 .put("total", r.total)
                 .put("localUri", r.localUri ?: "")
                 .put("error", r.error ?: "")
-                .put("createdAt", r.createdAt))
+                .put("createdAt", r.createdAt)
+                .put("etag", r.etag ?: "")
+                .put("lastModified", r.lastModified ?: ""))
         }
         prefs(context).edit().putString(KEY_ITEMS, array.toString()).apply()
     }
@@ -345,6 +351,15 @@ object PhormiDownloadEngine {
         val current = record(context, id) ?: return
         save(context, current.copy(localUri = uri, total = total))
     }
+    internal fun updateValidators(context: Context, id: String, etag: String?, lastModified: String?) {
+        val current = record(context, id) ?: return
+        if (etag.isNullOrBlank() && lastModified.isNullOrBlank()) return
+        save(context, current.copy(
+            etag = etag?.takeIf { it.isNotBlank() } ?: current.etag,
+            lastModified = lastModified?.takeIf { it.isNotBlank() } ?: current.lastModified
+        ))
+    }
+
 
     /** Register a download completed by a browser-native source such as blob: or data:.
      * These sources cannot be fetched by OkHttp, but they must still appear in the same
@@ -566,7 +581,11 @@ class PhormiDownloadService : Service() {
         requestBuilder.header("Accept", "*/*")
         requestBuilder.header("Accept-Language", java.util.Locale.getDefault().toLanguageTag() + ",en;q=0.8")
         requestBuilder.header("Accept-Encoding", "identity")
-        if (existing > 0L) requestBuilder.header("Range", "bytes=$existing-")
+        if (existing > 0L) {
+            requestBuilder.header("Range", "bytes=$existing-")
+            record.etag?.takeIf { it.isNotBlank() }?.let { requestBuilder.header("If-Range", it) }
+                ?: record.lastModified?.takeIf { it.isNotBlank() }?.let { requestBuilder.header("If-Range", it) }
+        }
 
         val call = httpClient.newCall(requestBuilder.build())
         activeCalls[record.id] = call
@@ -581,13 +600,34 @@ class PhormiDownloadService : Service() {
                 }
                 if (!response.isSuccessful) throw HttpFailure(code)
                 val body = response.body ?: throw IOException("Server returned an empty download")
-                val append = existing > 0L && code == 206
+                val contentRange = response.header("Content-Range")
+                val rangeStart = contentRange
+                    ?.substringAfter("bytes ", "")
+                    ?.substringBefore("-")
+                    ?.toLongOrNull()
+                val append = existing > 0L && code == 206 && rangeStart == existing
+
+                // Never append a response whose byte range cannot be proven to continue
+                // the existing partial file.
+                if (existing > 0L && code == 206 && !append) {
+                    PhormiDownloadEngine.updateProgress(this, record.id, 0L, -1L)
+                    return performRequest(record.copy(downloaded = 0L))
+                }
+
                 val bodyLength = body.contentLength()
                 val total = when {
+                    append && contentRange?.substringAfter("/")?.toLongOrNull() != null ->
+                        contentRange.substringAfter("/").toLong()
                     code == 206 && bodyLength >= 0L -> existing + bodyLength
                     bodyLength >= 0L -> bodyLength
                     else -> record.total
                 }
+                PhormiDownloadEngine.updateValidators(
+                    this,
+                    record.id,
+                    response.header("ETag"),
+                    response.header("Last-Modified")
+                )
                 val actualStart = if (append) existing else 0L
                 if (!append && existing > 0L) {
                     PhormiDownloadEngine.updateProgress(this, record.id, 0L, total)
