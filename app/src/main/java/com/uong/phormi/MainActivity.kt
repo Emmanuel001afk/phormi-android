@@ -3581,7 +3581,7 @@ class MainActivity : AppCompatActivity() {
                         .setShortLabel(name.take(25))
                         .setLongLabel("Open $name in Phormi")
                         .setActivity(ComponentName(this, MainActivity::class.java))
-                        .setIcon(icon?.let { Icon.createWithAdaptiveBitmap(it) }
+                        .setIcon(icon?.let { Icon.createWithBitmap(it) }
                             ?: Icon.createWithResource(this, R.mipmap.ic_launcher))
                         .setIntent(intent)
                         .build()
