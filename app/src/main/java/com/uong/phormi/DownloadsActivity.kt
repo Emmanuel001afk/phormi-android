@@ -42,7 +42,7 @@ class DownloadsActivity : AppCompatActivity() {
         override fun run() {
             if (!isFinishing && !isDestroyed) {
                 loadDownloads()
-                handler.postDelayed(this, 500L)
+                handler.postDelayed(this, 1000L)
             }
         }
     }
