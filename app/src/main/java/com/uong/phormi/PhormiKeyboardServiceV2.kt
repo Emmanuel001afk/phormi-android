@@ -120,7 +120,19 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     override fun onFinishInput() { stopRepeat(); editorInfo = null; super.onFinishInput() }
     override fun onUnbindInput() { stopRepeat(); editorInfo = null; super.onUnbindInput() }
-    override fun onFinishInputView(finishingInput: Boolean) { stopRepeat(); super.onFinishInputView(finishingInput) }
+    override fun onFinishInputView(finishingInput: Boolean) {
+        stopRepeat()
+        // Do not rebuild/reposition the input view during dismissal. Rebuilding
+        // here can produce a brief duplicate/miniature keyboard flash.
+        runCatching { getWindow().window?.setWindowAnimations(0) }
+        super.onFinishInputView(finishingInput)
+    }
+
+    override fun onWindowHidden() {
+        stopRepeat()
+        runCatching { getWindow().window?.setWindowAnimations(0) }
+        super.onWindowHidden()
+    }
     override fun onEvaluateFullscreenMode(): Boolean = false
     override fun onCreateInputView(): View = render().also { applyKeyboardWindowSize() }
 
@@ -152,13 +164,21 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         )
         // Disable the IME window transition animation so dismissing it does not briefly
         // flash a miniature/preview copy before the window disappears.
-        runCatching { window.setWindowAnimations(0) }
+        runCatching {
+            window.setWindowAnimations(0)
+            window.decorView.animate().cancel()
+        }
         if (floating) {
+            // Floating IME: keep the initial keyboard near the bottom while
+            // preserving independent X/Y movement after the user drags it.
             attrs.gravity = Gravity.TOP or Gravity.START
-            attrs.x = ((PhormiKeyboardPreferences.offsetX(this) + 0.9f) / 1.8f * (screenW - width))
-                .roundToInt().coerceIn(0, (screenW - width).coerceAtLeast(0))
-            attrs.y = ((PhormiKeyboardPreferences.offsetY(this) + 0.9f) / 1.8f * (screenH - height))
-                .roundToInt().coerceIn(0, (screenH - height).coerceAtLeast(0))
+            val usableW = (screenW - width).coerceAtLeast(0)
+            val usableH = (screenH - height).coerceAtLeast(0)
+            val baseY = (usableH - dp(48)).coerceAtLeast(0)
+            attrs.x = ((PhormiKeyboardPreferences.offsetX(this) + 0.9f) / 1.8f * usableW)
+                .roundToInt().coerceIn(0, usableW)
+            attrs.y = (baseY + PhormiKeyboardPreferences.offsetY(this) / 0.9f * (usableH * 0.42f))
+                .roundToInt().coerceIn(0, usableH)
         } else if (resizeMode) {
             // During resize, use a top-left positioned window while retaining the
             // centered starting position (offsetX=0). This lets an edge stay anchored
