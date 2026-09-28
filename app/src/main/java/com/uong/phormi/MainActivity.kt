@@ -399,7 +399,6 @@ class MainActivity : AppCompatActivity() {
         // behavior the app needs; each website still controls its own authentication.
         CookieManager.getInstance().flush()
 
-        standaloneWebAppMode = intent?.getBooleanExtra("web_app", false) == true
         val startupAction = intent?.getStringExtra("action").orEmpty()
         val startupTabId = intent?.getIntExtra("tab_id", -1) ?: -1
         val incomingUrl = intent?.getStringExtra("open_url")?.trim().takeIf { !it.isNullOrBlank() }
@@ -417,7 +416,6 @@ class MainActivity : AppCompatActivity() {
         if (incomingUrl != null && (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
             createNewTab(incomingUrl, requestedProfile = incomingProfile)
         }
-        if (standaloneWebAppMode) applyStandaloneWebAppMode()
     }
 
     private fun showTabRetentionChooser() {
@@ -3124,7 +3122,6 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_SAME_PAGE_SPLIT -> openSamePageSplit()
                 MenuActivity.ACTION_DESKTOP_MODE -> toggleDesktopMode()
                 MenuActivity.ACTION_INSTALL_SITE -> addCurrentSiteToHomeScreen()
-                MenuActivity.ACTION_INSTALL_WEB_APP -> installCurrentWebApp()
                 MenuActivity.ACTION_FAVORITE -> addCurrentPageToBookmarks()
                 MenuActivity.ACTION_HELP -> startActivity(Intent(this, HelpActivity::class.java))
                 MenuActivity.ACTION_KEEP_SCREEN_ON -> {
@@ -3536,36 +3533,70 @@ class MainActivity : AppCompatActivity() {
 
     private fun addCurrentSiteToHomeScreen() {
         val view = activeWebView() ?: return
-        val url = view.url.orEmpty()
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        val pageUrl = view.url.orEmpty()
+        if (!pageUrl.startsWith("http://") && !pageUrl.startsWith("https://")) {
             Toast.makeText(this, "Open a website first.", Toast.LENGTH_SHORT).show()
             return
         }
-        val title = view.title.orEmpty().ifBlank { Uri.parse(url).host.orEmpty().ifBlank { "Phormi site" } }
-        val id = "site_" + Integer.toHexString(url.hashCode())
-        Toast.makeText(this, "Reading website icon…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val icon = fetchSiteIcon(url)
-            runOnUiThread {
-                val shortcut = ShortcutInfo.Builder(this, id)
-                    .setShortLabel(title.take(25))
-                    .setLongLabel("Open $title in Phormi")
-                    .setIcon(icon?.let { Icon.createWithBitmap(it) } ?: Icon.createWithResource(this, R.mipmap.ic_launcher))
-                    .setIntent(Intent(this, MainActivity::class.java).apply {
-                        action = Intent.ACTION_VIEW
-                        data = Uri.parse(url)
-                    })
-                    .build()
-                val manager = getSystemService(ShortcutManager::class.java)
-                if (manager.isRequestPinShortcutSupported) {
-                    manager.requestPinShortcut(shortcut, null)
-                    Toast.makeText(this, "Choose where to add the site shortcut.", Toast.LENGTH_SHORT).show()
-                } else {
-                    manager.dynamicShortcuts = (manager.dynamicShortcuts + shortcut).take(4)
-                    Toast.makeText(this, "Site shortcut added to Phormi shortcuts.", Toast.LENGTH_SHORT).show()
+        val fallbackTitle = view.title.orEmpty().ifBlank {
+            Uri.parse(pageUrl).host.orEmpty().ifBlank { "Phormi site" }
+        }
+        Toast.makeText(this, "Preparing site shortcut…", Toast.LENGTH_SHORT).show()
+
+        view.evaluateJavascript("""(document.querySelector('link[rel~="manifest"]')?.href || '')""") { raw ->
+            val manifestHref = runCatching {
+                org.json.JSONTokener(raw).nextValue() as? String
+            }.getOrNull().orEmpty()
+
+            Thread {
+                val manifest = fetchWebManifest(pageUrl, manifestHref)
+                val name = manifest?.optString("short_name").orEmpty()
+                    .ifBlank { manifest?.optString("name").orEmpty() }
+                    .ifBlank { fallbackTitle }
+
+                // Use PWA metadata where it improves an ordinary home-screen shortcut:
+                // the site's real name and icon. The shortcut still opens the exact page
+                // the user chose, rather than converting it into a standalone web app.
+                val manifestIconUrl = manifest?.optJSONArray("icons")?.let { icons ->
+                    (0 until icons.length()).mapNotNull { i ->
+                        val item = icons.optJSONObject(i) ?: return@mapNotNull null
+                        val src = item.optString("src").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        val size = item.optString("sizes").split("x").firstOrNull()?.toIntOrNull() ?: 0
+                        Triple(size, src, item.optString("type"))
+                    }.maxByOrNull { it.first }?.second
                 }
-            }
-        }.start()
+                val icon = manifestIconUrl
+                    ?.let { runCatching { fetchBitmap(URL(URL(pageUrl), it).toString()) }.getOrNull() }
+                    ?: fetchSiteIcon(pageUrl)
+
+                runOnUiThread {
+                    val id = "site_" + Integer.toHexString(pageUrl.hashCode())
+                    val intent = Intent(this, MainActivity::class.java).apply {
+                        action = Intent.ACTION_VIEW
+                        data = Uri.parse(pageUrl)
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                    val shortcut = ShortcutInfo.Builder(this, id)
+                        .setShortLabel(name.take(25))
+                        .setLongLabel("Open $name in Phormi")
+                        .setActivity(ComponentName(this, MainActivity::class.java))
+                        .setIcon(icon?.let { Icon.createWithAdaptiveBitmap(it) }
+                            ?: Icon.createWithResource(this, R.mipmap.ic_launcher))
+                        .setIntent(intent)
+                        .build()
+
+                    val manager = getSystemService(ShortcutManager::class.java)
+                    if (manager.isRequestPinShortcutSupported) {
+                        manager.requestPinShortcut(shortcut, null)
+                        Toast.makeText(this, "Choose where to add the site shortcut.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        manager.dynamicShortcuts = (manager.dynamicShortcuts + shortcut)
+                            .take(manager.maxShortcutCountPerActivity.coerceAtLeast(1))
+                        Toast.makeText(this, "Site shortcut added to Phormi shortcuts.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }.start()
+        }
     }
 
     private fun fetchSiteIcon(pageUrl: String): Bitmap? {
@@ -3601,96 +3632,6 @@ class MainActivity : AppCompatActivity() {
         candidates += URL(base, "/favicon.ico").toString()
         candidates += "https://www.google.com/s2/favicons?sz=128&domain_url=${URLEncoder.encode(pageUrl, "UTF-8")}"
         return candidates.distinct().asSequence().mapNotNull(::loadBitmap).firstOrNull()
-    }
-
-    private fun installCurrentWebApp() {
-        val view = activeWebView() ?: return
-        val pageUrl = view.url.orEmpty()
-        if (!pageUrl.startsWith("http://") && !pageUrl.startsWith("https://")) {
-            Toast.makeText(this, "Open a website first.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val fallbackTitle = view.title.orEmpty().ifBlank { Uri.parse(pageUrl).host.orEmpty().ifBlank { "Web app" } }
-                view.evaluateJavascript("""(document.querySelector('link[rel~="manifest"]')?.href || '')""") { raw ->
-            val manifestHref = runCatching { org.json.JSONTokener(raw).nextValue() as? String }.getOrNull().orEmpty()
-            Thread {
-                val manifest = fetchWebManifest(pageUrl, manifestHref)
-                val name = manifest?.optString("short_name").orEmpty().ifBlank { manifest?.optString("name").orEmpty() }.ifBlank { fallbackTitle }
-                val startUrl = runCatching {
-                    URL(URL(pageUrl), manifest?.optString("start_url").orEmpty().ifBlank { pageUrl }).toString()
-                }.getOrDefault(pageUrl)
-                val display = manifest?.optString("display").orEmpty()
-                val iconUrl = manifest?.optJSONArray("icons")?.let { icons ->
-                    (0 until icons.length()).mapNotNull { i ->
-                        val item = icons.optJSONObject(i) ?: return@mapNotNull null
-                        val src = item.optString("src").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                        val size = item.optString("sizes").split("x").firstOrNull()?.toIntOrNull() ?: 0
-                        Triple(size, src, item.optString("type"))
-                    }.maxByOrNull { it.first }?.second
-                }
-                val icon = iconUrl?.let { runCatching { fetchBitmap(URL(URL(pageUrl), it).toString()) }.getOrNull() } ?: fetchSiteIcon(pageUrl)
-                val id = "webapp_" + Integer.toHexString(startUrl.hashCode())
-                runOnUiThread {
-                    val shortcut = ShortcutInfo.Builder(this, id)
-                        .setShortLabel(name.take(25))
-                        .setLongLabel("Install $name in Phormi")
-                        .setIcon(icon?.let { Icon.createWithBitmap(it) } ?: Icon.createWithResource(this, R.mipmap.ic_launcher))
-                        .setIntent(Intent(this, MainActivity::class.java).apply {
-                            action = Intent.ACTION_VIEW
-                            data = Uri.parse(startUrl)
-                            putExtra("open_url", startUrl)
-                            putExtra("web_app", true)
-                            putExtra("web_app_display", display)
-                        })
-                        .build()
-                    val manager = getSystemService(ShortcutManager::class.java)
-                    if (manager.isRequestPinShortcutSupported) manager.requestPinShortcut(shortcut, null)
-                    else manager.dynamicShortcuts = (manager.dynamicShortcuts + shortcut).take(4)
-                    Toast.makeText(this, "Web app shortcut installed: $name", Toast.LENGTH_SHORT).show()
-                }
-            }.start()
-        }
-    }
-
-    private fun fetchWebManifest(pageUrl: String, manifestHref: String): JSONObject? {
-        val candidates = mutableListOf<String>()
-        if (manifestHref.isNotBlank()) candidates += runCatching { URL(URL(pageUrl), manifestHref).toString() }.getOrDefault(manifestHref)
-        val base = URL(pageUrl)
-        candidates += URL(base, "/manifest.json").toString()
-        candidates += URL(base, "/site.webmanifest").toString()
-        return candidates.distinct().asSequence().mapNotNull { url ->
-            runCatching {
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                    instanceFollowRedirects = true
-                    requestMethod = "GET"
-                    setRequestProperty("Accept", "application/manifest+json,application/json,*/*")
-                    setRequestProperty("User-Agent", WebSettings.getDefaultUserAgent(this@MainActivity))
-                }
-                val body = connection.inputStream.bufferedReader().use { it.readText() }.also { connection.disconnect() }
-                JSONObject(body)
-            }.getOrNull()
-        }.firstOrNull()
-    }
-
-    private fun fetchBitmap(iconUrl: String): Bitmap? = runCatching {
-        val connection = (URL(iconUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 5000
-            readTimeout = 5000
-            instanceFollowRedirects = true
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", WebSettings.getDefaultUserAgent(this@MainActivity))
-        }
-        connection.inputStream.use { BitmapFactory.decodeStream(it) }.also { connection.disconnect() }
-    }.getOrNull()
-
-    private fun applyStandaloneWebAppMode() {
-        findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
-        findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
-        findViewById<View>(R.id.tab_strip)?.visibility = View.GONE
-        findViewById<View>(R.id.start_page_container)?.visibility = View.GONE
-        swipeRefresh.isEnabled = false
     }
 
     private fun toggleDesktopMode() {
