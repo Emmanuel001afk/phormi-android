@@ -4,6 +4,7 @@
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Phormi AI" android:textColor="#F8FAFC" android:textSize="24sp" android:textStyle="bold"/>
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Use Central Hub AI through Phormi’s shared AI tunnel, or configure a separate AI provider below." android:textColor="#94A3B8" android:textSize="13sp"/>
 <Switch android:id="@+id/switch_ai_active" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Browser AI active" android:textColor="#E2E8F0"/><Switch android:id="@+id/switch_central_hub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Use Central Hub AI" android:textColor="#E2E8F0"/>
+<Button android:id="@+id/btn_connect_hub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Connect Central Hub AI"/>
 <Button android:id="@+id/btn_ai_memory_retention" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="AI memory retention"/>
 
 <EditText android:id="@+id/input_provider_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Provider name (e.g. OpenAI)" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
