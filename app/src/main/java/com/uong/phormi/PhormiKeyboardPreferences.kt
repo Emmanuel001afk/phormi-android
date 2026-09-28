@@ -41,8 +41,8 @@ object PhormiKeyboardPreferences {
     fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(-0.9f, 0.9f)
     fun floating(context: Context): Boolean = prefs(context).getBoolean(FLOATING, false)
     fun setFloating(context: Context, value: Boolean) = prefs(context).edit().putBoolean(FLOATING, value).apply()
-    fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 3)
-    fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 3)).apply()
+    fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 7)
+    fun setTheme(context: Context, value: Int) = prefs(context).edit().putInt(THEME, value.coerceIn(0, 7)).apply()
     fun wallpaperUri(context: Context): String? = prefs(context).getString(WALLPAPER_URI, null)
     fun setWallpaperUri(context: Context, value: String?) = prefs(context).edit().apply {
         if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
