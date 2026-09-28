@@ -392,7 +392,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                         commitSpace()
                     }
                 }
-                refreshPredictionStrip()
+                schedulePredictionRefresh()
             }
             button.setOnLongClickListener{
                 val removed=PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this,value,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
