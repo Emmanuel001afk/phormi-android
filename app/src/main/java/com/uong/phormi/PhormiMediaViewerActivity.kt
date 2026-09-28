@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.content.Context
+import android.app.AlertDialog
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.media.AudioManager
@@ -18,10 +19,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import android.text.InputType
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -32,6 +35,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
 import kotlin.math.abs
 import kotlin.math.max
 import java.io.File
@@ -58,6 +62,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private var cacheFallbackAttempted = false
     private var gestureStartX = 0f
     private var gestureStartPosition = 0L
+    private var sleepRunnable: Runnable? = null
     private val hintHandler = Handler(mainLooper)
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
@@ -91,6 +96,12 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             setControllerAnimationEnabled(true)
             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+            setKeepContentOnPlayerReset(true)
+            setShowRewindButton(true)
+            setShowFastForwardButton(true)
+            setShowShuffleButton(true)
+            setShowSubtitleButton(true)
+            setTimeBarScrubbingEnabled(true)
             keepScreenOn = true
         }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
@@ -158,9 +169,15 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         setContentView(root)
         setBrightnessFromWindow()
         playerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updatePictureInPictureParams() }
-        configurePlayer(uri, mime)
-        configureGestures()
-        updatePictureInPictureParams()
+        runCatching {
+            configurePlayer(uri, mime)
+            configureGestures()
+            updatePictureInPictureParams()
+        }.onFailure { error ->
+            Toast.makeText(this, "Phormi could not start the media player: ${error.message ?: "startup error"}", Toast.LENGTH_LONG).show()
+            runCatching { PhormiFileOpener.openExternal(this, uri, mime) }
+            finish()
+        }
     }
 
     private fun button(text: String, description: String, action: (View) -> Unit) =
@@ -177,35 +194,40 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         }
 
     private fun configurePlayer(uri: Uri, mime: String) {
-        player = ExoPlayer.Builder(this).build().also { exo ->
-            playerView.player = exo
-            exo.setSeekBackIncrementMs(10_000)
-            exo.setSeekForwardIncrementMs(10_000)
-            exo.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(if (isVideo) C.AUDIO_CONTENT_TYPE_MOVIE else C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true
-            )
-            exo.setHandleAudioBecomingNoisy(true)
-            val item = MediaItem.Builder().setUri(uri).apply {
-                if (mime.isNotBlank() && mime != "application/octet-stream") setMimeType(mime)
-            }.build()
-            exo.addListener(object : androidx.media3.common.Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == androidx.media3.common.Player.STATE_READY) updatePictureInPictureParams()
+        val exo = ExoPlayer.Builder(this).build()
+        player = exo
+        playerView.player = exo
+        exo.setSeekBackIncrementMs(10_000)
+        exo.setSeekForwardIncrementMs(10_000)
+        exo.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(if (isVideo) C.AUDIO_CONTENT_TYPE_MOVIE else C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build(),
+            true
+        )
+        exo.setHandleAudioBecomingNoisy(true)
+        val item = MediaItem.Builder().setUri(uri).apply {
+            if (mime.isNotBlank() && mime != "application/octet-stream") setMimeType(mime)
+        }.build()
+        exo.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_READY) {
+                    updatePictureInPictureParams()
+                    playerView.showController()
                 }
-                override fun onIsPlayingChanged(isPlaying: Boolean) { updatePictureInPictureParams() }
-                override fun onPlayerError(error: PlaybackException) {
-                    retryFromAccessibleCopy(uri, mime, error)
-                }
-            })
-            exo.setMediaItem(item)
-            exo.prepare()
-            exo.playWhenReady = true
-            mediaSession = runCatching { MediaSession.Builder(this, exo).build() }.getOrNull()
-        }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updatePictureInPictureParams()
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                retryFromAccessibleCopy(uri, mime, error)
+            }
+        })
+        exo.setMediaItem(item)
+        exo.prepare()
+        exo.playWhenReady = true
+        mediaSession = runCatching { MediaSession.Builder(this, exo).build() }.getOrNull()
     }
 
     private fun retryFromAccessibleCopy(uri: Uri, mime: String, error: PlaybackException? = null) {
@@ -350,11 +372,28 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
     private fun showMoreMenu(anchor: View, uri: Uri, mime: String) {
         val popup = PopupMenu(this, anchor)
+        popup.menu.add("Audio track")
+        popup.menu.add("Subtitle track")
+        popup.menu.add("Sleep timer")
+        popup.menu.add("Jump to time")
+        popup.menu.add("Repeat")
+        popup.menu.add("Shuffle")
         popup.menu.add("Open with another app")
         popup.menu.add("Share file")
         popup.menu.add("Player information")
         popup.setOnMenuItemClickListener {
             when (it.title.toString()) {
+                "Audio track" -> showTrackSelection(androidx.media3.common.C.TRACK_TYPE_AUDIO, "Audio tracks")
+                "Subtitle track" -> showTrackSelection(androidx.media3.common.C.TRACK_TYPE_TEXT, "Subtitle tracks")
+                "Sleep timer" -> showSleepTimer(anchor)
+                "Jump to time" -> showJumpToTime()
+                "Repeat" -> showRepeatMenu(anchor)
+                "Shuffle" -> {
+                    player?.let { p ->
+                        p.shuffleModeEnabled = !p.shuffleModeEnabled
+                        Toast.makeText(this, if (p.shuffleModeEnabled) "Shuffle on" else "Shuffle off", Toast.LENGTH_SHORT).show()
+                    }
+                }
                 "Open with another app" -> PhormiFileOpener.openExternal(this, uri, mime)
                 "Share file" -> {
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -374,6 +413,99 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                     true
                 }
             }
+        }
+        popup.show()
+    }
+
+    private fun showTrackSelection(trackType: Int, title: String) {
+        val p = player ?: return
+        runCatching {
+            val hasTracks = p.currentTracks.groups.any { it.type == trackType }
+            if (!hasTracks) {
+                Toast.makeText(this, "No ${title.lowercase()} are available for this file.", Toast.LENGTH_SHORT).show()
+                return
+            }
+            TrackSelectionDialogBuilder(this, title, p, trackType).build().show()
+        }.onFailure {
+            Toast.makeText(this, "Track selection is unavailable for this file.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showSleepTimer(anchor: View) {
+        val popup = PopupMenu(this, anchor)
+        listOf("Off", "15 minutes", "30 minutes", "60 minutes").forEach { popup.menu.add(it) }
+        popup.setOnMenuItemClickListener {
+            sleepRunnable?.let { task -> hintHandler.removeCallbacks(task) }
+            sleepRunnable = null
+            when (it.title.toString()) {
+                "15 minutes" -> scheduleSleep(15)
+                "30 minutes" -> scheduleSleep(30)
+                "60 minutes" -> scheduleSleep(60)
+                else -> Toast.makeText(this, "Sleep timer off", Toast.LENGTH_SHORT).show()
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun scheduleSleep(minutes: Int) {
+        val task = Runnable {
+            player?.pause()
+            Toast.makeText(this, "Sleep timer ended", Toast.LENGTH_SHORT).show()
+        }
+        sleepRunnable = task
+        hintHandler.postDelayed(task, minutes * 60_000L)
+        Toast.makeText(this, "Sleep timer: $minutes minutes", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showJumpToTime() {
+        val input = EditText(this).apply {
+            hint = "Seconds or HH:MM:SS"
+            inputType = InputType.TYPE_CLASS_DATETIME
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Jump to time")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Go") { _, _ ->
+                val value = input.text.toString().trim()
+                val seconds = parseTimeSeconds(value)
+                if (seconds == null) {
+                    Toast.makeText(this, "Use seconds or HH:MM:SS.", Toast.LENGTH_SHORT).show()
+                } else {
+                    player?.seekTo(seconds * 1000L)
+                }
+            }
+            .show()
+    }
+
+    private fun parseTimeSeconds(value: String): Long? {
+        if (value.isBlank()) return null
+        if (value.all { it.isDigit() }) return value.toLongOrNull()?.coerceAtLeast(0L)
+        val parts = value.split(":")
+        if (parts.size !in 2..3 || parts.any { !it.all(Char::isDigit) }) return null
+        return runCatching {
+            when (parts.size) {
+                2 -> parts[0].toLong() * 60L + parts[1].toLong()
+                else -> parts[0].toLong() * 3600L + parts[1].toLong() * 60L + parts[2].toLong()
+            }
+        }.getOrNull()?.coerceAtLeast(0L)
+    }
+
+    private fun showRepeatMenu(anchor: View) {
+        val popup = PopupMenu(this, anchor)
+        popup.menu.add("Off")
+        popup.menu.add("Repeat one")
+        popup.menu.add("Repeat all")
+        popup.setOnMenuItemClickListener {
+            player?.repeatMode = when (it.title.toString()) {
+                "Repeat one" -> androidx.media3.common.Player.REPEAT_MODE_ONE
+                "Repeat all" -> androidx.media3.common.Player.REPEAT_MODE_ALL
+                else -> androidx.media3.common.Player.REPEAT_MODE_OFF
+            }
+            Toast.makeText(this, "Repeat: ${it.title}", Toast.LENGTH_SHORT).show()
+            true
         }
         popup.show()
     }
@@ -475,14 +607,18 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        playerView.requestLayout()
-        updatePictureInPictureParams()
+        if (::playerView.isInitialized) {
+            playerView.requestLayout()
+            updatePictureInPictureParams()
+        }
     }
 
     override fun onDestroy() {
+        sleepRunnable?.let { hintHandler.removeCallbacks(it) }
+        sleepRunnable = null
         mediaSession?.release()
         mediaSession = null
-        playerView.player = null
+        if (::playerView.isInitialized) playerView.player = null
         player?.release()
         player = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
