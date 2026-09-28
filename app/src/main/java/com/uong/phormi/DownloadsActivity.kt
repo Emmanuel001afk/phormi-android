@@ -151,9 +151,9 @@ class DownloadsActivity : AppCompatActivity() {
             rows += Row("p:${item.id}", item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false, item.createdAt)
         }
 
-        // Preserve already-completed downloads created by the older DownloadManager path.
-        // Failed legacy rows are intentionally not mirrored here, so an old HTTP 403/503 does
-        // not keep generating the same error message on every refresh.
+        // Preserve already-completed downloads created by the older DownloadManager path,
+        // but do not duplicate files already owned by Phormi's current download engine.
+        val phormiUris = rows.mapNotNull { it.localUri?.takeIf(String::isNotBlank) }.toSet()
         val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         runCatching {
             manager.query(DownloadManager.Query()).use { cursor ->
@@ -166,6 +166,7 @@ class DownloadsActivity : AppCompatActivity() {
                 while (cursor.moveToNext()) {
                     if (cursor.getInt(statusCol) != DownloadManager.STATUS_SUCCESSFUL) continue
                     val local = if (uriCol >= 0) cursor.getString(uriCol) else null
+                    if (!local.isNullOrBlank() && local in phormiUris) continue
                     val title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
                         ?: local?.let { PhormiFileOpener.displayName(this, Uri.parse(it), "Download") }
                         ?: "Download"
