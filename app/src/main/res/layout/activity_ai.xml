@@ -2,10 +2,8 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#0B1220">
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Phormi AI" android:textColor="#F8FAFC" android:textSize="24sp" android:textStyle="bold"/>
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Connect Phormi to an external AI service over HTTPS. Local models are managed by Central Hub." android:textColor="#94A3B8" android:textSize="13sp"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Use Central Hub AI through Phormi’s shared AI tunnel, or configure a separate AI provider below." android:textColor="#94A3B8" android:textSize="13sp"/>
 <Switch android:id="@+id/switch_ai_active" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Browser AI active" android:textColor="#E2E8F0"/><Switch android:id="@+id/switch_central_hub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Use Central Hub AI" android:textColor="#E2E8F0"/>
-<EditText android:id="@+id/input_hub_key" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Central Hub key (AM_…)" android:inputType="textPassword" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
-<Button android:id="@+id/btn_save_hub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Test &amp; save Central Hub connection"/>
 <Button android:id="@+id/btn_ai_memory_retention" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="AI memory retention"/>
 
 <EditText android:id="@+id/input_provider_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Provider name (e.g. OpenAI)" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
