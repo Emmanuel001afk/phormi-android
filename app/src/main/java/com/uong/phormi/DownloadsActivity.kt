@@ -148,7 +148,7 @@ class DownloadsActivity : AppCompatActivity() {
                 PhormiDownloadEngine.State.FAILED -> "Failed · ${item.error ?: "Download failed"}"
                 PhormiDownloadEngine.State.CANCELLED -> "Cancelled · Ready to delete"
             }
-            rows += Row("p:${item.id}", item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false, item.createdAt)
+            rows += Row(item.id, item.title, status ?: "", progress, item.downloaded, item.total, item.state.name, item.localUri, item.mimeType, item.error, false, item.createdAt)
         }
 
         // Preserve already-completed downloads created by the older DownloadManager path,
