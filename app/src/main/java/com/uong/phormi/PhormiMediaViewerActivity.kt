@@ -383,16 +383,32 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         popup.menu.add("Player information")
         popup.setOnMenuItemClickListener {
             when (it.title.toString()) {
-                "Audio track" -> showTrackSelection(androidx.media3.common.C.TRACK_TYPE_AUDIO, "Audio tracks")
-                "Subtitle track" -> showTrackSelection(androidx.media3.common.C.TRACK_TYPE_TEXT, "Subtitle tracks")
-                "Sleep timer" -> showSleepTimer(anchor)
-                "Jump to time" -> showJumpToTime()
-                "Repeat" -> showRepeatMenu(anchor)
+                "Audio track" -> {
+                    showTrackSelection(androidx.media3.common.C.TRACK_TYPE_AUDIO, "Audio tracks")
+                    true
+                }
+                "Subtitle track" -> {
+                    showTrackSelection(androidx.media3.common.C.TRACK_TYPE_TEXT, "Subtitle tracks")
+                    true
+                }
+                "Sleep timer" -> {
+                    showSleepTimer(anchor)
+                    true
+                }
+                "Jump to time" -> {
+                    showJumpToTime()
+                    true
+                }
+                "Repeat" -> {
+                    showRepeatMenu(anchor)
+                    true
+                }
                 "Shuffle" -> {
                     player?.let { p ->
                         p.shuffleModeEnabled = !p.shuffleModeEnabled
                         Toast.makeText(this, if (p.shuffleModeEnabled) "Shuffle on" else "Shuffle off", Toast.LENGTH_SHORT).show()
                     }
+                    true
                 }
                 "Open with another app" -> PhormiFileOpener.openExternal(this, uri, mime)
                 "Share file" -> {
