@@ -3581,11 +3581,26 @@ class MainActivity : AppCompatActivity() {
         }.getOrNull()
 
         val base = URL(pageUrl)
-        val candidates = listOf(
-            URL(base, "/favicon.ico").toString(),
-            "https://www.google.com/s2/favicons?sz=128&domain_url=${URLEncoder.encode(pageUrl, "UTF-8")}"
-        )
-        return candidates.asSequence().mapNotNull(::loadBitmap).firstOrNull()
+        val candidates = mutableListOf<String>()
+        // Prefer the site's declared icon instead of assuming /favicon.ico. This covers
+        // platforms that use a manifest/icon path or a non-root favicon.
+        runCatching {
+            val connection = (URL(pageUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 5000
+                readTimeout = 5000
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", WebSettings.getDefaultUserAgent(this@MainActivity))
+                setRequestProperty("Accept", "text/html,*/*;q=0.8")
+            }
+            val html = connection.inputStream.bufferedReader().use { it.readText().take(1_000_000) }.also { connection.disconnect() }
+            val iconMatches = Regex("""<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                .findAll(html).map { it.groupValues[1] }.toList()
+            iconMatches.forEach { href -> candidates += URL(base, href).toString() }
+        }
+        candidates += URL(base, "/favicon.ico").toString()
+        candidates += "https://www.google.com/s2/favicons?sz=128&domain_url=${URLEncoder.encode(pageUrl, "UTF-8")}"
+        return candidates.distinct().asSequence().mapNotNull(::loadBitmap).firstOrNull()
     }
 
     private fun installCurrentWebApp() {
