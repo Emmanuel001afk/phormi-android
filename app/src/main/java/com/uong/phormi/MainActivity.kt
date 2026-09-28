@@ -3538,37 +3538,19 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Open a website first.", Toast.LENGTH_SHORT).show()
             return
         }
-        val fallbackTitle = view.title.orEmpty().ifBlank {
+        val titleFallback = view.title.orEmpty().ifBlank {
             Uri.parse(pageUrl).host.orEmpty().ifBlank { "Phormi site" }
         }
-        Toast.makeText(this, "Preparing site shortcut…", Toast.LENGTH_SHORT).show()
-
-        view.evaluateJavascript("""(document.querySelector('link[rel~="manifest"]')?.href || '')""") { raw ->
-            val manifestHref = runCatching {
-                org.json.JSONTokener(raw).nextValue() as? String
-            }.getOrNull().orEmpty()
+        // An ordinary Android home-screen shortcut can still borrow the useful PWA
+        // metadata that is available locally: the page title and its declared site icon.
+        // It remains a shortcut into Phormi; it is deliberately not presented as a WebAPK.
+        view.evaluateJavascript("(document.title || '')") { rawTitle ->
+            val title = runCatching {
+                org.json.JSONTokener(rawTitle).nextValue() as? String
+            }.getOrNull().orEmpty().ifBlank { titleFallback }
 
             Thread {
-                val manifest = fetchWebManifest(pageUrl, manifestHref)
-                val name = manifest?.optString("short_name").orEmpty()
-                    .ifBlank { manifest?.optString("name").orEmpty() }
-                    .ifBlank { fallbackTitle }
-
-                // Use PWA metadata where it improves an ordinary home-screen shortcut:
-                // the site's real name and icon. The shortcut still opens the exact page
-                // the user chose, rather than converting it into a standalone web app.
-                val manifestIconUrl = manifest?.optJSONArray("icons")?.let { icons ->
-                    (0 until icons.length()).mapNotNull { i ->
-                        val item = icons.optJSONObject(i) ?: return@mapNotNull null
-                        val src = item.optString("src").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                        val size = item.optString("sizes").split("x").firstOrNull()?.toIntOrNull() ?: 0
-                        Triple(size, src, item.optString("type"))
-                    }.maxByOrNull { it.first }?.second
-                }
-                val icon = manifestIconUrl
-                    ?.let { runCatching { fetchBitmap(URL(URL(pageUrl), it).toString()) }.getOrNull() }
-                    ?: fetchSiteIcon(pageUrl)
-
+                val icon = fetchSiteIcon(pageUrl)
                 runOnUiThread {
                     val id = "site_" + Integer.toHexString(pageUrl.hashCode())
                     val intent = Intent(this, MainActivity::class.java).apply {
@@ -3577,8 +3559,8 @@ class MainActivity : AppCompatActivity() {
                         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     }
                     val shortcut = ShortcutInfo.Builder(this, id)
-                        .setShortLabel(name.take(25))
-                        .setLongLabel("Open $name in Phormi")
+                        .setShortLabel(title.take(25))
+                        .setLongLabel("Open $title in Phormi")
                         .setActivity(ComponentName(this, MainActivity::class.java))
                         .setIcon(icon?.let { Icon.createWithBitmap(it) }
                             ?: Icon.createWithResource(this, R.mipmap.ic_launcher))
