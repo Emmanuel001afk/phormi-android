@@ -211,8 +211,15 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private fun retryFromAccessibleCopy(uri: Uri, mime: String, error: PlaybackException? = null) {
         if (cacheFallbackAttempted) {
             runOnUiThread {
-                val detail = error?.errorCodeName?.takeIf { it.isNotBlank() } ?: "unsupported or unreadable media"
-                Toast.makeText(this, "Phormi could not play this file ($detail). Use ⋮ → Open with another app.", Toast.LENGTH_LONG).show()
+                // The internal player has already had a direct-URI attempt and a readable
+                // local-copy attempt. Do not strand the user on a black screen: let Android
+                // choose an installed player that may support this codec/container.
+                val opened = PhormiFileOpener.openExternal(this, uri, mime)
+                if (!opened) {
+                    val detail = error?.errorCodeName?.takeIf { it.isNotBlank() } ?: "unsupported or unreadable media"
+                    Toast.makeText(this, "Phormi could not play this file ($detail).", Toast.LENGTH_LONG).show()
+                }
+                if (opened) finish()
             }
             return
         }
@@ -238,7 +245,9 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                         playWhenReady = true
                     }
                 } else {
-                    Toast.makeText(this, "Phormi could not read this downloaded media. Use ⋮ → Open with another app.", Toast.LENGTH_LONG).show()
+                    val opened = PhormiFileOpener.openExternal(this, uri, mime)
+                    if (!opened) Toast.makeText(this, "Phormi could not read this media file.", Toast.LENGTH_LONG).show()
+                    if (opened) finish()
                 }
             }
         }.start()
