@@ -30,6 +30,7 @@ class AiActivity : AppCompatActivity() {
     private lateinit var active: Switch
     private val voiceRequest = 6201
     private val voicePermissionRequest = 6202
+    private var syncingSwitches = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,57 +46,49 @@ class AiActivity : AppCompatActivity() {
         refresh()
 
         findViewById<Button>(R.id.btn_connect_hub).setOnClickListener {
-            val button = findViewById<Button>(R.id.btn_connect_hub)
-            button.isEnabled = false
-            status.text = "Connecting to Central Hub AI…"
-            lifecycleScope.launch {
-                try {
-                    val answer = controller.connectCentralHub()
-                    centralHub.isChecked = true
-                    active.isChecked = false
-                    refresh()
-                    status.text = "Central Hub AI connected: " + answer.take(80)
-                } catch (t: Throwable) {
-                    status.text = "Central Hub AI connection failed: " + (t.message ?: "unknown error")
-                    centralHub.isChecked = false
-                } finally {
-                    button.isEnabled = true
-                }
-            }
+            connectCentralHubFromUi()
         }
 
         active.setOnCheckedChangeListener { _, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
             if (checked && controller.isCentralHubActive()) {
+                syncingSwitches = true
                 controller.setCentralHubActive(false)
                 centralHub.isChecked = false
+                syncingSwitches = false
             }
             controller.setActive(checked)
             refresh()
         }
         centralHub.setOnCheckedChangeListener { _, checked ->
-            if (checked) {
-                centralHub.isEnabled = false
-                status.text = "Connecting to Central Hub AI…"
-                lifecycleScope.launch {
-                    try {
-                        val answer = controller.connectCentralHub()
-                        controller.setActive(false)
-                        active.isChecked = false
-                        centralHub.isChecked = true
-                        refresh()
-                        status.text = "Central Hub AI connected: " + answer.take(80)
-                    } catch (t: Throwable) {
-                        controller.setCentralHubActive(false)
-                        centralHub.isChecked = false
-                        refresh()
-                        status.text = "Central Hub AI connection failed: " + (t.message ?: "unknown error")
-                    } finally {
-                        centralHub.isEnabled = true
-                    }
-                }
-            } else {
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            if (!checked) {
                 controller.setCentralHubActive(false)
                 refresh()
+                return@setOnCheckedChangeListener
+            }
+            centralHub.isEnabled = false
+            status.text = "Connecting to Central Hub AI…"
+            lifecycleScope.launch {
+                try {
+                    val answer = controller.connectCentralHub()
+                    syncingSwitches = true
+                    centralHub.isChecked = true
+                    active.isChecked = false
+                    syncingSwitches = false
+                    controller.setActive(false)
+                    refresh()
+                    status.text = "Central Hub AI connected: " + answer.take(80)
+                } catch (t: Throwable) {
+                    syncingSwitches = true
+                    centralHub.isChecked = false
+                    syncingSwitches = false
+                    controller.setCentralHubActive(false)
+                    status.text = "Central Hub AI connection failed: " + (t.message ?: "unknown error")
+                    refresh()
+                } finally {
+                    centralHub.isEnabled = true
+                }
             }
         }
         findViewById<Button>(R.id.btn_ai_memory_retention).setOnClickListener { showMemoryRetentionChooser() }
@@ -103,6 +96,36 @@ class AiActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_voice).setOnClickListener { startVoiceInput() }
         findViewById<Button>(R.id.btn_run).setOnClickListener { runAssistant() }
         if (intent.getBooleanExtra("auto_voice", false)) window.decorView.postDelayed({ startVoiceInput() }, 350)
+    }
+
+    private fun connectCentralHubFromUi() {
+        val button = findViewById<Button>(R.id.btn_connect_hub)
+        val centralHub = findViewById<Switch>(R.id.switch_central_hub)
+        button.isEnabled = false
+        centralHub.isEnabled = false
+        status.text = "Connecting to Central Hub AI…"
+        lifecycleScope.launch {
+            try {
+                val answer = controller.connectCentralHub()
+                syncingSwitches = true
+                centralHub.isChecked = true
+                active.isChecked = false
+                syncingSwitches = false
+                controller.setActive(false)
+                refresh()
+                status.text = "Central Hub AI connected: " + answer.take(80)
+            } catch (t: Throwable) {
+                syncingSwitches = true
+                centralHub.isChecked = false
+                syncingSwitches = false
+                controller.setCentralHubActive(false)
+                refresh()
+                status.text = "Central Hub AI connection failed: " + (t.message ?: "unknown error")
+            } finally {
+                button.isEnabled = true
+                centralHub.isEnabled = true
+            }
+        }
     }
 
     private fun openWebAi() {
