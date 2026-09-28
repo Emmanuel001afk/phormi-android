@@ -1858,9 +1858,20 @@ class MainActivity : AppCompatActivity() {
         val liveIds = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(id)
         tabs.forEach { tab ->
             val isActive = tab.id == id
-            val isLive = tab.id in liveIds
+            val isBackgroundAi = tab.id in aiBackgroundTabIds && !isActive
+            val isLive = tab.id in liveIds || isBackgroundAi
             tab.webView.visibility = if (isLive) View.VISIBLE else View.GONE
-            if (isLive) tab.webView.onResume() else tab.webView.onPause()
+            if (isBackgroundAi) {
+                tab.webView.alpha = 0f
+                tab.webView.isClickable = false
+                tab.webView.isFocusable = false
+                tab.webView.onResume()
+            } else {
+                tab.webView.alpha = 1f
+                tab.webView.isClickable = true
+                tab.webView.isFocusable = isActive
+                if (isLive) tab.webView.onResume() else tab.webView.onPause()
+            }
             tab.chipView.alpha = if (isActive) 1f else 0.55f
         }
         updateStartPageVisibility()
@@ -1868,11 +1879,7 @@ class MainActivity : AppCompatActivity() {
         updateNavButtons()
         updateFavoriteButton()
         val current = tabs.find { it.id == id }?.webView?.url
-        if (!current.isNullOrBlank() && current != "about:blank") {
-            urlBar.setText(current)
-        } else {
-            urlBar.setText("")
-        }
+        if (!current.isNullOrBlank() && current != "about:blank") urlBar.setText(current) else urlBar.setText("")
         saveTabs()
     }
 
