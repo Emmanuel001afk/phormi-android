@@ -153,12 +153,14 @@ class AiActivity : AppCompatActivity() {
         val text = instruction.text.toString().trim()
         if (text.isBlank()) { status.text = "Type a command, or press Voice when you want to speak."; return }
         if (!controller.isActive()) { status.text = "Enable Central Hub or save an external AI connection first."; return }
-        if (PhormiAccessibilityService.instance == null) {
-            status.text = getString(R.string.accessibility_reminder)
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
+        // Browser-owned WebView tasks use the browser's own tab/DOM bridge.
+        // Accessibility is not required for commands executed inside Phormi.
+        val queued = PhormiAiPendingTask.enqueue(applicationContext, "", text)
+        if (queued == null) {
+            status.text = "The browser AI queue is full (maximum 3 tasks). Wait for a task to finish."
+            return
         }
-        PhormiAiPendingTask.enqueue(applicationContext, "", text)
-        status.text = "Returning to the browser…"; finish()
+        status.text = "Command queued for the browser."; finish()
     }
 
     private fun startVoiceInput() {
