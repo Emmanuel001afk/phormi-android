@@ -573,7 +573,7 @@ class PhormiDownloadService : Service() {
     }
 
     private fun performRequest(record: PhormiDownloadEngine.Record): Boolean {
-        val existing = record.downloaded.coerceAtLeast(0L)
+        val existing = maxOf(record.downloaded.coerceAtLeast(0L), localByteLength(record.localUri))
         val requestBuilder = Request.Builder().url(record.sourceUrl).get()
         record.headers.forEach { (key, value) ->
             if (key.isNotBlank() && value.isNotBlank()) requestBuilder.header(key, value)
@@ -676,6 +676,18 @@ class PhormiDownloadService : Service() {
         } finally {
             activeCalls.remove(record.id, call)
         }
+    }
+
+    private fun localByteLength(uriString: String?): Long {
+        if (uriString.isNullOrBlank()) return 0L
+        return runCatching {
+            val uri = Uri.parse(uriString)
+            if (uri.scheme == "file") {
+                uri.path?.let { File(it).length() } ?: 0L
+            } else {
+                contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0L) } ?: 0L
+            }
+        }.getOrDefault(0L)
     }
 
     private fun ensureDestination(record: PhormiDownloadEngine.Record, truncate: Boolean): String? {
