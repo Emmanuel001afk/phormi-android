@@ -123,17 +123,12 @@ class PhormiKeyboardResizeOverlay(
                     }
                     Handle.LEFT -> {
                         widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
-                        // Keep the right edge fixed while the left edge moves.
-                        val widthDeltaPx = (widthScale - startWidth) * screenW
-                        offsetX = (startOffsetX - widthDeltaPx / screenW * 1.8f).coerceIn(-0.9f, 0.9f)
+                        // Width changes only; position remains independent.
                     }
                     Handle.RIGHT -> widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
                     Handle.TOP -> {
                         heightScale = (startHeight - dy / screenH).coerceIn(0.60f, 1.40f)
-                        if (allowMove) {
-                            val heightDeltaPx = (heightScale - startHeight) * screenH
-                            offsetY = (startOffsetY - heightDeltaPx / screenH * 1.8f).coerceIn(-0.9f, 0.9f)
-                        }
+                        // Height changes only; position remains independent.
                     }
                     Handle.BOTTOM -> heightScale = (startHeight + dy / screenH).coerceIn(0.60f, 1.40f)
                     Handle.TOP_LEFT -> {
@@ -153,8 +148,7 @@ class PhormiKeyboardResizeOverlay(
                     Handle.BOTTOM_LEFT -> {
                         widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
                         heightScale = (startHeight + dy / screenH).coerceIn(0.60f, 1.40f)
-                        val widthDeltaPx = (widthScale - startWidth) * screenW
-                        offsetX = (startOffsetX - widthDeltaPx / screenW * 1.8f).coerceIn(-0.9f, 0.9f)
+                        // Width changes only; position remains independent.
                     }
                     Handle.BOTTOM_RIGHT -> {
                         widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
