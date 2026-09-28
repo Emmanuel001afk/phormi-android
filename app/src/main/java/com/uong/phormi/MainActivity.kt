@@ -340,7 +340,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.start_page_ai).setOnClickListener {
-            startActivity(Intent(this, AiActivity::class.java).putExtra("auto_voice", true))
+            startActivity(Intent(this, AiActivity::class.java))
         }
 
         findViewById<TextView>(R.id.start_page_engine).setOnClickListener {
