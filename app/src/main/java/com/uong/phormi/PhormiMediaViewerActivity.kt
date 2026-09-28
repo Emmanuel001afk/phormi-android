@@ -60,6 +60,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private var baseBrightness = 0.5f
     private var isVideo = false
     private var cacheFallbackAttempted = false
+    private var playbackCacheFile: File? = null
     private var gestureStartX = 0f
     private var gestureStartPosition = 0L
     private var sleepRunnable: Runnable? = null
@@ -218,7 +219,8 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                         return@runOnUiThread
                     }
                     if (cached != null) {
-                        configurePlayerFromUri(Uri.fromFile(cached), mime, uri)
+                        playbackCacheFile = cached
+                        configurePlayerFromUri(Uri.fromFile(cached), mime, uri, allowCopyRetry = false)
                     } else {
                         // Keep one direct-URI attempt as a compatibility fallback for
                         // providers that intentionally disallow copying but support playback.
@@ -231,7 +233,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         configurePlayerFromUri(uri, mime, uri)
     }
 
-    private fun configurePlayerFromUri(playUri: Uri, mime: String, originalUri: Uri) {
+    private fun configurePlayerFromUri(playUri: Uri, mime: String, originalUri: Uri, allowCopyRetry: Boolean = true) {
         val exo = ExoPlayer.Builder(this).build()
         player = exo
         playerView.player = exo
@@ -259,7 +261,17 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
                 updatePictureInPictureParams()
             }
             override fun onPlayerError(error: PlaybackException) {
-                retryFromAccessibleCopy(originalUri, mime, error)
+                if (allowCopyRetry) {
+                    retryFromAccessibleCopy(originalUri, mime, error)
+                } else {
+                    val opened = PhormiFileOpener.openExternal(this@PhormiMediaViewerActivity, originalUri, mime)
+                    if (opened) finish()
+                    else Toast.makeText(
+                        this@PhormiMediaViewerActivity,
+                        "Phormi could not play this file (" + error.errorCodeName + ").",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         })
         exo.setMediaItem(item)
@@ -675,6 +687,8 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         if (::playerView.isInitialized) playerView.player = null
         player?.release()
         player = null
+        playbackCacheFile?.let { runCatching { it.delete() } }
+        playbackCacheFile = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
     }
