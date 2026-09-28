@@ -44,46 +44,26 @@ class AiActivity : AppCompatActivity() {
         centralHub.isChecked = controller.isCentralHubActive()
         refresh()
 
-        val name = findViewById<EditText>(R.id.input_provider_name)
-        val key = findViewById<EditText>(R.id.input_api_key)
-        val endpoint = findViewById<EditText>(R.id.input_endpoint)
-        val model = findViewById<EditText>(R.id.input_model)
-
-        findViewById<Button>(R.id.btn_template).setOnClickListener {
-            val options = AiController.TEMPLATES.map { it.name }.toTypedArray()
-            android.app.AlertDialog.Builder(this).setTitle("External AI provider").setItems(options) { _, which ->
-                val t = AiController.TEMPLATES[which]
-                name.setText(t.name)
-                endpoint.setText(t.endpoint)
-                model.setText(t.model)
-                status.text = "${t.name} selected. Paste its API key; endpoint/model can be left as the template defaults."
-            }.show()
-        }
-
-        findViewById<Button>(R.id.btn_save_keys).setOnClickListener {
-            val n = name.text.toString().trim().ifBlank { "AI" }
-            val k = key.text.toString().trim()
-            val e = endpoint.text.toString().trim()
-            val m = model.text.toString().trim()
-            if (k.isBlank()) { status.text = "Paste the API key first."; return@setOnClickListener }
-            val inferred = controller.inferProviderConfig(n, e, m)
-            if (inferred.endpoint.isBlank()) { status.text = "Endpoint is required for a custom provider name. Choose a template or enter the provider endpoint."; return@setOnClickListener }
-            val button = findViewById<Button>(R.id.btn_save_keys)
+        findViewById<Button>(R.id.btn_connect_hub).setOnClickListener {
+            val button = findViewById<Button>(R.id.btn_connect_hub)
             button.isEnabled = false
-            status.text = "Testing HTTPS AI connection…"
+            status.text = "Connecting to Central Hub AI…"
             lifecycleScope.launch {
                 try {
-                    val cfg = controller.resolveProviderConfig(n, k, inferred.endpoint, inferred.model)
-                    controller.upsertProvider(AiController.Provider(UUID.randomUUID().toString().take(12), n, cfg.endpoint, cfg.model, k))
-                    controller.setActive(true)
-                    active.isChecked = true
-                    key.text.clear()
+                    val answer = controller.connectCentralHub()
+                    centralHub.isChecked = true
+                    active.isChecked = false
                     refresh()
-                    status.text = "Connected: $n · ${cfg.model}"
-                } catch (t: Throwable) { status.text = "Connection failed: ${t.message ?: "unknown error"}" }
-                finally { button.isEnabled = true }
+                    status.text = "Central Hub AI connected: " + answer.take(80)
+                } catch (t: Throwable) {
+                    status.text = "Central Hub AI connection failed: " + (t.message ?: "unknown error")
+                    centralHub.isChecked = false
+                } finally {
+                    button.isEnabled = true
+                }
             }
         }
+
         active.setOnCheckedChangeListener { _, checked ->
             if (checked && controller.isCentralHubActive()) {
                 controller.setCentralHubActive(false)
@@ -94,29 +74,18 @@ class AiActivity : AppCompatActivity() {
         }
         centralHub.setOnCheckedChangeListener { _, checked ->
             if (checked) {
-                controller.setCentralHubActive(false)
-                active.isChecked = false
-                centralHub.isEnabled = false
-                status.text = "Connecting to Central Hub AI…"
-                lifecycleScope.launch {
-                    try {
-                        val answer = controller.connectCentralHub()
-                        centralHub.isChecked = true
-                        active.isChecked = false
-                        status.text = "Central Hub connected: " + answer.take(80)
-                        refresh()
-                    } catch (t: Throwable) {
-                        controller.setCentralHubActive(false)
-                        centralHub.isChecked = false
-                        status.text = "Central Hub connection failed: " + (t.message ?: "unknown error")
-                    } finally {
-                        centralHub.isEnabled = true
-                    }
+                if (!controller.hasCentralHubTunnel()) {
+                    centralHub.isChecked = false
+                    status.text = "Connect Central Hub AI first."
+                    return@setOnCheckedChangeListener
                 }
+                controller.setCentralHubActive(true)
+                controller.setActive(false)
+                active.isChecked = false
             } else {
                 controller.setCentralHubActive(false)
-                refresh()
             }
+            refresh()
         }
         findViewById<Button>(R.id.btn_ai_memory_retention).setOnClickListener { showMemoryRetentionChooser() }
         findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
