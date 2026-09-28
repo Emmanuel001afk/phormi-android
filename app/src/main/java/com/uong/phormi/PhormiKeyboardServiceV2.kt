@@ -130,7 +130,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val window = win ?: return
         val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(dp(1))
         val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(dp(1))
-        val height = (baseHeight() * density() * PhormiKeyboardPreferences.heightScale(this)).roundToInt()
+        val baseWindowHeight = (baseHeight() * density() * PhormiKeyboardPreferences.heightScale(this)).roundToInt()
+        val height = (baseWindowHeight + if (PhormiKeyboardPreferences.floating(this)) scaled(30) else 0)
             .coerceIn(dp(210), (screenH * 0.82f).roundToInt().coerceAtLeast(dp(240)))
         val available = getMaxWidth().coerceAtLeast(dp(240))
         val width = (available * PhormiKeyboardPreferences.widthScale(this)).roundToInt()
