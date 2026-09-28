@@ -14,7 +14,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeUnit\nimport java.util.UUID
 
 /**
  * Unified AI gateway for Phormi.
@@ -34,7 +34,9 @@ class AiController(private val context: Context) {
         private const val MAX_STEPS = 25
         private const val REQUEST_TIMEOUT_SECONDS = 45L
         private const val MAX_HISTORY_ENTRIES = 12
-        private const val CENTRAL_HUB_URL = "https://mayobuild-studio.lovable.app/api/hub"
+        private const val CENTRAL_HUB_TUNNEL_URL = "https://mayobuild-studio.lovable.app/api/ai-tunnel"
+        private const val CENTRAL_HUB_APP_ID = "com.uong.phormi"
+        private const val KEY_HUB_DEVICE_ID = "central_hub_device_id"
 
         val TEMPLATES = listOf(
             Provider("grok", "Grok", "https://api.x.ai/v1/chat/completions", "", ""),
@@ -184,40 +186,102 @@ class AiController(private val context: Context) {
 
     fun removeProvider(id: String) = saveProviders(listProviders().filterNot { it.id == id })
     fun hasAnyKey(): Boolean = listProviders().any { it.apiKey.isNotBlank() }
-    fun isCentralHubActive(): Boolean = prefs.getBoolean("central_hub_active", false) && !PhormiHubStore.get(context).isNullOrBlank()
+    fun isCentralHubActive(): Boolean = prefs.getBoolean("central_hub_active", false) && hasCentralHubTunnel()
     fun setCentralHubActive(active: Boolean) { prefs.edit().putBoolean("central_hub_active", active).apply() }
-    fun hasCentralHubKey(): Boolean = !PhormiHubStore.get(context).isNullOrBlank()
-    fun saveCentralHubKey(key: String) { PhormiHubStore.put(context, key.trim()) }
-    fun clearCentralHubKey() { PhormiHubStore.clear(context); setCentralHubActive(false) }
-    fun centralHubStatus(): String = if (hasCentralHubKey()) "Central Hub key: saved" else "Central Hub key: not configured"
+    fun hasCentralHubTunnel(): Boolean = !PhormiHubStore.get(context).isNullOrBlank()
+    fun clearCentralHubTunnel() {
+        PhormiHubStore.clear(context)
+        prefs.edit().remove(KEY_HUB_DEVICE_ID).putBoolean("central_hub_active", false).apply()
+    }
+    fun centralHubStatus(): String =
+        if (hasCentralHubTunnel()) "Central Hub AI tunnel: connected"
+        else "Central Hub AI tunnel: not connected"
 
-    suspend fun testCentralHub(key: String): String = withContext(Dispatchers.IO) {
-        val clean = key.trim()
-        if (clean.isBlank()) throw IOException("Central Hub key is required")
-        val body = JSONObject().put("message", "Connection test: reply with OK only.").toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(CENTRAL_HUB_URL).addHeader("Authorization", "Bearer $clean").addHeader("Content-Type", "application/json").post(body).build()
-        client.newCall(request).execute().use { response ->
-            val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IOException("Central Hub returned HTTP ${response.code}")
-            val json = runCatching { JSONObject(raw) }.getOrNull()
-            val error = json?.optString("error").orEmpty()
-            if (error.isNotBlank()) throw IOException(error)
-            json?.optString("answer").takeIf { !it.isNullOrBlank() } ?: "Connected"
-        }
+    private fun tunnelDeviceId(): String {
+        val existing = prefs.getString(KEY_HUB_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
+        if (existing != null) return existing
+        val created = UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_HUB_DEVICE_ID, created).apply()
+        return created
     }
 
-    private fun callCentralHub(message: String): String? {
-        val key = PhormiHubStore.get(context)?.takeIf { it.isNotBlank() } ?: return null
+    private fun registerCentralHubTunnel(): Boolean {
+        val deviceId = tunnelDeviceId()
+        val body = JSONObject()
+            .put("action", "register")
+            .put("appId", CENTRAL_HUB_APP_ID)
+            .put("deviceId", deviceId)
+            .put("deviceLabel", "Phormi Android")
+            .toString()
+            .toRequestBody("application/json".toMediaType())
         return runCatching {
-            val body = JSONObject().put("message", message).toString().toRequestBody("application/json".toMediaType())
-            val request = Request.Builder().url(CENTRAL_HUB_URL).addHeader("Authorization", "Bearer $key").addHeader("Content-Type", "application/json").post(body).build()
+            val request = Request.Builder()
+                .url(CENTRAL_HUB_TUNNEL_URL)
+                .addHeader("Accept", "application/json")
+                .addHeader("Content-Type", "application/json")
+                .post(body)
+                .build()
             client.newCall(request).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                if (!response.isSuccessful) return@use null
-                val json = JSONObject(raw)
-                if (json.optString("error").isNotBlank()) null else json.optString("answer").takeIf { it.isNotBlank() }
+                val json = JSONObject(response.body?.string().orEmpty())
+                if (!response.isSuccessful || !json.optBoolean("ok", false)) return@use false
+                val token = json.optString("token").trim()
+                if (token.isBlank()) return@use false
+                PhormiHubStore.put(context, token)
+                true
             }
-        }.getOrNull()
+        }.getOrDefault(false)
+    }
+
+    suspend fun connectCentralHub(): String = withContext(Dispatchers.IO) {
+        if (!registerCentralHubTunnel() && !hasCentralHubTunnel()) {
+            throw IOException("Central Hub AI tunnel could not be connected")
+        }
+        val answer = callCentralHub("Connection test: reply with OK only.")
+            ?: throw IOException("Central Hub AI tunnel did not respond")
+        setCentralHubActive(true)
+        answer
+    }
+
+    private suspend fun callCentralHub(message: String): String? = withContext(Dispatchers.IO) {
+        var token = PhormiHubStore.get(context)?.takeIf { it.isNotBlank() }
+        if (token == null) {
+            if (!registerCentralHubTunnel()) return@withContext null
+            token = PhormiHubStore.get(context)?.takeIf { it.isNotBlank() }
+        }
+        val deviceId = tunnelDeviceId()
+        val body = JSONObject()
+            .put("action", "ask")
+            .put("appId", CENTRAL_HUB_APP_ID)
+            .put("deviceId", deviceId)
+            .put("message", message)
+            .toString()
+            .toRequestBody("application/json".toMediaType())
+
+        fun request(currentToken: String): Pair<Int, String> {
+            val request = Request.Builder()
+                .url(CENTRAL_HUB_TUNNEL_URL)
+                .addHeader("Authorization", "Bearer $currentToken")
+                .addHeader("Accept", "application/json")
+                .addHeader("Content-Type", "application/json")
+                .post(body)
+                .build()
+            return client.newCall(request).execute().use { response ->
+                response.code to response.body?.string().orEmpty()
+            }
+        }
+
+        var result = request(token!!)
+        if (result.first == 401) {
+            // A revoked/expired installation session is repaired automatically. No key
+            // prompt is shown to the user.
+            if (!registerCentralHubTunnel()) return@withContext null
+            val replacement = PhormiHubStore.get(context)?.takeIf { it.isNotBlank() } ?: return@withContext null
+            result = request(replacement)
+        }
+        if (result.first !in 200..299) return@withContext null
+        val json = runCatching { JSONObject(result.second) }.getOrNull() ?: return@withContext null
+        if (!json.optBoolean("ok", false)) return@withContext null
+        json.optString("answer").takeIf { it.isNotBlank() }
     }
 
     fun isActive(): Boolean = if (isCentralHubActive()) true else prefs.getBoolean(KEY_ACTIVE, false) && hasAnyKey()
@@ -307,15 +371,10 @@ class AiController(private val context: Context) {
                     stored.copy(endpoint = cfg.endpoint, model = cfg.model)
                 } else stored
                 val taskPrompt = "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.\n\nGoal: $instruction\n\nPrevious steps:\n${history.joinToString("\n") { "${it.stepNumber}: ${it.actionTaken}" }}\n\nCurrent screen JSON:\n$screen"
-                val text = if (isCentralHubActive()) {
-                    val memory = PhormiAiMemoryStore.context(context)
-                    callCentralHub(if (memory.isBlank()) taskPrompt else "Short device-local memory from earlier Phormi AI work:\n$memory\n\n$taskPrompt")
-                } else {
-                    callTextProvider(provider,
-                        "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
-                        taskPrompt
-                    )
-                } ?: continue
+                val text = callTextProvider(provider,
+                    "You control a phone/browser one step at a time. Reply with ONLY JSON. Supported actions: tap(x,y), type(text), scroll(direction), back, home, done(summary), stuck(summary). Never invent coordinates or elements. Sensitive password/PIN/OTP/CVV fields are unavailable.",
+                    taskPrompt
+                ) ?: continue
                 val cleaned = text.replace("```json", "").replace("```", "").trim()
                 val a = cleaned.indexOf('{'); val b = cleaned.lastIndexOf('}')
                 if (a >= 0 && b > a) return JSONObject(cleaned.substring(a, b + 1)) to provider.name
