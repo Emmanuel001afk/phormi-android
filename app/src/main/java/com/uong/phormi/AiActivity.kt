@@ -94,8 +94,8 @@ class AiActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_ai_memory_retention).setOnClickListener { showMemoryRetentionChooser() }
         findViewById<Button>(R.id.btn_web_ai).setOnClickListener { openWebAi() }
         findViewById<Button>(R.id.btn_voice).setOnClickListener { startVoiceInput() }
+        // Voice is explicit only. Opening the AI page must never start speech recognition automatically.
         findViewById<Button>(R.id.btn_run).setOnClickListener { runAssistant() }
-        if (intent.getBooleanExtra("auto_voice", false)) window.decorView.postDelayed({ startVoiceInput() }, 350)
     }
 
     private fun connectCentralHubFromUi() {
@@ -151,7 +151,7 @@ class AiActivity : AppCompatActivity() {
     }
     private fun runAssistant() {
         val text = instruction.text.toString().trim()
-        if (text.isBlank()) return startVoiceInput()
+        if (text.isBlank()) { status.text = "Type a command, or press Voice when you want to speak."; return }
         if (!controller.isActive()) { status.text = "Enable Central Hub or save an external AI connection first."; return }
         if (PhormiAccessibilityService.instance == null) {
             status.text = getString(R.string.accessibility_reminder)
