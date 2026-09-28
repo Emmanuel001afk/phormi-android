@@ -57,9 +57,7 @@ object PhormiDownloadEngine {
         val total: Long,
         val localUri: String?,
         val error: String?,
-        val createdAt: Long,
-        val etag: String? = null,
-        val lastModified: String? = null
+        val createdAt: Long
     )
 
     data class Record(
@@ -74,7 +72,9 @@ object PhormiDownloadEngine {
         val total: Long,
         val localUri: String?,
         val error: String?,
-        val createdAt: Long
+        val createdAt: Long,
+        val etag: String? = null,
+        val lastModified: String? = null
     )
 
     fun rememberWebRequestHeaders(url: String, headers: Map<String, String>?) {
