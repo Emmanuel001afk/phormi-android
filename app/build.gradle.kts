@@ -29,6 +29,10 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     buildFeatures { aidl = true }
+
+    lint {
+        disable += "UnsafeOptInUsageError"
+    }
 }
 
 dependencies {
