@@ -107,7 +107,21 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         super.onStartInput(attribute, restarting); editorInfo = attribute; page = KeyboardPage.LETTERS; capsLock = false; shift = false
         autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute); panel = Panel.KEYBOARD
     }
-    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); editorInfo = info ?: editorInfo; panel = Panel.KEYBOARD; setInputView(render()); applyKeyboardWindowSize(); applyPendingInput() }
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        editorInfo = info ?: editorInfo
+        panel = Panel.KEYBOARD
+        // Keep the IME window transition-free from the moment Android starts
+        // showing it. This prevents a stale/miniature copy from appearing
+        // during the show/hide handoff.
+        runCatching {
+            getWindow().window?.setWindowAnimations(0)
+            getWindow().window?.decorView?.animate()?.cancel()
+        }
+        setInputView(render())
+        applyKeyboardWindowSize()
+        applyPendingInput()
+    }
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
         if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
@@ -128,9 +142,20 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         super.onFinishInputView(finishingInput)
     }
 
+    override fun onWindowShown() {
+        runCatching {
+            getWindow().window?.setWindowAnimations(0)
+            getWindow().window?.decorView?.animate()?.cancel()
+        }
+        super.onWindowShown()
+    }
+
     override fun onWindowHidden() {
         stopRepeat()
-        runCatching { getWindow().window?.setWindowAnimations(0) }
+        runCatching {
+            getWindow().window?.setWindowAnimations(0)
+            getWindow().window?.decorView?.animate()?.cancel()
+        }
         super.onWindowHidden()
     }
     override fun onEvaluateFullscreenMode(): Boolean = false
