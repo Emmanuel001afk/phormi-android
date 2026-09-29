@@ -72,6 +72,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
+@androidx.media3.common.util.UnstableApi
 class MainActivity : AppCompatActivity() {
 
     private data class Tab(
