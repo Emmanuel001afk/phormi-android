@@ -17,6 +17,7 @@ import java.util.Locale
 import androidx.appcompat.app.AppCompatActivity
 
 /** Chrome-style in-app download list backed by PhormiDownloadEngine. */
+@androidx.media3.common.util.UnstableApi
 class DownloadsActivity : AppCompatActivity() {
     data class Row(
         val id: String,
