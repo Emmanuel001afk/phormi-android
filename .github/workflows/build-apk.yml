@@ -1,4 +1,5 @@
 name: Build Phormi APK
+# Smoke-build trigger: no runtime behavior change.
 
 concurrency:
   group: phormi-build-${{ github.ref }}
