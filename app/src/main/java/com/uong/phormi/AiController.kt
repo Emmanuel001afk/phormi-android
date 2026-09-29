@@ -35,7 +35,7 @@ class AiController(private val context: Context) {
         private const val MAX_STEPS = 25
         private const val REQUEST_TIMEOUT_SECONDS = 45L
         private const val MAX_HISTORY_ENTRIES = 12
-        private const val CENTRAL_HUB_TUNNEL_URL = "https://mayobuild-studio.lovable.app/api/ai-tunnel"
+        private const val CENTRAL_HUB_TUNNEL_URL = "https://qnogfzwmdjggqtdrkzpv.supabase.co/functions/v1/ai-tunnel"
         private const val CENTRAL_HUB_APP_ID = "com.uong.phormi"
         private const val KEY_HUB_DEVICE_ID = "central_hub_device_id"
 
