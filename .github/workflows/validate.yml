@@ -84,6 +84,9 @@ jobs:
         if: failure()
         run: |
           if [ -f /tmp/phormi-smoke.log ]; then python3 tools/report_validation.py /tmp/phormi-smoke.log; fi
+      - name: Publish bounded fixture previews
+        if: always()
+        run: python3 tools/report_emulator_previews.py
       - name: Upload emulator evidence
         if: always()
         uses: actions/upload-artifact@v4

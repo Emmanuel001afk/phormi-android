@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
+    <exclude domain="file" path="search_pages/" />
+        <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
         <exclude domain="sharedpref" path="phormi_downloads_v2.xml" />
         <exclude domain="sharedpref" path="phormi_ai_pending_task.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending.xml" />

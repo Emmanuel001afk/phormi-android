@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="file" path="search_pages/" />
         <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
         <exclude domain="sharedpref" path="phormi_downloads_v2.xml" />
         <exclude domain="sharedpref" path="phormi_ai_pending_task.xml" />
@@ -15,6 +16,7 @@
         <exclude domain="sharedpref" path="phormi_keyboard_draft_rescue.xml" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="file" path="search_pages/" />
         <exclude domain="sharedpref" path="phormi_ai_prefs.xml" />
         <exclude domain="sharedpref" path="phormi_downloads_v2.xml" />
         <exclude domain="sharedpref" path="phormi_ai_pending_task.xml" />

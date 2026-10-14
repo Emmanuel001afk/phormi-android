@@ -118,6 +118,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var shiftView: Button? = null
     private data class CorrectionUndo(val original: String, val replacement: String, val before: String)
     private var correctionUndo: CorrectionUndo? = null
+    private var localEditorConnection: PhormiEditorConnection? = null
     private var keepNextSpelling: String? = null
     private var alternativesPopup: PopupWindow? = null
     private val writingScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -135,6 +136,20 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var voicePartial = ""
     private var voiceListening = false
 
+    override fun getCurrentInputConnection(): InputConnection? {
+        val raw = super.getCurrentInputConnection() ?: return null
+        val info = editorInfo ?: return raw
+        if (info.packageName != packageName || PhormiKeyboardTextEngine.isPrivateEditor(info)) {
+            clearLocalEditorConnection(); return raw
+        }
+        localEditorConnection?.takeIf { it.source === raw }?.let { return it }
+        localEditorConnection?.dispose()
+        return PhormiEditorConnection(raw, info.initialSelStart, info.initialSelEnd) {
+            if (isInputViewShown) refreshAfterTextKey()
+        }.also { localEditorConnection = it }
+    }
+    private fun clearLocalEditorConnection() { localEditorConnection?.dispose(); localEditorConnection = null }
+
     override fun onCreate() {
         super.onCreate(); instance = this
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -145,6 +160,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
     }
     override fun onDestroy() {
+        clearLocalEditorConnection()
         stopVoice(true)
         activeEmojiGeneration?.cancel()
         writingScope.cancel()
@@ -157,6 +173,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (instance === this) instance = null; super.onDestroy()
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        clearLocalEditorConnection()
         stopVoice(true)
         writingJob?.cancel(); writingJob = null
         activeEmojiGeneration?.cancel(); activeEmojiGeneration = null; aiEmojiContext = ""
@@ -209,6 +226,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
         selectionStart = newSelStart; selectionEnd = newSelEnd
+        localEditorConnection?.selectionChanged(newSelStart, newSelEnd)
         if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
             schedulePredictionRefresh()
             if(PhormiKeyboardPreferences.autoCaps(this)){
@@ -219,12 +237,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     override fun onFinishInput() {
+        clearLocalEditorConnection()
         stopRepeat(); stopVoice(true); writingJob?.cancel(); editorGeneration++
         editorInfo = null; correctionUndo = null
         writingCapture = null; writingResult = ""
         super.onFinishInput()
     }
     override fun onUnbindInput() {
+        clearLocalEditorConnection()
         stopRepeat(); stopVoice(true); writingJob?.cancel(); editorGeneration++
         editorInfo = null; correctionUndo = null
         super.onUnbindInput()
@@ -487,12 +507,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     internal fun onSpellcheckUpdated(key: String) {
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
-        if (isInputViewShown && key == PhormiKeyboardSystemSpellChecker.key(PhormiKeyboardTextEngine.currentWord(currentInputConnection), locale)) refreshPredictionStrip(true)
+        if (isInputViewShown && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) && key == PhormiKeyboardSystemSpellChecker.key(PhormiKeyboardTextEngine.currentWord(currentInputConnection), locale)) refreshPredictionStrip(true)
     }
 
     private fun refreshPredictionStrip(force: Boolean = false) {
         if (emojiSearchActive) { refreshEmojiSearch(); return }
         val row = predictionRow ?: return
+        val allowed = PhormiKeyboardPreferences.suggestions(this) && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
+        if (!allowed) { row.removeAllViews(); row.visibility = View.GONE; return }
+        row.visibility = View.VISIBLE
         val ic = currentInputConnection
         val word = PhormiKeyboardTextEngine.currentWord(ic)
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
@@ -500,7 +523,6 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (!force && word == lastPredictionWord && previous == lastPredictionPrevious && row.childCount > 0) return
         lastPredictionWord = word; lastPredictionPrevious = previous
         row.removeAllViews()
-        val allowed = PhormiKeyboardPreferences.suggestions(this) && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
         val suggestions = if (!allowed) emptyList() else if (word.isNotBlank())
             PhormiKeyboardTextEngine.suggestions(this, word, locale)
         else PhormiKeyboardTextEngine.nextWordSuggestions(this, previous, locale)
@@ -1134,8 +1156,20 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun openWritingAssistant() {
         val connection = currentInputConnection ?: return
+        val generation = editorGeneration
+        writingJob?.cancel()
+        writingJob = writingScope.launch {
+            if (connection is PhormiEditorConnection && !connection.synchronize()) return@launch
+            if (generation == editorGeneration && currentInputConnection === connection && isInputViewShown) captureWritingAssistant()
+        }
+    }
+    private fun captureWritingAssistant() {
+        val connection = currentInputConnection ?: return
         if (!PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) return
         val selected = connection.getSelectedText(0)?.toString().orEmpty()
+        if (selectionStart >= 0 && selectionEnd >= 0 && selectionStart != selectionEnd && selected.isEmpty()) {
+            android.widget.Toast.makeText(this, "This editor did not expose the selected text. Nothing was sent.", android.widget.Toast.LENGTH_LONG).show(); return
+        }
         if (selected.length > 2000) {
             android.widget.Toast.makeText(this, "Select at most 2,000 characters for a writing edit", android.widget.Toast.LENGTH_LONG).show(); return
         }
@@ -1196,6 +1230,18 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     private fun applyWritingResult() {
+        val capture = writingCapture ?: return
+        if (writingBusy) return
+        writingJob?.cancel(); writingBusy = true
+        writingJob = writingScope.launch {
+            try {
+                val connection = currentInputConnection
+                if (connection is PhormiEditorConnection && !connection.synchronize()) return@launch
+                if (writingCapture === capture && isInputViewShown) applyValidatedWritingResult()
+            } finally { if (writingCapture === capture) writingBusy = false }
+        }
+    }
+    private fun applyValidatedWritingResult() {
         val capture = writingCapture ?: return
         val connection = currentInputConnection
         val sameSelection = selectionStart == capture.start && selectionEnd == capture.end
@@ -1263,6 +1309,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun commitSpace() {
         if (emojiSearchActive) { commitTextToEditor(" "); return }
         val ic = currentInputConnection ?: return
+        if (!PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) { ic.commitText(" ", 1); refreshAfterTextKey(); return }
         val original = PhormiKeyboardTextEngine.currentWord(ic)
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
         val previous = PhormiKeyboardTextEngine.previousWord(ic, locale)
@@ -1290,10 +1337,13 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun deleteBackward() {
         if (emojiSearchActive) { emojiQuery = emojiQuery.dropLast(PhormiTypingRules.deletionLength(emojiQuery)); refreshEmojiSearch(); return }
         val ic = currentInputConnection ?: return
+        if (PhormiKeyboardTextEngine.isPrivateEditor(editorInfo)) {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL)); return
+        }
         val selected = ic.getSelectedText(0)?.toString()
         val undo = correctionUndo
         correctionUndo = null
-        if (!selected.isNullOrEmpty()) { ic.commitText("", 1); return }
+        if (!selected.isNullOrEmpty() || selectionStart >= 0 && selectionEnd >= 0 && selectionStart != selectionEnd) { ic.commitText("", 1); return }
         val before = ic.getTextBeforeCursor(300, 0)?.toString().orEmpty()
         if (undo != null && before.endsWith(undo.before + undo.replacement + " ")) {
             ic.beginBatchEdit()
@@ -1307,6 +1357,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
         val length = PhormiTypingRules.deletionLength(before)
         if (length > 0) ic.deleteSurroundingText(length, 0)
+        else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL)) }
     }
     private fun moveCursor(delta:Int){val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
     private fun toggleShift(){if(capsLock){capsLock=false;shift=false;autoShift=false}else if(shift||autoShift){capsLock=true;shift=false;autoShift=false}else shift=true}

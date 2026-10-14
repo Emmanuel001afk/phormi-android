@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
 /** Generated search pages need their own durable address/content; WebView history is not their HTML. */
 internal object PhormiSearchPages {
     const val BASE = "https://phormi.local/"
-    private val worker = Executors.newSingleThreadExecutor()
+    private val worker = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "PhormiSearchCache").apply { isDaemon = true } }
     private val lock = Any()
     fun address(query: String): String = "phormi://search?q=" + java.net.URLEncoder.encode(query.take(2000), "UTF-8")
     fun query(address: String?): String? = runCatching {

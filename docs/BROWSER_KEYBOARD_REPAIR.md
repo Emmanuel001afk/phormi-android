@@ -24,6 +24,7 @@ Open **Write** in an ordinary text field, choose Grammar/Rewrite/Continue/Transl
 
 ## Keyboard behavior
 
+- Same-process editor context reads run on a background worker behind a bounded, revision-checked cache; blocking remote reads on the shared browser/IME UI looper can otherwise time out or ANR. Edits remain ordered and snapshots cannot overwrite newer typing/cursor context.
 - Direct native input handling replaces reflected typing hooks and process-wide polling. The browser and IME share the process without global view/cursor mutation.
 - Unicode word boundaries, offline starter lexicons, optional Android spell checking, per-language learned words, prediction caching and conservative correction. Repeated deliberate words are learned after roughly three uses/retentions. Backspace immediately after a correction restores the original spelling and does not immediately re-correct it. Reset clears both saved and cached learning.
 - Personal learning/clipboard capture/AI are suppressed in private fields and keyboard incognito mode. No glide typing or Gboard-size dictionary is claimed.
