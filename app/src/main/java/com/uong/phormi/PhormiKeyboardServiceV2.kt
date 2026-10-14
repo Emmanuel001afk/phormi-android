@@ -975,7 +975,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val right = view.paddingRight; val bottom = view.paddingBottom
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(view) { target, insets ->
             val raw = androidx.core.view.ViewCompat.getRootWindowInsets(target) ?: insets
-            val bars = raw.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+            // Android's IME navigation buttons may be delivered as a caption bar, not navigationBars alone.
+            val bars = raw.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout())
             val docked = !PhormiKeyboardPreferences.floating(this) && !keyboardResizeMode
             target.setPadding(left + if (docked) bars.left else 0, top, right + if (docked) bars.right else 0,
                 bottom + if (docked) bars.bottom else 0)
