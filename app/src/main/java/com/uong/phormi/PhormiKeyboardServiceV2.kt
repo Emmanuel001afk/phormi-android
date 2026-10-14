@@ -1385,7 +1385,27 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if ((info?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0) { ic.commitText("\n", 1); refreshAfterTextKey() }
         else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)) }
     }
-    private fun installRepeat(view:View,action:()->Unit){view.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{action();repeatRunnable=object:Runnable{override fun run(){action();repeatHandler.postDelayed(this,55)}};repeatHandler.postDelayed(repeatRunnable!!,320);true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{stopRepeat();true};else->true}}}
+    private fun installRepeat(view: View, action: () -> Unit) {
+        var repeated = false
+        view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    stopRepeat(); repeated = false; view.isPressed = true
+                    repeatRunnable = object : Runnable {
+                        override fun run() { repeated = true; action(); repeatHandler.postDelayed(this, 55) }
+                    }
+                    repeatHandler.postDelayed(repeatRunnable!!, 320); true
+                }
+                MotionEvent.ACTION_UP -> {
+                    stopRepeat(); view.isPressed = false
+                    if (!repeated) view.performClick()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> { stopRepeat(); view.isPressed = false; true }
+                else -> true
+            }
+        }
+    }
     private fun stopRepeat(){repeatRunnable?.let{repeatHandler.removeCallbacks(it)};repeatRunnable=null}
     private fun commitContentToEditor(uri:Uri):Boolean{if(Build.VERSION.SDK_INT<25)return false;val ic=currentInputConnection?:return false;val info=editorInfo?:return false;val mimeTypes=info.contentMimeTypes?:emptyArray();if(mimeTypes.isEmpty()){android.widget.Toast.makeText(this,"This field does not accept images",android.widget.Toast.LENGTH_SHORT).show();return false};val wanted=contentResolver.getType(uri).orEmpty();val accepted=wanted.isNotBlank()&&mimeTypes.any{it==wanted||(it.endsWith("/*")&&wanted.startsWith(it.removeSuffix("*")))};if(!accepted){android.widget.Toast.makeText(this,"This field does not accept that media type",android.widget.Toast.LENGTH_SHORT).show();return false};return runCatching{val description=android.content.ClipDescription("Phormi media",arrayOf(wanted));val contentInfo=InputContentInfo(uri,description,null);ic.commitContent(contentInfo,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)}.getOrDefault(false)}
 }

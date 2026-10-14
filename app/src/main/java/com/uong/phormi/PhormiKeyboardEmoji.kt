@@ -53,6 +53,8 @@ object PhormiKeyboardEmoji {
 
     private val all: List<String> by lazy {
         val result = LinkedHashSet<String>()
+        // Useful first rows, rather than obscure low-codepoint faces before familiar reactions.
+        result.addAll(listOf("😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😍", "🥰", "😘", "😎", "🤔", "😢", "😭", "😡", "👍", "🙏", "❤️"))
         unicodeEmojiCodePoints().forEach { result.add(codePointEmoji(it)) }
         result.addAll(countryFlags())
         result.addAll(unicode17Additions)

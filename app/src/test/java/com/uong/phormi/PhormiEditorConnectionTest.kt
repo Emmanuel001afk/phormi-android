@@ -73,4 +73,33 @@ class PhormiEditorConnectionTest {
             assertEquals("Hi world", editor.value.toString())
         } finally { connection.dispose() }
     }
+    @Test fun `a normal delete tap invokes correction undo once through the actual keyboard key`() {
+        val service = org.robolectric.Robolectric.buildService(PhormiKeyboardServiceV2::class.java).create().get()
+        val editor = Editor("Hello teh")
+        try {
+            org.robolectric.util.ReflectionHelpers.setField(service, "mStartedInputConnection", editor)
+            service.onStartInput(android.view.inputmethod.EditorInfo().apply {
+                packageName = RuntimeEnvironment.getApplication().packageName
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                initialSelStart = 9; initialSelEnd = 9
+            }, false)
+            ready(service.currentInputConnection as PhormiEditorConnection)
+            org.robolectric.util.ReflectionHelpers.callInstanceMethod<Unit>(service, "commitSpace")
+            assertEquals("Hello the ", editor.value.toString())
+            fun delete(view: View): android.widget.Button? {
+                if (view is android.widget.Button && view.text.toString() == "⌫") return view
+                if (view is android.view.ViewGroup) for (i in 0 until view.childCount) delete(view.getChildAt(i))?.let { return it }
+                return null
+            }
+            val key = requireNotNull(delete(service.render())).apply { layout(0, 0, 100, 100) }
+            val down = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, 20f, 20f, 0)
+            val up = android.view.MotionEvent.obtain(0, 20, android.view.MotionEvent.ACTION_UP, 20f, 20f, 0)
+            key.dispatchTouchEvent(down)
+            assertEquals("Hello the ", editor.value.toString())
+            key.dispatchTouchEvent(up)
+            assertEquals("Hello teh", editor.value.toString())
+            down.recycle(); up.recycle()
+        } finally { service.onDestroy() }
+    }
+
 }

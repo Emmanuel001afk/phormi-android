@@ -46,6 +46,17 @@ class KeyboardIntegrationSmokeTest {
             val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
             val small = android.graphics.Bitmap.createScaledBitmap(bitmap, 432, (bitmap.height * 432f / bitmap.width).toInt(), true)
             File(context.getExternalFilesDir(null), "$name-preview.jpg").outputStream().use { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 45, it) }
+            // Public test-fixture evidence survives UTP uninstalling the APK after a run.
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$name-preview.jpg")
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/PhormiSmoke")
+                }
+                context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)?.let { uri ->
+                    context.contentResolver.openOutputStream(uri)?.use { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 45, it) }
+                }
+            }
             small.recycle(); bitmap.recycle()
         }
     }
@@ -54,7 +65,18 @@ class KeyboardIntegrationSmokeTest {
         device.wait(Until.hasObject(By.res("android", "edit").text(value)), 3_000)
         scenario.onActivity { actual = it.editor.text.toString() }
         if (actual != value) capture("phormi-typing-failure")
-        assertEquals(value, actual)
+        var state = ""
+        if (actual != value) instrumentation.runOnMainSync {
+            runCatching {
+                val field = PhormiKeyboardServiceV2::class.java.getDeclaredField("instance").apply { isAccessible = true }
+                val service = field.get(null) as? PhormiKeyboardServiceV2
+                fun read(name: String) = PhormiKeyboardServiceV2::class.java.getDeclaredField(name).apply { isAccessible = true }.get(service)
+                val ic = service?.currentInputConnection
+                state = "Editor=${read("editorInfo")} undo=${read("correctionUndo")} connection=${ic?.javaClass?.simpleName} selection=${read("selectionStart")}/${read("selectionEnd")}"
+                if (ic?.javaClass?.simpleName == "PhormiEditorConnection") state += " context=${ic.getTextBeforeCursor(300, 0)}"
+            }
+        }
+        assertEquals(state, value, actual)
     }
     @Test fun sameProcessTypingCorrectsAndUndoRetainsTheDeliberateWord() {
         openEditor().use { scenario ->

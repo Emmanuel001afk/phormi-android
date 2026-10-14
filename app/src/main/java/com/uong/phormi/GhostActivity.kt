@@ -90,7 +90,7 @@ class GhostActivity : Activity() {
             setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO or android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         }
 
         toolbar.addView(back, LinearLayout.LayoutParams(42, 44))
@@ -127,7 +127,13 @@ class GhostActivity : Activity() {
 
     private fun createTab(initial: String) {
         val id = nextId++
-        val webView = WebView(this)
+        val webView = object : WebView(this) {
+            override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
+                val connection = super.onCreateInputConnection(outAttrs)
+                outAttrs.imeOptions = outAttrs.imeOptions or android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                return connection
+            }
+        }
         if (ghostProfileName != null) {
             runCatching { WebViewCompat.setProfile(webView, ghostProfileName!!) }
                 .onFailure { Toast.makeText(this, "Ghost mode could not create an isolated session.", Toast.LENGTH_LONG).show() }
