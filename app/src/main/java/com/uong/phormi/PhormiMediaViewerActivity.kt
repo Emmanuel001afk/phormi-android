@@ -32,6 +32,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import okhttp3.OkHttpClient
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -88,7 +92,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
         val mime = PhormiFileOpener.resolveMimeType(this, uri, intent.getStringExtra("mime"))
         val title = intent.getStringExtra("title").orEmpty()
             .ifBlank { PhormiFileOpener.displayName(this, uri) }
-        isVideo = mime.startsWith("video/")
+        isVideo = mime.startsWith("video/") || PhormiDownloadPolicy.isStream(uri.toString(), mime)
 
         root = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         playerView = PlayerView(this).apply {
@@ -234,7 +238,21 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     }
 
     private fun configurePlayerFromUri(playUri: Uri, mime: String, originalUri: Uri, allowCopyRetry: Boolean = true) {
-        val exo = ExoPlayer.Builder(this).build()
+        val builder = ExoPlayer.Builder(this)
+        if (playUri.scheme in setOf("http", "https")) {
+            val origin = PhormiDownloadPolicy.origin(playUri.toString())
+            val client = OkHttpClient.Builder().addNetworkInterceptor { chain ->
+                val request = chain.request()
+                val safe = if (PhormiDownloadPolicy.origin(request.url.toString()) == origin) request
+                    else request.newBuilder().removeHeader("Cookie").removeHeader("Authorization").build()
+                chain.proceed(safe)
+            }.build()
+            val stored = intent.getBundleExtra("media_headers")
+            val headers = stored?.keySet()?.associateWith { stored.getString(it).orEmpty() }.orEmpty()
+            val http = OkHttpDataSource.Factory(client).setDefaultRequestProperties(headers)
+            builder.setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
+        }
+        val exo = builder.build()
         player = exo
         playerView.player = exo
         exo.setSeekBackIncrementMs(10_000)
@@ -281,6 +299,10 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     }
 
     private fun retryFromAccessibleCopy(uri: Uri, mime: String, error: PlaybackException? = null) {
+        if (uri.scheme in setOf("http", "https")) {
+            Toast.makeText(this, "This source could not be played. The link may have expired, need site authentication, or use protected/unsupported media.", Toast.LENGTH_LONG).show()
+            return
+        }
         if (cacheFallbackAttempted) {
             runOnUiThread {
                 // The internal player has already had a direct-URI attempt and a readable

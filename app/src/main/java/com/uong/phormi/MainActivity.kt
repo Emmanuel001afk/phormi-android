@@ -108,6 +108,7 @@ class MainActivity : AppCompatActivity() {
     private var browserLockOverlay: View? = null
 
     private val tabs = mutableListOf<Tab>()
+    private val pageDownloadBridges = mutableMapOf<WebView, PhormiBlobDownloadBridge>()
     private var restoringTabs = false
     private var homePageVisible = true
     private var activeTabId: Int = -1
@@ -585,6 +586,7 @@ class MainActivity : AppCompatActivity() {
         // Handle browser-routing intents here as well as in onNewIntent(). This matters
         // when MainActivity has been recreated rather than receiving an existing-instance intent.
         when (startupAction) {
+            "media_sources" -> webViewContainer.postDelayed({ showMediaSources() }, 400L)
             "new_tab" -> createNewTab(NEW_TAB_URL, requestedProfile = incomingProfile)
             "select" -> if (startupTabId > 0) tabs.firstOrNull { it.id == startupTabId }?.let { switchToTab(it.id) }
             "close" -> if (startupTabId > 0) tabs.firstOrNull { it.id == startupTabId }?.let { closeTab(it.id) }
@@ -1627,6 +1629,7 @@ class MainActivity : AppCompatActivity() {
         val openUrl = intent?.getStringExtra("open_url")?.trim().orEmpty()
         val profile = intent?.getStringExtra("open_profile")?.trim().takeIf { !it.isNullOrBlank() }
         when (action) {
+            "media_sources" -> showMediaSources()
             "new_tab" -> createNewTab(NEW_TAB_URL, requestedProfile = profile)
             "select" -> intent?.getIntExtra("tab_id", -1)?.let { id -> tabs.firstOrNull { it.id == id }?.let { switchToTab(it.id) } }
             "close" -> intent?.getIntExtra("tab_id", -1)?.let { id -> if (id > 0) closeTab(id) }
@@ -1746,6 +1749,7 @@ class MainActivity : AppCompatActivity() {
         val parent = old.parent as? ViewGroup
         parent?.removeView(old)
         parent?.addView(newWebView, 0, FrameLayout.LayoutParams(-1, -1))
+        pageDownloadBridges.remove(old)?.close()
         old.destroy()
         tab.webView = newWebView
         tab.profileName = target
@@ -1937,6 +1941,7 @@ class MainActivity : AppCompatActivity() {
         if (index == -1) return
         val tab = tabs[index]
         unregisterForContextMenu(tab.webView)
+        pageDownloadBridges.remove(tab.webView)?.close()
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
         PhormiBrowserPerformance.clear(tab.id)
@@ -2263,6 +2268,55 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun showMediaSources() {
+        val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
+        if (isSiteLocked(tab.url, tab.id)) { Toast.makeText(this, "Unlock the source tab first.", Toast.LENGTH_LONG).show(); return }
+        val script = assets.open("phormi_media_sources.js").bufferedReader().use { it.readText() }
+        tab.webView.evaluateJavascript(script) { raw ->
+            if (isFinishing || isDestroyed || tabs.none { it === tab }) return@evaluateJavascript
+            val decoded = runCatching { org.json.JSONTokener(raw).nextValue() as? String }.getOrNull()
+            val sources = runCatching { JSONObject(decoded ?: "{}").optJSONArray("sources") }.getOrNull() ?: JSONArray()
+            val list = (0 until sources.length()).mapNotNull { sources.optJSONObject(it) }
+            if (list.isEmpty()) {
+                AlertDialog.Builder(this).setTitle("No direct media sources found")
+                    .setMessage("Start playback on the source page, then try Media sources again. Some embedded players, streaming sites and DRM-protected media do not expose a downloadable file. Phormi does not bypass those restrictions.")
+                    .setPositiveButton("OK", null).show()
+                return@evaluateJavascript
+            }
+            AlertDialog.Builder(this).setTitle("Media on ${tab.title.take(45)}")
+                .setItems(list.map { source ->
+                    val url = source.optString("url")
+                    val kind = if (source.optBoolean("protectedMedia")) "Protected media" else if (PhormiDownloadPolicy.isStream(url, source.optString("mime"))) "Online stream" else if (url.startsWith("blob:")) "Page blob" else "Media file"
+                    "$kind · ${source.optString("label").take(50)}\n${Uri.parse(url).host.orEmpty().ifBlank { "Current page" }}"
+                }.toTypedArray()) { _, selected ->
+                    val source = list[selected]
+                    val url = source.optString("url")
+                    val protectedMedia = source.optBoolean("protectedMedia")
+                    val stream = PhormiDownloadPolicy.isStream(url, source.optString("mime"))
+                    val canPlay = !protectedMedia && PhormiAiProtocol.httpUrl(url)
+                    val canSave = !protectedMedia && !stream
+                    val options = mutableListOf<String>()
+                    if (canPlay) options += "Play online"
+                    if (canSave) options += "Download file"
+                    options += "Copy source link"
+                    AlertDialog.Builder(this).setTitle(if (stream) "Streaming source" else "Media source")
+                        .setMessage(if (protectedMedia) "This player reports protected media. Use the website's own player and download controls." else if (stream) "This is a streaming playlist. Online playback is supported; downloading a complete offline HLS/DASH video is not yet supported." else "Choose how to use this source. Signed links can expire; refresh the source page if access is refused.")
+                        .setItems(options.toTypedArray()) { _, choice -> when (options[choice]) {
+                            "Download file" -> downloadFromPage(tab.webView, url, null, source.optString("mime").ifBlank { null })
+                            "Play online" -> {
+                                val headers = linkedMapOf("User-Agent" to tab.webView.settings.userAgentString, "Referer" to tab.url)
+                                CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }?.let { headers["Cookie"] = it }
+                                val bundle = Bundle().apply { headers.forEach { (key, value) -> putString(key, value) } }
+                                startActivity(Intent(this, PhormiMediaViewerActivity::class.java).putExtra("uri", Uri.parse(url))
+                                    .putExtra("mime", source.optString("mime")).putExtra("title", tab.title).putExtra("media_headers", bundle))
+                            }
+                            else -> (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                                .setPrimaryClip(android.content.ClipData.newPlainText("Media source", url))
+                        } }.setNegativeButton("Cancel", null).show()
+                }.setNegativeButton("Close", null).show()
+        }
+    }
+
     private fun startDownload(
         url: String,
         contentDisposition: String?,
@@ -2284,7 +2338,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (url.startsWith("data:", ignoreCase = true)) {
-            downloadDataUrl(url, contentDisposition, mimeType)
+            downloadBlobUrl(url, contentDisposition, mimeType, webView)
             return
         }
         if (webView == null) {
@@ -2304,140 +2358,18 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Download added", Toast.LENGTH_SHORT).show()
     }
 
+    internal fun downloadFromPage(view: WebView?, url: String, disposition: String?, mime: String?) {
+        startDownload(url, disposition, mime, sourceWebView = view)
+    }
+
     private fun downloadBlobUrl(url: String, contentDisposition: String?, mimeType: String?, sourceWebView: WebView?) {
-        val webView = sourceWebView ?: run {
-            Toast.makeText(this, "No active page", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        Toast.makeText(this, "Preparing download…", Toast.LENGTH_SHORT).show()
-        val quotedUrl = JSONObject.quote(url)
-        val script = """(async function(){
-            try {
-                const response = await fetch($quotedUrl);
-                if (!response.ok) return "ERROR:HTTP " + response.status;
-                const blob = await response.blob();
-                const reader = new FileReader();
-                return await new Promise((resolve, reject) => {
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.onerror = () => reject(reader.error);
-                    reader.readAsDataURL(blob);
-                });
-            } catch (e) {
-                return "ERROR:" + (e && e.message ? e.message : String(e));
-            }
-        })()"""
-
-        webView.evaluateJavascript(script) { result ->
-            try {
-                val value = org.json.JSONTokener(result).nextValue() as? String
-                if (value.isNullOrBlank() || value.startsWith("ERROR:")) {
-                    Toast.makeText(this, "Download failed", Toast.LENGTH_LONG).show()
-                    return@evaluateJavascript
-                }
-                saveDataUrl(value, contentDisposition, mimeType, url)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        }
+        val bridge = sourceWebView?.let { pageDownloadBridges[it] }
+        if (bridge == null) Toast.makeText(this, "Return to the source page to download this file.", Toast.LENGTH_LONG).show()
+        else bridge.start(url, contentDisposition, mimeType)
     }
 
     private fun downloadDataUrl(url: String, contentDisposition: String?, mimeType: String?) {
-        saveDataUrl(url, contentDisposition, mimeType, url)
-    }
-
-    private fun saveDataUrl(dataUrl: String, contentDisposition: String?, mimeType: String?, sourceUrl: String = dataUrl) {
-        try {
-            val comma = dataUrl.indexOf(',')
-            if (comma <= 0) throw IllegalArgumentException("Invalid data URL")
-
-            val metadata = dataUrl.substring(5, comma)
-            val payload = dataUrl.substring(comma + 1)
-            val baseMime = metadata.substringBefore(';').ifBlank {
-                mimeType ?: "application/octet-stream"
-            }
-            val bytes = if (metadata.contains(";base64", ignoreCase = true)) {
-                android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
-            } else {
-                Uri.decode(payload).toByteArray(Charsets.UTF_8)
-            }
-
-            val extension = android.webkit.MimeTypeMap.getSingleton()
-                .getExtensionFromMimeType(baseMime)
-            val suggestedName = URLUtil.guessFileName(
-                "https://phormi.local/download" +
-                    if (!extension.isNullOrBlank()) ".${extension}" else "",
-                contentDisposition,
-                baseMime
-            )
-            var fileName = suggestedName
-            if (fileName.isBlank() || fileName == "downloadfile") {
-                fileName = "phormi_download" +
-                    if (!extension.isNullOrBlank()) ".${extension}" else ""
-            }
-
-            var savedUri: String? = null
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                val values = android.content.ContentValues().apply {
-                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(android.provider.MediaStore.Downloads.MIME_TYPE, baseMime)
-                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                    put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
-                }
-                val resolver = contentResolver
-                val uri = resolver.insert(
-                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    values
-                ) ?: throw IllegalStateException("Could not create download")
-                savedUri = uri.toString()
-
-                try {
-                    resolver.openOutputStream(uri)?.use { it.write(bytes) }
-                        ?: throw IllegalStateException("Could not open download")
-                    values.clear()
-                    values.put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                } catch (e: Exception) {
-                    resolver.delete(uri, null, null)
-                    throw e
-                }
-            } else {
-                val downloads = Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS
-                )
-                if (!downloads.exists()) downloads.mkdirs()
-                var target = java.io.File(downloads, fileName)
-                var n = 1
-                while (target.exists()) {
-                    val dot = fileName.lastIndexOf('.')
-                    val base = if (dot > 0) fileName.substring(0, dot) else fileName
-                    val ext = if (dot > 0) fileName.substring(dot) else ""
-                    target = java.io.File(downloads, "$base ($n)$ext")
-                    n++
-                }
-                target.outputStream().use { it.write(bytes) }
-                savedUri = target.toURI().toString()
-                android.media.MediaScannerConnection.scanFile(
-                    this, arrayOf(target.absolutePath), arrayOf(baseMime), null
-                )
-            }
-
-            val completedUri = savedUri ?: throw IllegalStateException("Download location was not created")
-            PhormiDownloadEngine.recordExternalCompleted(
-                context = this,
-                sourceUrl = sourceUrl,
-                title = fileName,
-                mimeType = baseMime,
-                category = PhormiDownloadSupport.category(fileName, baseMime),
-                localUri = completedUri,
-                total = bytes.size.toLong()
-            )
-
-            Toast.makeText(this, "Download complete: $fileName", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
-        }
+        downloadBlobUrl(url, contentDisposition, mimeType, activeWebView())
     }
 
     override fun onCreateContextMenu(
@@ -2723,13 +2655,17 @@ class MainActivity : AppCompatActivity() {
             runCatching { tab.webView.stopLoading(); tab.webView.destroy() }
         }
         tabs.clear()
+        pageDownloadBridges.values.forEach { it.close() }; pageDownloadBridges.clear()
         PhormiBrowserPerformance.clearAll()
         CookieManager.getInstance().flush()
         super.onDestroy()
     }
 
-    @SuppressLint("WrongConstant")
+    @SuppressLint("WrongConstant", "SetJavaScriptEnabled")
     private fun configureWebView(webView: WebView) {
+        val blobBridge = PhormiBlobDownloadBridge(applicationContext, webView)
+        pageDownloadBridges[webView] = blobBridge
+        webView.addJavascriptInterface(blobBridge, "__phormiBlobSink")
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             webView.setRendererPriorityPolicy(
                 WebView.RENDERER_PRIORITY_IMPORTANT,
@@ -2921,6 +2857,7 @@ class MainActivity : AppCompatActivity() {
                 val parent = view.parent as? ViewGroup
                 val index = parent?.indexOfChild(view) ?: -1
                 parent?.removeView(view)
+                pageDownloadBridges.remove(view)?.close()
                 runCatching { unregisterForContextMenu(view); view.destroy() }
                 val replacement = WebView(this@MainActivity)
                 if (tab.profileName != DEFAULT_PROFILE_NAME) PhormiEnvironmentManager.apply(replacement, tab.profileName)

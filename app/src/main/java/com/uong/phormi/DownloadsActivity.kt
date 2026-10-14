@@ -52,6 +52,12 @@ class DownloadsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_downloads)
         findViewById<TextView>(R.id.btn_downloads_back).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btn_media_sources).setOnClickListener {
+            startActivity(android.content.Intent(this, MainActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra("action", "media_sources"))
+            finish()
+        }
         empty = findViewById(R.id.downloads_empty)
         list = findViewById(R.id.downloads_list)
         adapter = object : BaseAdapter() {
@@ -64,8 +70,9 @@ class DownloadsActivity : AppCompatActivity() {
                 view.findViewById<TextView>(R.id.download_title).text = row.title
                 view.findViewById<TextView>(R.id.download_status).text = row.status
                 val progress = view.findViewById<ProgressBar>(R.id.download_progress)
+                progress.isIndeterminate = row.total <= 0L && row.state in setOf("RUNNING", "QUEUED")
                 progress.progress = row.progress
-                progress.visibility = if (row.total > 0L && row.state != "COMPLETED") View.VISIBLE else View.GONE
+                progress.visibility = if (row.state in setOf("RUNNING", "QUEUED", "PAUSED")) View.VISIBLE else View.GONE
 
                 val action = view.findViewById<TextView>(R.id.download_action)
                 val delete = view.findViewById<TextView>(R.id.download_delete)
@@ -73,13 +80,13 @@ class DownloadsActivity : AppCompatActivity() {
                 val completed = row.state == "COMPLETED"
                 action.visibility = if (completed || (!row.legacy && row.state !in setOf("COMPLETED", "CANCELLED"))) View.VISIBLE else View.GONE
                 action.text = if (completed) { if (playable) "Play" else "Open" } else when (row.state) {
-                    "RUNNING" -> "Pause"
-                    "PAUSED", "QUEUED" -> "Resume"
+                    "RUNNING", "QUEUED" -> "Pause"
+                    "PAUSED" -> "Resume"
                     "FAILED" -> "Retry"
                     else -> "Resume"
                 }
                 action.contentDescription = if (completed) { if (playable) "Play media" else "Open downloaded file" } else when (row.state) {
-                    "RUNNING" -> "Pause download"
+                    "RUNNING", "QUEUED" -> "Pause download"
                     "FAILED" -> "Retry download"
                     else -> "Resume download"
                 }
@@ -89,8 +96,8 @@ class DownloadsActivity : AppCompatActivity() {
                         return@setOnClickListener
                     }
                     when (row.state) {
-                        "RUNNING" -> PhormiDownloadEngine.pause(this@DownloadsActivity, row.id)
-                        "PAUSED", "QUEUED", "FAILED" -> PhormiDownloadEngine.resume(this@DownloadsActivity, row.id)
+                        "RUNNING", "QUEUED" -> PhormiDownloadEngine.pause(this@DownloadsActivity, row.id)
+                        "PAUSED", "FAILED" -> PhormiDownloadEngine.resume(this@DownloadsActivity, row.id)
                     }
                 }
                 // Legacy DownloadManager rows are real files too. Keep Delete available for
@@ -111,11 +118,10 @@ class DownloadsActivity : AppCompatActivity() {
                             loadDownloads()
                         }
                     } else if (row.state == "COMPLETED" || row.state == "CANCELLED") {
-                        PhormiDownloadEngine.delete(this@DownloadsActivity, row.id)
-                        rows.removeAll { it.id == row.id }
-                        adapter.notifyDataSetChanged()
-                        empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                        list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
+                        if (!PhormiDownloadEngine.delete(this@DownloadsActivity, row.id)) {
+                            Toast.makeText(this@DownloadsActivity, "The file could not be deleted or is still stopping. Try again shortly.", Toast.LENGTH_LONG).show()
+                        }
+                        loadDownloads()
                     } else {
                         PhormiDownloadEngine.cancel(this@DownloadsActivity, row.id)
                     }
@@ -146,7 +152,7 @@ class DownloadsActivity : AppCompatActivity() {
         PhormiDownloadEngine.items(this).forEach { item ->
             val progress = if (item.total > 0L) ((item.downloaded * 100L) / item.total).toInt().coerceIn(0, 100) else 0
             val status = when (item.state) {
-                PhormiDownloadEngine.State.RUNNING -> "Downloading · $progress% · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}"
+                PhormiDownloadEngine.State.RUNNING -> "Downloading · ${if (item.total > 0L) "$progress%" else "size unknown"} · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}"
                 PhormiDownloadEngine.State.QUEUED -> if (item.error.isNullOrBlank()) "Waiting to download · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}" else item.error
                 PhormiDownloadEngine.State.PAUSED -> "Paused · $progress% · ${formatBytes(item.downloaded)} of ${if (item.total > 0) formatBytes(item.total) else "unknown size"}"
                 PhormiDownloadEngine.State.COMPLETED -> "${item.category} · Completed · ${formatBytes(item.total.coerceAtLeast(item.downloaded))}"
