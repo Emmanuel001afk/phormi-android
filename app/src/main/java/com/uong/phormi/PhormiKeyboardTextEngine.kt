@@ -105,11 +105,11 @@ object PhormiKeyboardTextEngine {
 
     fun nextWordSuggestions(context: Context, previous: String, locale: Locale = activeLocale(context)): List<String> {
         val key = normalize(previous, locale)
-        if (key.isBlank()) return emptyList()
         val stored = readObject(context, KEY_BIGRAMS).optJSONArray(locale.toLanguageTag() + "|" + key)
         val result = linkedSetOf<String>()
         if (stored != null) for (i in 0 until stored.length()) result.add(stored.optString(i))
         result.addAll(nextSeeds[locale.language]?.get(key).orEmpty())
+        if (result.isEmpty()) result.addAll(PhormiKeyboardLanguageData.words(locale).take(3))
         return result.filter { it.isNotBlank() }.take(3)
     }
 

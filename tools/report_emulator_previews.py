@@ -17,7 +17,7 @@ for xml in root.glob('**/*typing-failure.xml'):
         print('::notice title=Keyboard hit regions::PHORMI_BOUNDS|' + json.dumps(keys, ensure_ascii=False))
     except (ET.ParseError, OSError):
         pass
-preferred = ['phormi-typing-failure', 'phormi-typing-final', 'phormi-browser-keyboard-smoke', 'phormi-emoji-smoke', 'phormi-panel-final']
+preferred = ['phormi-typing-failure', 'phormi-browser-keyboard-smoke', 'phormi-typing-final', 'phormi-emoji-smoke', 'phormi-panel-final']
 count = 0
 for name in preferred:
     if count >= 3:

@@ -590,7 +590,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     private fun buildLetterPage(root:LinearLayout,email:Boolean,uri:Boolean){
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        responsiveRows(body, PhormiKeyboardLayouts.rows(PhormiKeyboardTextEngine.localeFor(editorInfo)))
+        responsiveRows(body, PhormiKeyboardLayouts.rows(PhormiKeyboardTextEngine.localeFor(editorInfo)), true)
         if(email||uri){
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
             val tokens=if(email)listOf("@",".com",".net",".org")else listOf("/",".com","https://",".org")
@@ -598,7 +598,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             body.addView(row,LinearLayout.LayoutParams(-1,scaled(40)))
         }
         val scroll=ScrollView(this).apply{
-            isFillViewport=false
+            isFillViewport=true
             clipToPadding=false
             overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addView(body)
@@ -620,10 +620,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             InputType.TYPE_CLASS_NUMBER -> listOf("123", "456", "789", if (decimal) "0${java.text.DecimalFormatSymbols.getInstance(PhormiKeyboardTextEngine.localeFor(editorInfo)).decimalSeparator}" else "0")
             else -> listOf("123", "456", "789", "0.,")
         }
-        responsiveRows(body, rows)
+        responsiveRows(body, rows, true)
         if (clazz == InputType.TYPE_CLASS_TEXT) body.addView(keyButton("Symbols") { page = KeyboardPage.SYMBOLS; setInputView(render()) }
             .apply { layoutParams = LinearLayout.LayoutParams(-1, scaled(40)) })
-        val scroll = ScrollView(this).apply { isFillViewport = false; addView(body) }
+        val scroll = ScrollView(this).apply { isFillViewport = true; addView(body) }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         addBottomRow(root, KeyboardPage.NUMBERS)
     }
@@ -663,7 +663,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             grid.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))
         }
     }
-    private fun responsiveRows(root:LinearLayout,rows:List<String>){
+    private fun responsiveRows(root:LinearLayout,rows:List<String>,fillAvailable:Boolean=false){
         rows.forEach{chars->
             val row=LinearLayout(this).apply{
                 orientation=LinearLayout.HORIZONTAL
@@ -688,9 +688,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                     // IME viewport even on narrow screens and reduced-width settings.
                     textSize=18f
                     minimumWidth=0
-                },LinearLayout.LayoutParams(0,scaled(44),1f).apply{setMargins(dp(1),dp(2),dp(1),dp(2));width=0})
+                },LinearLayout.LayoutParams(0,if(fillAvailable)-1 else scaled(44),1f).apply{setMargins(dp(1),dp(2),dp(1),dp(2));width=0})
             }
-            root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)).apply{width=-1})
+            root.addView(row,LinearLayout.LayoutParams(-1,if(fillAvailable)0 else scaled(44),if(fillAvailable)1f else 0f).apply{width=-1})
         }
     }
     private fun shiftKey(weight: Float): Button {
@@ -1030,7 +1030,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         return finalView
     }
     private fun refreshAfterTextKey() {
-        if (PhormiKeyboardPreferences.autoCaps(this)) autoShift = PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, editorInfo)
+        if (emojiSearchActive) autoShift = false
+        else if (PhormiKeyboardPreferences.autoCaps(this)) autoShift = PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, editorInfo)
         updateLetterCase()
         if (panel == Panel.KEYBOARD && page == KeyboardPage.LETTERS) schedulePredictionRefresh()
     }
@@ -1221,7 +1222,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             controls.addView(pill("Copy") { (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Phormi writing suggestion", writingResult)) }, LinearLayout.LayoutParams(0, scaled(44), 1f))
             root.addView(controls)
         } else root.addView(pill(if (writingBusy) "Cancel request" else "Configure AI connection") {
-            if (writingBusy) { writingJob?.cancel(); writingBusy = false; writingStatus = "Request cancelled."; setInputView(render()) }
+            if (writingBusy) { writingJob?.cancel(); writingCapture = writingCapture?.copy(); writingBusy = false; writingStatus = "Request cancelled."; setInputView(render()) }
             else startActivity(Intent(this, AiActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }, LinearLayout.LayoutParams(-1, scaled(42)))
         return root

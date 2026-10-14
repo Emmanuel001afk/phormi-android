@@ -63,4 +63,12 @@ class PhormiKeyboardSurfaceTest {
         assertEquals(initial + 24, view.paddingBottom)
     }
 
+    @Test fun `normal text reserves a useful stable candidate row before the first key`() {
+        service.onStartInput(EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT; packageName = "test" }, false)
+        service.render()
+        val row = ReflectionHelpers.getField<ViewGroup>(service, "predictionRow")
+        assertEquals(View.VISIBLE, row.visibility)
+        assertTrue(row.childCount > 0)
+    }
+
 }
