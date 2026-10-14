@@ -51,6 +51,7 @@ class DownloadsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_downloads)
+        PhormiInsets.apply(this, (findViewById<android.view.ViewGroup>(android.R.id.content)).getChildAt(0))
         findViewById<TextView>(R.id.btn_downloads_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.btn_media_sources).setOnClickListener {
             startActivity(android.content.Intent(this, MainActivity::class.java)

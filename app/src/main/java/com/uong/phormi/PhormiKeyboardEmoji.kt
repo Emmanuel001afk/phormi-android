@@ -6,7 +6,7 @@ import android.os.Build
 import java.util.Locale
 
 /**
- * Broad Unicode emoji palette. Android 9+ ICU exposes the Unicode Emoji
+ * Platform-aware Unicode emoji palette. Android 8+ ICU exposes the Unicode Emoji
  * property, so the keyboard can enumerate the platform emoji set instead of
  * maintaining a short hand-written list. Long content is scrolled in-place.
  */
@@ -27,11 +27,10 @@ object PhormiKeyboardEmoji {
     private fun codePointEmoji(cp: Int): String = String(Character.toChars(cp))
 
     private fun unicodeEmojiCodePoints(): List<Int> {
-        if (Build.VERSION.SDK_INT < 28) return emptyList()
         val result = ArrayList<Int>()
         fun scan(start: Int, end: Int) {
             for (cp in start..end) {
-                if (UCharacter.hasBinaryProperty(cp, UProperty.EMOJI) && cp !in 0x1F1E6..0x1F1FF) result.add(cp)
+                if (UCharacter.hasBinaryProperty(cp, UProperty.EMOJI) && cp !in 0x1F1E6..0x1F1FF && cp !in 0x1F3FB..0x1F3FF) result.add(cp)
             }
         }
         scan(0, 0x2FFF)
@@ -40,7 +39,6 @@ object PhormiKeyboardEmoji {
     }
 
     private fun modifierBases(): List<Int> {
-        if (Build.VERSION.SDK_INT < 28) return emptyList()
         val result = ArrayList<Int>()
         for (cp in 0x1F000..0x1FAFF) {
             if (UCharacter.hasBinaryProperty(cp, UProperty.EMOJI_MODIFIER_BASE)) result.add(cp)
@@ -56,16 +54,13 @@ object PhormiKeyboardEmoji {
     private val all: List<String> by lazy {
         val result = LinkedHashSet<String>()
         unicodeEmojiCodePoints().forEach { result.add(codePointEmoji(it)) }
-        val modifiers = intArrayOf(0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF)
-        modifierBases().forEach { base ->
-            val root = codePointEmoji(base)
-            modifiers.forEach { modifier -> result.add(root + codePointEmoji(modifier)) }
-        }
         result.addAll(countryFlags())
         result.addAll(unicode17Additions)
         result.addAll(specialSequences)
+        result.addAll((0..9).map { "$it\uFE0F\u20E3" } + listOf("#️⃣", "*️⃣"))
         result.removeAll(listOf("#", "*", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
-        result.toList()
+        val paint = android.graphics.Paint().apply { textSize = 32f }
+        result.filter { paint.hasGlyph(it) }
     }
 
     private fun unicodeName(emoji: String): String {
@@ -78,6 +73,30 @@ object PhormiKeyboardEmoji {
             i += Character.charCount(cp)
         }
         return names.toString()
+    }
+
+    private val names by lazy { all.associateWith { unicodeName(it).lowercase(Locale.ROOT) } }
+    fun description(emoji: String): String = unicodeName(emoji).trim().lowercase(Locale.ROOT).ifBlank { "Emoji" }
+    fun withTone(emoji: String, tone: Int): String {
+        if (tone !in 1..5 || emoji.codePoints().anyMatch { it in 0x1F3FB..0x1F3FF }) return emoji
+        val output = StringBuilder()
+        var i = 0
+        while (i < emoji.length) {
+            val cp = emoji.codePointAt(i); output.appendCodePoint(cp); i += Character.charCount(cp)
+            if (UCharacter.hasBinaryProperty(cp, UProperty.EMOJI_MODIFIER_BASE)) {
+                if (i < emoji.length && emoji.codePointAt(i) == 0xFE0F) i += 1
+                output.appendCodePoint(0x1F3FA + tone)
+            }
+        }
+        val value = output.toString()
+        return if (android.graphics.Paint().hasGlyph(value)) value else emoji
+    }
+    fun toneVariants(emoji: String): List<String> = (listOf(emoji) + (1..5).map { withTone(emoji, it) }).distinct()
+    fun search(query: String): List<String> {
+        val terms = query.trim().lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (terms.isEmpty()) return all.take(50)
+        val aliases = mapOf("laugh" to "joy", "lol" to "joy", "love" to "heart", "thanks" to "folded hands", "happy" to "smil", "sad" to "cry", "party" to "party", "dog" to "dog", "cat" to "cat")
+        return all.filter { emoji -> terms.all { term -> names[emoji].orEmpty().contains(term) || names[emoji].orEmpty().contains(aliases[term] ?: term) || emoji == term } }.take(160)
     }
 
     private fun isFlag(emoji: String): Boolean = emoji.codePointCount(0, emoji.length) == 2 &&

@@ -49,6 +49,7 @@ class AiActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ai)
+        PhormiInsets.apply(this, (findViewById<android.view.ViewGroup>(android.R.id.content)).getChildAt(0))
         controller = AiController(applicationContext)
         status = findViewById(R.id.status_log)
         keyStatus = findViewById(R.id.key_status)

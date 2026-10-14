@@ -10,6 +10,7 @@ object PhormiKeyboardPreferences {
     private const val AUTO_CAPS = "auto_caps"
     private const val HAPTIC = "haptic"
     private const val SOUND = "sound"
+    private const val INCOGNITO = "incognito"
     private const val HEIGHT_SCALE = "keyboard_height_scale"
     private const val WIDTH_SCALE = "keyboard_width_scale"
     private const val OFFSET_X = "keyboard_offset_x"
@@ -27,6 +28,7 @@ object PhormiKeyboardPreferences {
     fun autoCaps(context: Context) = prefs(context).getBoolean(AUTO_CAPS, true)
     fun haptic(context: Context) = prefs(context).getBoolean(HAPTIC, true)
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
+    fun incognito(context: Context) = prefs(context).getBoolean(INCOGNITO, false)
     fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
 
     fun pollinationsKey(context: Context): String =
@@ -68,5 +70,6 @@ object PhormiKeyboardPreferences {
     const val KEY_AUTO_CAPS = AUTO_CAPS
     const val KEY_HAPTIC = HAPTIC
     const val KEY_SOUND = SOUND
+    const val KEY_INCOGNITO = INCOGNITO
     const val KEY_AI_EMOJI = AI_EMOJI
 }

@@ -6,11 +6,11 @@
     android:orientation="vertical"
     android:background="#0B1220">
 
-    <!-- ONE compact horizontal chrome layer only. -->
+    <!-- Compact, accessible chrome with a 48dp minimum touch target. -->
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="26dp"
+        android:layout_height="52dp"
         android:gravity="center_vertical"
         android:paddingStart="2dp"
         android:paddingEnd="2dp"
@@ -18,8 +18,8 @@
 
         <TextView
             android:id="@+id/btn_home"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:text="⌂"
             android:textColor="#E2E8F0"
@@ -31,7 +31,7 @@
         <LinearLayout
             android:id="@+id/url_toolbar"
             android:layout_width="0dp"
-            android:layout_height="24dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center_vertical"
@@ -41,7 +41,7 @@
 
             <TextView
                 android:layout_width="20dp"
-                android:layout_height="24dp"
+                android:layout_height="48dp"
                 android:gravity="center"
                 android:text="⌕"
                 android:textColor="#94A3B8"
@@ -50,12 +50,12 @@
             <EditText
                 android:id="@+id/url_bar"
                 android:layout_width="0dp"
-                android:layout_height="24dp"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:hint="Search or type a URL"
                 android:textColorHint="#94A3B8"
                 android:textColor="#F1F5F9"
-                android:textSize="12sp"
+                android:textSize="14sp"
                 android:singleLine="true"
                 android:imeOptions="actionGo"
                 android:inputType="textUri"
@@ -66,7 +66,7 @@
             <TextView
                 android:id="@+id/btn_go"
                 android:layout_width="0dp"
-                android:layout_height="24dp"
+                android:layout_height="48dp"
                 android:gravity="center"
                 android:text=""
                 android:textColor="#38BDF8"
@@ -78,7 +78,7 @@
         <HorizontalScrollView
             android:id="@+id/tab_strip"
             android:layout_width="150dp"
-            android:layout_height="26dp"
+            android:layout_height="52dp"
             android:layout_marginStart="2dp"
             android:visibility="gone"
             android:fillViewport="false"
@@ -98,8 +98,9 @@
 
         <TextView
             android:id="@+id/btn_refresh"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:visibility="gone"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="⇒"
@@ -111,8 +112,9 @@
 
         <TextView
             android:id="@+id/btn_favorite"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:visibility="gone"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:drawableTop="@drawable/ic_favorite_decagon"
@@ -123,13 +125,13 @@
 
         <TextView
             android:id="@+id/tab_count"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="0"
             android:textColor="#38BDF8"
-            android:textSize="10sp"
+            android:textSize="14sp"
             android:textStyle="bold"
             android:background="@drawable/bg_tab_count"
             android:clickable="true"
@@ -138,8 +140,9 @@
 
         <TextView
             android:id="@+id/btn_new_tab"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:visibility="gone"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:text="+"
             android:textColor="#38BDF8"
@@ -150,8 +153,8 @@
 
         <TextView
             android:id="@+id/btn_menu"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:text="⋮"
             android:textColor="#E2E8F0"
@@ -220,7 +223,7 @@
     <LinearLayout
         android:id="@+id/bottom_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="26dp"
+        android:layout_height="52dp"
         android:gravity="center"
         android:orientation="horizontal"
         android:background="#0F172A">
@@ -228,7 +231,7 @@
         <TextView
             android:id="@+id/btn_back"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="4dp"
@@ -244,7 +247,7 @@
         <TextView
             android:id="@+id/btn_forward"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
@@ -260,7 +263,7 @@
         <TextView
             android:id="@+id/btn_bottom_ai"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
@@ -276,7 +279,7 @@
         <TextView
             android:id="@+id/btn_bottom_downloads"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="10dp"

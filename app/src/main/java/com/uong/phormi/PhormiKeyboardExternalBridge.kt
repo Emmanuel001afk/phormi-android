@@ -8,6 +8,6 @@ object PhormiKeyboardExternalBridge {
     fun commitText(context: Context, text: String): Boolean =
         PhormiKeyboardServiceV2.commitExternalText(context, text)
 
-    fun commitContent(context: Context, uri: Uri): Boolean =
-        PhormiKeyboardServiceV2.commitPickedContent(context, uri)
+    fun commitContent(context: Context, uri: Uri, editor: String? = null): Boolean =
+        PhormiKeyboardServiceV2.commitPickedContent(context, uri, editor)
 }

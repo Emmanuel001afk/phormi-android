@@ -11,7 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 /** Pollinations AI Emoji Studio. Automatic mode uses the current typed context. */
-class PhormiAiEmojiActivity : Activity() {
+class PhormiAiEmojiActivity : androidx.appcompat.app.AppCompatActivity() {
     companion object {
         const val EXTRA_CONTEXT = "ai_emoji_context"
         const val EXTRA_AUTOMATIC = "ai_emoji_automatic"
@@ -69,10 +69,13 @@ class PhormiAiEmojiActivity : Activity() {
         grid = GridLayout(this).apply { columnCount = 2 }
         root.addView(grid, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+        PhormiInsets.apply(this, root)
     }
 
     private fun showKeyDialog() {
         val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO
             hint = "pk_…"
             setSingleLine(true)
             setText(PhormiKeyboardPreferences.pollinationsKey(this@PhormiAiEmojiActivity))
@@ -132,8 +135,9 @@ class PhormiAiEmojiActivity : Activity() {
     }
 
     private fun insert(file: java.io.File) {
-        val ok = runCatching { PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file)) }.getOrDefault(false)
-        if (!ok) Toast.makeText(this, "The current editor does not accept image content", Toast.LENGTH_SHORT).show()
+        val ok = runCatching { PhormiKeyboardServiceV2.commitPickedContent(this, PhormiKeyboardStickerStore.contentUri(this, file), intent.getStringExtra(PhormiKeyboardServiceV2.EXTRA_EDITOR_TARGET).orEmpty()) }.getOrDefault(false)
+        if (!ok) Toast.makeText(this, "Saved. Return to the original keyboard and tap Insert selected image, or save it to a pack.", Toast.LENGTH_LONG).show()
+        if (!intent.getStringExtra(PhormiKeyboardServiceV2.EXTRA_EDITOR_TARGET).isNullOrBlank()) finish()
     }
 
     private fun saveToPack(file: java.io.File) {

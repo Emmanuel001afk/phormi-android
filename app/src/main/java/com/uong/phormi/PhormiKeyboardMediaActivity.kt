@@ -7,7 +7,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 
 /** Picker/import activity used by the keyboard media surface. */
-class PhormiKeyboardMediaActivity : Activity() {
+class PhormiKeyboardMediaActivity : androidx.appcompat.app.AppCompatActivity() {
     companion object { const val EXTRA_MODE = "mode"; private const val REQUEST_PICK = 4401 }
     private val mode: String get() = intent?.getStringExtra(EXTRA_MODE).orEmpty()
 
@@ -44,7 +44,7 @@ class PhormiKeyboardMediaActivity : Activity() {
             .setTitle(pack.name)
             .setItems(names) { _, which ->
                 val file = files.getOrNull(which) ?: return@setItems
-                PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file), intent.getStringExtra(PhormiKeyboardServiceV2.EXTRA_EDITOR_TARGET).orEmpty())
                 finish()
             }
             .setNegativeButton("Back") { _, _ -> showStickerChooser() }
@@ -86,7 +86,7 @@ class PhormiKeyboardMediaActivity : Activity() {
                             Toast.makeText(this, "Could not import this sticker", Toast.LENGTH_SHORT).show()
                         } else {
                             PhormiKeyboardStickerPackStore.add(this, "Imported", file)
-                            PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                            PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file), intent.getStringExtra(PhormiKeyboardServiceV2.EXTRA_EDITOR_TARGET).orEmpty())
                         }
                     }
                     "gif" -> {
@@ -98,12 +98,12 @@ class PhormiKeyboardMediaActivity : Activity() {
                             Toast.makeText(this, "Could not import this GIF/image", Toast.LENGTH_SHORT).show()
                         } else {
                             PhormiKeyboardStickerPackStore.add(this, "GIF & Images", file)
-                            val delivered = PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
+                            val delivered = PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file), intent.getStringExtra(PhormiKeyboardServiceV2.EXTRA_EDITOR_TARGET).orEmpty())
                             if (!delivered) Toast.makeText(this, "GIF saved — return to the keyboard to insert it", Toast.LENGTH_SHORT).show()
                         }
                     }
                     else -> {
-                        if (!PhormiKeyboardExternalBridge.commitContent(this, uri)) {
+                        if (!PhormiKeyboardExternalBridge.commitContent(this, uri, intent.getStringExtra(PhormiKeyboardServiceV2.EXTRA_EDITOR_TARGET).orEmpty())) {
                             Toast.makeText(this, "Media queued — return to the keyboard to insert it", Toast.LENGTH_SHORT).show()
                         }
                     }

@@ -87,7 +87,8 @@ class MainActivity : AppCompatActivity() {
         var profileName: String = DEFAULT_PROFILE_NAME,
         var url: String = NEW_TAB_URL,
         var savedState: String? = null,
-        var recoveryPaused: Boolean = false
+        var recoveryPaused: Boolean = false,
+        var navigationGeneration: Long = 0L
     )
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -276,6 +277,8 @@ class MainActivity : AppCompatActivity() {
                 aiBackgroundTabIds.clear()
                 updateAiBackgroundTabVisibility()
                 PhormiNotificationManager.cancel(this@MainActivity, 7101)
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) && PhormiAiPendingTask.pendingCount(applicationContext) > 0)
+                    webViewContainer.post { runPendingAiTask() }
             }
         }
     }
@@ -283,11 +286,12 @@ class MainActivity : AppCompatActivity() {
     private suspend fun runBrowserAiTask(task: PhormiAiPendingTask.Task) {
         check(aiController.isActive()) { "AI is inactive. Enable a saved connection first." }
         val target = task.target.removePrefix("tab:").toIntOrNull()
-        val tab = if (target != null) tabs.firstOrNull { it.id == target } else if (task.target.isBlank()) {
+        val candidate = if (target != null) tabs.firstOrNull { it.id == target } else if (task.target.isBlank()) {
             tabs.firstOrNull { it.id == activeTabId }
         } else {
             tabs.filter { it.title.contains(task.target, true) || it.url.contains(task.target, true) }.singleOrNull()
-        } ?: throw IllegalStateException("The selected tab no longer exists. Select a tab and try again.")
+        }
+        val tab = candidate ?: throw IllegalStateException("The selected tab no longer exists. Select a tab and try again.")
         check(!tab.isGhost && !isSiteLocked(tab.url, tab.id)) { "Unlock the selected tab before using AI." }
         check(!prefs.getBoolean(KEY_BROWSER_LOCK, false) || browserUnlockedThisSession) { "Unlock the browser before using AI." }
         val catalog = "Locked tabId=${tab.id} | title=${tab.title.take(160)} | url=${tab.url.take(500)}"
@@ -298,13 +302,13 @@ class MainActivity : AppCompatActivity() {
         updateAiBackgroundTabVisibility()
         try {
             repeat(20) { step ->
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                check(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                    "Browser left the foreground. No further page actions were performed; run the command again to continue."
-                }
-                check(tabs.any { it === tab }) { "The task's tab was closed." }
+                requireAiTarget(tab)
+                val expectedView = tab.webView
+                val expectedNavigation = tab.navigationGeneration
                 val screen = readAiTabScreen(tab.id)
+                requireAiTarget(tab, expectedView, expectedNavigation)
                 val action = aiController.planBrowserAction(task.instruction, catalog, screen, previous.joinToString("\n"))
+                requireAiTarget(tab, expectedView, expectedNavigation)
                 check(action.optInt("tabId") == tab.id) { "AI proposed a different tab. Nothing was changed." }
                 val name = action.optString("action")
                 if (name == "done" || name == "stuck") {
@@ -317,7 +321,7 @@ class MainActivity : AppCompatActivity() {
                 repeated = if (signature == lastAction) repeated + 1 else 0
                 lastAction = signature
                 check(repeated < 3) { "AI repeated the same action without progress. Stopped to avoid unnecessary requests." }
-                val result = executeAiBrowserAction(tab.id, action)
+                val result = executeAiBrowserAction(tab, action, expectedView, expectedNavigation)
                 val status = "Step ${step + 1}: $name — ${if (result) "applied" else "control unavailable; inspect again"}"
                 previous.addLast(status)
                 if (previous.size > 6) previous.removeFirst()
@@ -368,10 +372,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun executeAiBrowserAction(tabId: Int, action: JSONObject): Boolean {
-        val tab = tabs.firstOrNull { it.id == tabId } ?: return false
-        check(!tab.isGhost && !isSiteLocked(tab.url, tabId)) { "The task's tab is protected." }
-        val view = tab.webView
+    private suspend fun requireAiTarget(tab: Tab, view: WebView = tab.webView, navigation: Long? = null) {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        check(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) { "Browser left the foreground. Run the task again to continue." }
+        check(!prefs.getBoolean(KEY_BROWSER_LOCK, false) || browserUnlockedThisSession) { "The browser is locked." }
+        check(tabs.any { it === tab } && tab.webView === view) { "The task's tab closed or its renderer changed." }
+        check(!tab.isGhost && !isSiteLocked(tab.url, tab.id)) { "The task's tab is protected." }
+        check(navigation == null || tab.navigationGeneration == navigation) { "The page changed while AI was planning. No stale action was applied; run the task again." }
+    }
+
+    private suspend fun executeAiBrowserAction(tab: Tab, action: JSONObject, view: WebView, navigation: Long): Boolean {
+        requireAiTarget(tab, view, navigation)
+        val tabId = tab.id
         when (action.optString("action")) {
             "navigate" -> {
                 val url = action.optString("url")
@@ -396,6 +408,7 @@ class MainActivity : AppCompatActivity() {
             }
             else -> return false
         }
+        requireAiTarget(tab, view, navigation) // Dialogs and inspect calls can yield; re-check before modifying the DOM.
         return evaluateAiJson(view, "window.__phormiAssistant.execute(${action})").optBoolean("ok")
     }
 
@@ -445,6 +458,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        PhormiInsets.apply(this, findViewById(R.id.main_root))
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (PhormiEnvironmentManager.isSupported()) {
@@ -537,6 +551,7 @@ class MainActivity : AppCompatActivity() {
             showKeyboard()
         }
         // The circular count is the single combined Tab Overview + Counter control.
+        findViewById<TextView>(R.id.tab_count).setOnLongClickListener { createNewTab(NEW_TAB_URL); true }
         findViewById<TextView>(R.id.tab_count).setOnClickListener {
             saveTabsImmediate()
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
@@ -723,7 +738,7 @@ class MainActivity : AppCompatActivity() {
         styleSurface(findViewById(R.id.start_page_search_box), surface, outline, 28)
         styleSurface(findViewById(R.id.start_page_ai), surfaceSoft, outline, 22)
 
-        findViewById<android.widget.ImageView>(R.id.start_page_logo)?.setColorFilter(accent)
+        findViewById<android.widget.ImageView>(R.id.start_page_logo)?.clearColorFilter()
         listOf(R.id.start_page_go, R.id.start_page_news).forEach { findViewById<TextView>(it)?.setTextColor(accent) }
         val image = findViewById<android.widget.ImageView>(R.id.start_page_wallpaper_image)
         val uri = prefs.getString(KEY_WALLPAPER_URI, null)
@@ -1516,7 +1531,9 @@ class MainActivity : AppCompatActivity() {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
         findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
         findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_refresh)?.visibility = if (!onHome && resources.configuration.screenWidthDp >= 600) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_favorite)?.visibility = if (!onHome && resources.configuration.screenWidthDp >= 600) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_new_tab)?.visibility = if (resources.configuration.screenWidthDp >= 600) View.VISIBLE else View.GONE
         findViewById<View>(R.id.bottom_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
         swipeRefresh.isEnabled = !onHome && prefs.getBoolean(KEY_PULL_TO_REFRESH, true)
     }
@@ -2299,9 +2316,11 @@ class MainActivity : AppCompatActivity() {
                     if (canPlay) options += "Play online"
                     if (canSave) options += "Download file"
                     options += "Copy source link"
+                    options += "Source details"
+                    val explanation = if (protectedMedia) "This player reports protected media. Use the website's own player and download controls." else if (stream) "This is a streaming playlist. Online playback is supported; downloading a complete offline HLS/DASH video is not yet supported." else "Signed links can expire. Page blobs must be downloaded while their source page is open; streaming MediaSource blobs cannot be saved as files."
                     AlertDialog.Builder(this).setTitle(if (stream) "Streaming source" else "Media source")
-                        .setMessage(if (protectedMedia) "This player reports protected media. Use the website's own player and download controls." else if (stream) "This is a streaming playlist. Online playback is supported; downloading a complete offline HLS/DASH video is not yet supported." else "Choose how to use this source. Signed links can expire; refresh the source page if access is refused.")
                         .setItems(options.toTypedArray()) { _, choice -> when (options[choice]) {
+                            "Source details" -> AlertDialog.Builder(this).setTitle("Source details").setMessage(explanation).setPositiveButton("OK", null).show()
                             "Download file" -> downloadFromPage(tab.webView, url, null, source.optString("mime").ifBlank { null })
                             "Play online" -> {
                                 val headers = linkedMapOf("User-Agent" to tab.webView.settings.userAgentString, "Referer" to tab.url)
@@ -2585,6 +2604,10 @@ class MainActivity : AppCompatActivity() {
 
 
     override fun onPause() {
+        if (browserAiJob?.isActive == true) {
+            browserAiJob?.cancel()
+            PhormiAiPendingTask.saveStatus(applicationContext, "AI stopped when the browser left the foreground. Review the page and run again to continue.")
+        }
         tabs.firstOrNull { it.id == activeTabId }?.lastUsed = System.currentTimeMillis()
         // Persist both browser state and website sessions when the app leaves the foreground.
         saveTabsImmediate(true)
@@ -2806,6 +2829,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 tabs.find { it.webView === view }?.let {
+                    it.navigationGeneration++
                     it.url = BrowserSessionRules.durableUrl(it.url, url)
                     it.savedState = null
                     PhormiBrowserPerformance.start(it.id)

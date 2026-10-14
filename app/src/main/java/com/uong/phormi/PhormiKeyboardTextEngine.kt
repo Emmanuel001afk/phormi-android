@@ -64,7 +64,8 @@ object PhormiKeyboardTextEngine {
     fun isUriLike(info: EditorInfo?): Boolean = inputClass(info) == InputType.TYPE_CLASS_TEXT && variation(info) in setOf(
         InputType.TYPE_TEXT_VARIATION_URI, InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
     fun isNoPersonalizedLearning(info: EditorInfo?): Boolean = info == null || (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
-    fun isPrivateEditor(info: EditorInfo?): Boolean = isPassword(info) || isNoPersonalizedLearning(info)
+    fun isPrivateEditor(info: EditorInfo?): Boolean = isPassword(info) || isNoPersonalizedLearning(info) ||
+        PhormiKeyboardServiceV2.activeInstance?.let { PhormiKeyboardPreferences.incognito(it) } == true
     fun allowsPersonalizedLearning(info: EditorInfo?): Boolean = shouldUsePredictions(info)
     fun allowsAiEmoji(info: EditorInfo?): Boolean = shouldUsePredictions(info)
     fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPrivateEditor(info) && !isUriLike(info) &&
@@ -114,7 +115,8 @@ object PhormiKeyboardTextEngine {
 
     fun correctionFor(context: Context, word: String, locale: Locale = activeLocale(context)): String? {
         val key = normalize(word, locale)
-        if ((learned(context, locale)[key]?.choices ?: 0) >= 3) return null
+        val known = learned(context, locale)[key]
+        if ((known?.choices ?: 0) >= 3 || (known?.count ?: 0) >= 3) return null
         val manual = readObject(context, KEY_CORRECTIONS).optString(locale.toLanguageTag() + "|" + key).takeIf { it.isNotBlank() }
         val replacement = manual ?: correctionsByLanguage[locale.language]?.get(key) ?: return null
         return PhormiTypingRules.matchCase(word, replacement, locale).takeIf { it != word }
@@ -188,6 +190,7 @@ object PhormiKeyboardTextEngine {
 
     fun clearPersonalDictionary(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        learnedCache.clear()
     }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
@@ -209,16 +212,23 @@ object PhormiKeyboardTextEngine {
 
     private fun activeLocale(context: Context): Locale = if (context is PhormiKeyboardServiceV2) localeFor(context.currentInputEditorInfo) else Locale.getDefault()
     private fun normalize(word: String, locale: Locale) = java.text.Normalizer.normalize(word, java.text.Normalizer.Form.NFC).lowercase(locale)
+    private val learnedCache = mutableMapOf<String, Pair<String, Map<String, LearnedWord>>>()
     private fun learned(context: Context, locale: Locale): Map<String, LearnedWord> {
-        val root = readObject(context, "personal_dictionary_v2")
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("personal_dictionary_v2", "{}").orEmpty()
+        val tag = locale.toLanguageTag()
+        learnedCache[tag]?.takeIf { it.first == raw }?.let { return it.second }
+        val root = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
         val prefix = locale.toLanguageTag() + "|"
-        return buildMap {
+        val words = buildMap {
             root.keys().forEach { key ->
                 if (key.startsWith(prefix)) root.optJSONObject(key)?.let {
                     put(key.removePrefix(prefix), LearnedWord(it.optString("word"), it.optInt("count"), it.optInt("choices"), it.optLong("updated")))
                 }
             }
         }
+        if (learnedCache.size > 16) learnedCache.clear()
+        learnedCache[tag] = raw to words
+        return words
     }
     private fun readObject(context: Context, key: String): JSONObject = runCatching {
         JSONObject(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "{}") ?: "{}")
