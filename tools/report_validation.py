@@ -10,7 +10,8 @@ messages = []
 for index, line in enumerate(lines):
     if re.search(r"^e: |error:|What went wrong:|Could not resolve|Could not find|Execution failed|FAILED$", line):
         messages.extend(lines[index:index + (10 if "What went wrong:" in line else 1)])
-for path in Path("app/build/test-results").glob("**/TEST-*.xml"):
+reports = list(Path("app/build/test-results").glob("**/TEST-*.xml")) + list(Path("app/build/outputs/androidTest-results").glob("**/TEST-*.xml"))
+for path in reports:
     root = ET.parse(path).getroot()
     for case in root.findall("testcase"):
         for failure in case.findall("failure"):

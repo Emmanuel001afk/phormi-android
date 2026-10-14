@@ -96,6 +96,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var aiEmojiContext = ""
     private var keyboardResizeMode = false
     private var aiEmojiFile: java.io.File? = null
+    private var activeEmojiGeneration: PhormiKeyboardAiEmojiController? = null
     private var aiEmojiLoading = false
     private var aiEmojiRunnable: Runnable? = null
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -145,6 +146,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     override fun onDestroy() {
         stopVoice(true)
+        activeEmojiGeneration?.cancel()
         writingScope.cancel()
         PhormiKeyboardSystemSpellChecker.close()
         alternativesPopup?.dismiss()
@@ -157,6 +159,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         stopVoice(true)
         writingJob?.cancel(); writingJob = null
+        activeEmojiGeneration?.cancel(); activeEmojiGeneration = null; aiEmojiContext = ""
         editorGeneration++
         emojiSearchActive = false; emojiQuery = ""
         pendingExternalUri = null; pendingExternalText = null
@@ -183,15 +186,21 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         applyKeyboardWindowSize()
         applyPendingInput()
         val voiceLocale = pendingVoiceLocale
-        if (voiceLocale != null && pendingVoiceEditor == currentEditorKey()) {
-            pendingVoiceLocale = null; pendingVoiceEditor = null
-            repeatHandler.postDelayed({ if (isInputViewShown) startIntegratedVoiceRecognition(voiceLocale) }, 180L)
-        } else { pendingVoiceLocale = null; pendingVoiceEditor = null }
+        val voiceEditor = pendingVoiceEditor
+        val generation = editorGeneration
+        pendingVoiceLocale = null; pendingVoiceEditor = null
+        if (voiceLocale != null && voiceEditor == currentEditorKey()) {
+            repeatHandler.postDelayed({
+                if (isInputViewShown && generation == editorGeneration && voiceEditor == currentEditorKey()) startIntegratedVoiceRecognition(voiceLocale)
+            }, 180L)
+        }
     }
 
     override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype?) {
         super.onCurrentInputMethodSubtypeChanged(newSubtype)
         activeSubtype = newSubtype
+        stopVoice(true); writingJob?.cancel(); activeEmojiGeneration?.cancel(); editorGeneration++
+        writingCapture = null; writingResult = ""; panel = Panel.KEYBOARD
         PhormiKeyboardSystemSpellChecker.close()
         lastPredictionWord = ""; lastPredictionPrevious = ""
         if (isInputViewShown) setInputView(render())
@@ -242,6 +251,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     override fun onWindowHidden() {
+        activeEmojiGeneration?.cancel()
         stopRepeat()
         stopVoice(true)
         writingJob?.cancel()
@@ -465,7 +475,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
         predictionRow=row
         lastPredictionWord = ""; lastPredictionPrevious = ""
-        root.addView(row,LinearLayout.LayoutParams(-1,scaled(30)))
+        root.addView(row,LinearLayout.LayoutParams(-1,scaled(36)))
         refreshPredictionStrip()
     }
     private fun schedulePredictionRefresh() {
@@ -865,11 +875,16 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     private fun buildAiEmoji():View{
-        val root=root(); addBackHeader(root,"← Emoji"){aiEmojiContext="";panel=Panel.EMOJI;setInputView(render())}
+        val root=root()
+        if (!PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)) {
+            addBackHeader(root, "← Keyboard · AI unavailable in this private field") { panel = Panel.KEYBOARD; setInputView(render()) }
+            return root
+        }
+        addBackHeader(root,"← Emoji"){aiEmojiContext="";panel=Panel.EMOJI;setInputView(render())}
         val scroll=ScrollView(this).apply{isFillViewport=true;overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS}
         val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(8),dp(8),dp(8),dp(8))}
         list.addView(TextView(this).apply{text="Create a unique emoji";textSize=18f;typeface=Typeface.DEFAULT_BOLD;setTextColor(themeText());gravity=Gravity.CENTER})
-        list.addView(TextView(this).apply{text="Generate one fused emoji-style reaction from your text. The result appears here so it can be inserted directly.";textSize=13f;setTextColor(themeText());gravity=Gravity.CENTER;setPadding(dp(8),dp(6),dp(8),dp(10))})
+        list.addView(TextView(this).apply{text="Create one reaction from text you choose. With an image-service key this calls Pollinations; without a key it uses a simple local emoji renderer, not a generative AI model.";textSize=13f;setTextColor(themeText());gravity=Gravity.CENTER;setPadding(dp(8),dp(6),dp(8),dp(10))})
         val contextPreview=TextView(this).apply{
             text=if(aiEmojiContext.isBlank())"No text captured yet. Type in the current app first, then return here." else "Current text: $aiEmojiContext"
             textSize=13f
@@ -889,9 +904,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         list.addView(status,LinearLayout.LayoutParams(-1,dp(28)))
         val image=android.widget.ImageView(this).apply{scaleType=android.widget.ImageView.ScaleType.FIT_CENTER;contentDescription="Generated AI emoji";visibility=View.GONE}
         list.addView(image,LinearLayout.LayoutParams(-1,dp(150)))
-        val controller=PhormiKeyboardAiEmojiController(this){files,loading->
+        activeEmojiGeneration?.cancel()
+        val controller=PhormiKeyboardAiEmojiController(applicationContext){files,loading,message->
             repeatHandler.post{
-                status.text=if(loading)"Creating emoji…"else if(files.isEmpty())"Generation failed — try again or add the Pollinations key in Tools."else"Emoji ready — tap it to insert"
+                status.text = message
+                if (panel != Panel.AI_EMOJI || !isInputViewShown) return@post
                 val file=files.firstOrNull()
                 if(file!=null){
                     image.setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
@@ -900,7 +917,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 }
             }
         }
+        activeEmojiGeneration = controller
         fun generate(text:String){
+            if (!PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)) { status.text = "AI is unavailable in private or non-text editors."; return }
             val clean=text.trim()
             if(clean.isBlank()){android.widget.Toast.makeText(this@PhormiKeyboardServiceV2,"Describe the emoji first",android.widget.Toast.LENGTH_SHORT).show();return}
             controller.generate(clean)
@@ -926,6 +945,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
     internal fun render(): View {
+        if (panel != Panel.AI_EMOJI) { activeEmojiGeneration?.cancel(); activeEmojiGeneration = null }
         letterButtons.clear(); shiftView = null; predictionRow = null
         val view=when(panel){
             Panel.EMOJI->buildEmoji()
@@ -1157,7 +1177,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun requestWritingEdit(instruction: String) {
         val capture = writingCapture ?: return
-        if (capture.source.isBlank() || writingBusy) return
+        if (capture.source.isBlank() || writingBusy || PhormiKeyboardTextEngine.isPrivateEditor(editorInfo) || capture.generation != editorGeneration) return
         writingBusy = true; writingResult = ""; writingStatus = "Asking your configured AI…"
         setInputView(render())
         writingJob = writingScope.launch {
@@ -1169,7 +1189,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { if (writingCapture === capture) writingStatus = error.message ?: "AI request failed. Try again." }
             finally {
-                writingBusy = false
+                if (writingCapture === capture) writingBusy = false
                 if (isInputViewShown && panel == Panel.WRITING && writingCapture === capture) setInputView(render())
             }
         }

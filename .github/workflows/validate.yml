@@ -33,7 +33,7 @@ jobs:
       - name: Verify Android resources and DOM adapter
         run: |
           python3 tools/validate_resources.py
-          node --test tools/tests/assistant_dom.test.mjs
+          node --test tools/tests/*.test.mjs
       - name: Build, regression tests and Android lint (no publishing)
         run: |
           set -o pipefail
@@ -53,3 +53,49 @@ jobs:
             app/build/reports/tests/
             app/build/test-results/
             app/build/reports/lint-results-debug.*
+
+  emulator:
+    needs: android
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[emulator]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.11.1'
+      - name: Enable emulator acceleration
+        run: sudo chmod 666 /dev/kvm
+      - name: Real IME integration on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            mkdir -p app/build/reports/smoke
+            adb shell settings put secure show_ime_with_hard_keyboard 1
+            gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace > /tmp/phormi-smoke.log 2>&1
+            adb logcat -d -b crash > app/build/reports/smoke/crashes.txt
+            adb pull /sdcard/Android/data/com.uong.phormi/files/ app/build/reports/smoke/
+      - name: Annotate emulator diagnostics
+        if: failure()
+        run: |
+          test -f /tmp/phormi-smoke.log && python3 tools/report_validation.py /tmp/phormi-smoke.log
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phormi-emulator-smoke
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            app/build/reports/smoke/
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/

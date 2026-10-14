@@ -336,7 +336,7 @@ object PhormiDownloadEngine {
         }.getOrElse { "phormi-external:" + sourceUrl.hashCode() }
         synchronized(lock) {
             val existing = records(context).firstOrNull {
-                normalizeSourceUrl(it.sourceUrl) == sourceKey && it.state == State.COMPLETED
+                it.localUri == localUri && it.state == State.COMPLETED
             }
             if (existing != null) return
             save(context, Record(
@@ -637,14 +637,20 @@ class PhormiDownloadService : Service() {
             if (uri.scheme == "file") {
                 uri.path?.let { File(it).length() } ?: 0L
             } else {
-                contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0L) } ?: 0L
+                contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize.coerceAtLeast(0L) } ?: 0L
             }
         }.getOrDefault(0L)
     }
 
     private fun ensureDestination(record: PhormiDownloadEngine.Record, truncate: Boolean): String? {
-        if (!truncate && !record.localUri.isNullOrBlank()) return record.localUri
-        if (!record.localUri.isNullOrBlank()) return record.localUri
+        if (!record.localUri.isNullOrBlank()) {
+            val exists = runCatching {
+                val uri = Uri.parse(record.localUri)
+                if (uri.scheme == "file") uri.path?.let { File(it).exists() } == true
+                else contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
+            }.getOrDefault(false)
+            if (exists) return record.localUri
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, record.title)

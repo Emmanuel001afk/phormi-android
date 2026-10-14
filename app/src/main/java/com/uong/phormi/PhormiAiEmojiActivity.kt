@@ -10,17 +10,19 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 
-/** Pollinations AI Emoji Studio. Automatic mode uses the current typed context. */
+/** Explicit custom-emoji studio. Captured text is only sent after Generate is tapped. */
 class PhormiAiEmojiActivity : androidx.appcompat.app.AppCompatActivity() {
     companion object {
         const val EXTRA_CONTEXT = "ai_emoji_context"
-        const val EXTRA_AUTOMATIC = "ai_emoji_automatic"
         const val EXTRA_CONFIG_ONLY = "ai_emoji_config_only"
     }
     private lateinit var prompt: EditText
     private lateinit var grid: GridLayout
     private val generated = mutableListOf<java.io.File>()
     private var pending = 0
+    private var request: PhormiPollinationsAiEmojiEngine.Generation? = null
+    private var generation = 0
+    private lateinit var generationStatus: android.widget.TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,26 +31,21 @@ class PhormiAiEmojiActivity : androidx.appcompat.app.AppCompatActivity() {
             showKeyDialog()
             return
         }
-        val automatic = intent.getBooleanExtra(EXTRA_AUTOMATIC, false)
-        val context = intent.getStringExtra(EXTRA_CONTEXT).orEmpty().trim()
-        if (automatic && context.isNotBlank()) {
-            prompt.setText(context)
-            prompt.setSelection(prompt.text.length)
-            generate(true)
-        }
+        intent.getStringExtra(EXTRA_CONTEXT)?.takeIf { it.isNotBlank() }?.let { prompt.setText(it) }
     }
 
     private fun render() {
         val root = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(20, 20, 20, 20)
+            setPadding(20, 20, 20, 20); setBackgroundColor(0xFF0B1220.toInt())
         }
-        root.addView(TextView(this).apply { text = "Phormi AI Emoji"; textSize = 22f })
+        root.addView(TextView(this).apply { text = "Phormi AI Emoji"; textSize = 22f; setTextColor(-1) })
         root.addView(TextView(this).apply {
-            text = "Automatic mode uses what you are typing as the context. The result is one original fused emoji-style reaction, not a normal Unicode emoji."
+            text = "Choose the text for one custom reaction. Nothing is sent until you tap Generate. Images can be inserted only into editors that accept them."
+            setTextColor(0xFFB7BFD4.toInt())
             setPadding(0, 8, 0, 12)
         })
-        prompt = EditText(this).apply { hint = "Optional manual context"; minLines = 2 }
+        prompt = EditText(this).apply { hint = "Describe your emoji"; minLines = 2; setTextColor(-1); setHintTextColor(0xFF94A3B8.toInt()) }
         root.addView(prompt)
         prompt.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
@@ -59,14 +56,17 @@ class PhormiAiEmojiActivity : androidx.appcompat.app.AppCompatActivity() {
             }
         }
         root.addView(android.widget.Button(this).apply {
-            text = "Generate 4"
-            setOnClickListener { generate(false) }
+            text = "Generate one emoji"
+            setOnClickListener { generate() }
         })
         root.addView(android.widget.Button(this).apply {
             text = if (PhormiKeyboardPreferences.pollinationsKey(this@PhormiAiEmojiActivity).isBlank()) "Set Pollinations AI key" else "Pollinations AI key ✓"
             setOnClickListener { showKeyDialog() }
         })
         grid = GridLayout(this).apply { columnCount = 2 }
+        generationStatus = android.widget.TextView(this).apply { setTextColor(android.graphics.Color.rgb(183, 191, 212)); setPadding(8, 12, 8, 12); text = "With a key: Pollinations image generation. Without a key: a simple local emoji renderer (not a generative model)." }
+        root.addView(generationStatus)
+        root.addView(android.widget.Button(this).apply { text = "Cancel request"; setOnClickListener { request?.cancel(); generation++; pending = 0; generationStatus.text = "Generation cancelled." } })
         root.addView(grid, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         PhormiInsets.apply(this, root)
@@ -94,7 +94,7 @@ class PhormiAiEmojiActivity : androidx.appcompat.app.AppCompatActivity() {
             .show()
     }
 
-    private fun generate(automatic: Boolean) {
+    private fun generate() {
         val text = prompt.text.toString().trim()
         if (text.isBlank()) {
             Toast.makeText(this, "Type something first", Toast.LENGTH_SHORT).show()
@@ -102,17 +102,18 @@ class PhormiAiEmojiActivity : androidx.appcompat.app.AppCompatActivity() {
         }
         generated.clear()
         grid.removeAllViews()
-        val count = if (automatic) 1 else 4
-        pending = count
-        Toast.makeText(this, if (automatic) "Creating your contextual emoji…" else "Generating contextual emojis…", Toast.LENGTH_SHORT).show()
-        repeat(count) { index ->
-            PhormiPollinationsAiEmojiEngine.generateAsync(this, text, index) { file ->
-                pending--
-                if (file != null) generated.add(file)
-                if (pending == 0) showGenerated()
-            }
+        request?.cancel()
+        val id = ++generation
+        pending = 1
+        generationStatus.text = "Creating one emoji…"
+        request = PhormiPollinationsAiEmojiEngine.generateAsync(applicationContext, text, 0) { result ->
+            if (id != generation || isFinishing || isDestroyed) return@generateAsync
+            pending = 0; generationStatus.text = result.status
+            result.file?.let(generated::add)
+            showGenerated()
         }
     }
+    override fun onDestroy() { generation++; request?.cancel(); super.onDestroy() }
 
     private fun showGenerated() {
         grid.removeAllViews()

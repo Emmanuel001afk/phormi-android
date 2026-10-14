@@ -51,6 +51,35 @@ internal class PhormiBlobDownloadBridge(context: Context, webView: WebView) {
             catch (_: Exception) { toast("Not enough storage to prepare this download."); return }
         transfers[token] = transfer
         main.removeCallbacks(expiry); main.postDelayed(expiry, 10_000L)
+        if (source.startsWith("data:", true)) {
+            if (source.length > 16 * 1024 * 1024) { fail(token, "This data link is too large. Ask the page for a file/blob download instead."); return }
+            worker.execute {
+                try {
+                    val comma = source.indexOf(',')
+                    require(comma in 5..1024)
+                    val header = source.substring(5, comma)
+                    if (header.endsWith(";base64", true)) {
+                        var offset = comma + 1
+                        while (offset < source.length) {
+                            val end = minOf(offset + 65_536, source.length)
+                            check(append(token, source.substring(offset, end)))
+                            offset = end
+                        }
+                    } else {
+                        val bytes = java.net.URLDecoder.decode(source.substring(comma + 1).replace("+", "%2B"), "UTF-8").toByteArray(Charsets.UTF_8)
+                        var offset = 0
+                        while (offset < bytes.size) {
+                            val end = minOf(offset + 49_152, bytes.size)
+                            check(append(token, Base64.encodeToString(bytes.copyOfRange(offset, end), Base64.NO_WRAP)))
+                            offset = end
+                        }
+                    }
+                    finish(token, header.substringBefore(';'))
+                } catch (_: Exception) { fail(token, "The data link was invalid or the download was stopped.") }
+            }
+            toast("Preparing page download…")
+            return
+        }
         val script = """
             (async function(){
               var token=${JSONObject.quote(token)}, sink=window.__phormiBlobSink;
@@ -77,6 +106,7 @@ internal class PhormiBlobDownloadBridge(context: Context, webView: WebView) {
         if (closed || data.length > 70_000 || transfer.bytes > 512L * 1024 * 1024) return false
         return try {
             val bytes = Base64.decode(data, Base64.DEFAULT)
+            if (transfer.bytes + bytes.size > 512L * 1024 * 1024) { fail(token, "Page downloads are limited to 512 MB."); return false }
             transfer.output.write(bytes); transfer.bytes += bytes.size; transfer.touched = System.currentTimeMillis()
             true
         } catch (_: Exception) { fail(token, "Could not write the page download. Check available storage."); false }
@@ -118,7 +148,7 @@ internal class PhormiBlobDownloadBridge(context: Context, webView: WebView) {
                 transfer.file.inputStream().use { input -> file.outputStream().use { input.copyTo(it) } }
                 android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(info.mimeType), null)
             }
-            PhormiDownloadEngine.recordExternalCompleted(context, transfer.source, info.fileName, info.mimeType,
+            PhormiDownloadEngine.recordExternalCompleted(context, if (transfer.source.startsWith("data:")) "phormi-data:${transfer.token}" else transfer.source, info.fileName, info.mimeType,
                 info.category, outputUri.toString(), transfer.bytes)
             PhormiNotificationManager.post(context, PhormiNotificationManager.CHANNEL_DOWNLOADS, transfer.token.hashCode(),
                 "Download complete", info.fileName, android.content.Intent(context, DownloadsActivity::class.java))

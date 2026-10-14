@@ -8,23 +8,20 @@ import java.io.File
 /** Generates one integrated reaction image for the live Phormi emoji rail. */
 class PhormiKeyboardAiEmojiController(
     private val context: Context,
-    private val onChanged: (List<File>, Boolean) -> Unit
+    private val onChanged: (List<File>, Boolean, String) -> Unit
 ) {
     private val main = Handler(Looper.getMainLooper())
     private var generationId = 0
+    private var request: PhormiPollinationsAiEmojiEngine.Generation? = null
 
     fun generate(prompt: String) {
-        generationId++
-        val id = generationId
-        main.post { onChanged(emptyList(), true) }
-        PhormiPollinationsAiEmojiEngine.generateAsync(context, prompt, 0) { file ->
+        request?.cancel()
+        val id = ++generationId
+        main.post { onChanged(emptyList(), true, "Creating emoji…") }
+        request = PhormiPollinationsAiEmojiEngine.generateAsync(context, prompt, 0) { result ->
             if (id != generationId) return@generateAsync
-            if (file != null) onChanged(listOf(file), false) else onChanged(emptyList(), false)
+            onChanged(result.file?.let(::listOf).orEmpty(), false, result.status)
         }
     }
-
-    fun cancel() {
-        generationId++
-        onChanged(emptyList(), false)
-    }
+    fun cancel() { generationId++; request?.cancel(); request = null }
 }

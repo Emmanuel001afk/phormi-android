@@ -8,8 +8,12 @@ import androidx.core.view.WindowInsetsCompat
 
 /** Explicit Android 15/16 edge-to-edge and IME spacing, retaining each layout's own padding. */
 internal object PhormiInsets {
-    fun apply(activity: Activity, root: View, resizeForIme: Boolean = true) {
+    fun apply(activity: Activity, root: View, resizeForIme: Boolean = true, dark: Boolean = true) {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+        WindowCompat.getInsetsController(activity.window, root).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
         val left = root.paddingLeft; val top = root.paddingTop; val right = root.paddingRight; val bottom = root.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())

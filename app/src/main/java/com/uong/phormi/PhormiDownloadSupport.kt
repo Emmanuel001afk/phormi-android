@@ -24,15 +24,15 @@ object PhormiDownloadSupport {
         cookies: String?
     ): RequestInfo {
         val cleanUrl = url.trim()
-        val serverMime = mimeType?.substringBefore(';')?.trim().takeIf { !it.isNullOrBlank() }
+        val serverMime = mimeType?.substringBefore(';')?.trim()?.lowercase(java.util.Locale.ROOT).takeIf { !it.isNullOrBlank() }
         val urlMime = guessMime(cleanUrl)
         val initialMime = serverMime ?: urlMime ?: "application/octet-stream"
         val explicitName = contentDispositionFileName(contentDisposition)
         val suggested = explicitName ?: URLUtil.guessFileName(cleanUrl, contentDisposition, initialMime)
         val fileName = sanitizeFileName(improveGenericName(suggested, cleanUrl, initialMime, explicitName != null))
         val filenameMime = guessMime(fileName)
-        val resolvedMime = if (serverMime.equals("application/octet-stream", true) && filenameMime != null) filenameMime
-            else initialMime
+        val resolvedMime = if (serverMime == null || serverMime.equals("application/octet-stream", true)) filenameMime ?: urlMime ?: initialMime
+            else serverMime
         val headers = linkedMapOf<String, String>()
         if (!userAgent.isNullOrBlank()) headers["User-Agent"] = userAgent
         if (!referer.isNullOrBlank()) headers["Referer"] = referer
@@ -43,28 +43,33 @@ object PhormiDownloadSupport {
     /** Handles both filename="..." and RFC 5987 filename*=UTF-8''... forms. */
     private fun contentDispositionFileName(value: String?): String? {
         if (value.isNullOrBlank()) return null
-        val encoded = Regex("(?i)filename\\s*\\*\\s*=\\s*(?:UTF-8''|[^']*'[^']*')?([^;]+)").find(value)?.groupValues?.getOrNull(1)
-        if (!encoded.isNullOrBlank()) return decodeDispositionName(encoded)
-        val quoted = Regex("(?i)filename\\s*=\\s*\\\"([^\\\"]+)\\\"").find(value)?.groupValues?.getOrNull(1)
+        val encoded = Regex("(?i)filename\\s*\\*\\s*=\\s*([^;]+)").find(value)?.groupValues?.getOrNull(1)?.trim()?.trim('"')
+        if (!encoded.isNullOrBlank()) {
+            val parts = encoded.split("'", limit = 3)
+            val charset = if (parts.size == 3) parts[0].ifBlank { "UTF-8" } else "UTF-8"
+            val name = if (parts.size == 3) parts[2] else encoded
+            runCatching { URLDecoder.decode(name.replace("+", "%2B"), charset) }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        val quoted = Regex("(?i)filename\\s*=\\s*\"([^\"]+)\"").find(value)?.groupValues?.getOrNull(1)
         if (!quoted.isNullOrBlank()) return quoted.trim()
-        val plain = Regex("(?i)filename\\s*=\\s*([^;]+)").find(value)?.groupValues?.getOrNull(1)
-        return plain?.trim()?.takeIf { it.isNotBlank() }
+        return Regex("(?i)filename\\s*=\\s*([^;]+)").find(value)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
     }
 
-    private fun decodeDispositionName(value: String): String = runCatching {
-        URLDecoder.decode(value.trim().trim('"'), "UTF-8")
-    }.getOrElse { value.trim().trim('"') }
-
-    private fun guessMime(url: String): String? {
-        val ext = runCatching { URL(url).path.substringAfterLast('.', "").lowercase() }.getOrNull()
-        return ext?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
+    private fun guessMime(value: String): String? {
+        val path = runCatching { java.net.URI(value).path }.getOrNull() ?: value.substringBefore('?').substringBefore('#')
+        val ext = path.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        return when (ext) {
+            "m3u8" -> "application/vnd.apple.mpegurl"; "mpd" -> "application/dash+xml"
+            "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "m4a" -> "audio/mp4"
+            else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+        }
     }
 
     private fun improveGenericName(name: String, url: String, mime: String, explicitName: Boolean): String {
         var result = name.trim()
         val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
         val pathName = runCatching {
-            URLDecoder.decode(URL(url).path.substringAfterLast('/'), "UTF-8")
+            URLDecoder.decode(URL(url).path.substringAfterLast('/').replace("+", "%2B"), "UTF-8")
         }.getOrNull().orEmpty()
         val urlReallyEndsInBin = pathName.endsWith(".bin", true)
 
@@ -84,8 +89,10 @@ object PhormiDownloadSupport {
     }
 
     private fun sanitizeFileName(name: String): String {
-        val cleaned = name.replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_").trim()
-        return cleaned.take(180).ifBlank { "phormi_download" }
+        val cleaned = name.replace(Regex("[\\\\/:*?\"<>|\\p{Cc}]+"), "_").trim().trim('.')
+        val extension = cleaned.substringAfterLast('.', "").takeIf { it.length in 1..12 }?.let { ".$it" }.orEmpty()
+        val base = if (extension.isNotEmpty()) cleaned.dropLast(extension.length) else cleaned
+        return (base.take(160) + extension).ifBlank { "phormi_download" }
     }
 
     fun category(fileName: String, mime: String): String {

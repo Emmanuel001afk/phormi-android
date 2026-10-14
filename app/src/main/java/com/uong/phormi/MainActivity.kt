@@ -122,9 +122,13 @@ class MainActivity : AppCompatActivity() {
 
     private var pendingPermissionRequest: PermissionRequest? = null
     private var pendingPermissionPermissions: Array<out String> = emptyArray()
+    private var pendingPermissionSource: WebView? = null
+    private var pendingPermissionNavigation: Long? = null
+    private var pendingPermissionAllowed: Array<String> = emptyArray()
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
+    private var pendingLegacyDownload: (() -> Unit)? = null
     private var pendingLockedNavigationUrl: String? = null
     private var pendingLockedScopeType: String = PhormiSiteLockManager.SCOPE_TAB
     private var pendingLockedScopeId: String = ""
@@ -180,6 +184,7 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_COPY = 2
         private const val MENU_DOWNLOAD = 3
         private const val REQ_NEWS = 1008
+        private const val REQ_DOWNLOAD_STORAGE = 1010
 
         private val STARTUP_PERMISSIONS = buildList {
             add(Manifest.permission.CAMERA)
@@ -239,7 +244,9 @@ class MainActivity : AppCompatActivity() {
             PhormiEnvironmentManager.cleanupExpired(this, tabs.map { it.profileName }.toSet())
             tabs.firstOrNull { it.id == activeTabId }?.lastUsed = System.currentTimeMillis()
             pruneExpiredTabs()
-            runPendingAiTask()
+            // Android has not dispatched ON_RESUME while onResume() itself is running.
+            // Defer work so the foreground guard does not reject every queued task.
+            webViewContainer.post { runPendingAiTask() }
             updateHomeNewsVisibility()
             refreshHomeNews()
         }
@@ -253,7 +260,7 @@ class MainActivity : AppCompatActivity() {
             browserAiJob?.cancel()
             PhormiAiPendingTask.saveStatus(applicationContext, "AI tasks cancelled.")
         }
-        if (aiTaskRunning) return
+        if (aiTaskRunning || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
         val pending = PhormiAiPendingTask.takeAll(applicationContext)
         if (pending.isEmpty()) return
         aiTaskRunning = true
@@ -389,10 +396,7 @@ class MainActivity : AppCompatActivity() {
                 val url = action.optString("url")
                 if (!PhormiAiProtocol.httpUrl(url) || isSiteLocked(url, tabId)) return false
                 // Native navigation owns the durable URL but not the user's visible surface.
-                val wasHome = homePageVisible
-                navigateTab(view, url)
-                homePageVisible = wasHome
-                updateStartPageVisibility()
+                navigateTab(view, url, reveal = false)
                 return true
             }
             "back" -> { if (!view.canGoBack()) return false; view.goBack(); return true }
@@ -718,6 +722,10 @@ class MainActivity : AppCompatActivity() {
                     android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
 
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
         val background = if (dark) Color.rgb(11, 18, 32) else Color.rgb(250, 247, 245)
         val primary = if (dark) Color.rgb(248, 250, 252) else Color.rgb(31, 31, 31)
         val secondary = if (dark) Color.rgb(148, 163, 184) else Color.rgb(92, 82, 78)
@@ -841,9 +849,9 @@ class MainActivity : AppCompatActivity() {
 
         val all = personal.take(18) + QuickSite("Add", "", "+", false)
         val columns = when {
-            resources.displayMetrics.widthPixels >= 900 -> 8
-            resources.displayMetrics.widthPixels >= 600 -> 7
-            else -> 6
+            resources.configuration.screenWidthDp >= 840 -> 8
+            resources.configuration.screenWidthDp >= 600 -> 6
+            else -> 4
         }
 
         all.chunked(columns).forEach { batch ->
@@ -852,20 +860,20 @@ class MainActivity : AppCompatActivity() {
                 gravity = android.view.Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    60.dp()
+                    80.dp()
                 )
             }
             batch.forEach { site ->
                 row.addView(
                     makeQuickSiteView(site),
-                    LinearLayout.LayoutParams(0, 56.dp(), 1f).apply {
+                    LinearLayout.LayoutParams(0, 76.dp(), 1f).apply {
                         leftMargin = 2.dp()
                         rightMargin = 2.dp()
                     }
                 )
             }
             repeat(columns - batch.size) {
-                row.addView(Space(this), LinearLayout.LayoutParams(0, 56.dp(), 1f))
+                row.addView(Space(this), LinearLayout.LayoutParams(0, 76.dp(), 1f))
             }
             rows.addView(row)
         }
@@ -876,12 +884,13 @@ class MainActivity : AppCompatActivity() {
         val outline = Color.rgb(51, 65, 85)
         return TextView(this).apply {
             gravity = android.view.Gravity.CENTER
-            text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(9) else site.name.take(9)
-            setTextColor(if (site.tag == "+") Color.rgb(56,189,248) else Color.WHITE)
-            textSize = 8.5f
+            text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(18) else site.name.take(18)
+            val dark = PhormiAppearance.isDark(this@MainActivity)
+            setTextColor(if (site.tag == "+") PhormiAppearance.accent(this@MainActivity, dark) else if (dark) Color.WHITE else Color.rgb(20, 27, 36))
+            textSize = 12f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setBackgroundResource(R.drawable.bg_shortcut)
+            styleSurface(this, if (PhormiAppearance.isDark(this@MainActivity)) surfaceSoft else Color.WHITE, outline, 14)
             isClickable = true
             isFocusable = true
             contentDescription = if (site.tag == "+") "Add a website shortcut" else "Open ${site.name}"
@@ -1978,7 +1987,7 @@ class MainActivity : AppCompatActivity() {
         saveTabs()
     }
 
-    private fun tabChromeClient(tab: Tab): WebChromeClient = buildChromeClient { title ->
+    private fun tabChromeClient(tab: Tab): WebChromeClient = buildChromeClient(tab.webView) { title ->
         // Empty/blank renderer titles during startup must not erase a restored title.
         if (!title.isNullOrBlank() && title != NEW_TAB_URL) {
             tab.title = title
@@ -1987,14 +1996,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun navigateTab(webView: WebView, url: String) {
+    private fun navigateTab(webView: WebView, url: String, reveal: Boolean = true) {
         tabs.firstOrNull { it.webView === webView }?.let { tab ->
             tab.url = url
             tab.savedState = null
             tab.recoveryPaused = false
             tab.lastUsed = System.currentTimeMillis()
         }
-        if (webView === activeWebView()) homePageVisible = false
+        if (reveal && webView === activeWebView()) homePageVisible = false
         webView.stopLoading()
         webView.loadUrl(url)
         updateStartPageVisibility()
@@ -2255,17 +2264,17 @@ class MainActivity : AppCompatActivity() {
         stories.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(-1, 76.dp())
+                layoutParams = LinearLayout.LayoutParams((resources.configuration.screenWidthDp - 48).coerceAtLeast(260).dp(), 104.dp())
             }
             pair.forEach { story ->
                 val card = TextView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 72.dp(), 1f).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
+                    layoutParams = LinearLayout.LayoutParams(0, 100.dp(), 1f).apply { leftMargin = 4.dp(); rightMargin = 4.dp() }
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
                     text = "${story.title}\n${story.source} · ${story.category}"
                     setTextColor(Color.rgb(226, 232, 240))
-                    textSize = 11f
-                    maxLines = 3
+                    textSize = 13f
+                    maxLines = 4
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setBackgroundResource(R.drawable.bg_shortcut)
                     setOnClickListener {
@@ -2277,11 +2286,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 row.addView(card)
             }
-            if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 72.dp(), 1f))
+            if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 100.dp(), 1f))
             container.addView(row)
         }
         if (stories.isEmpty()) container.addView(TextView(this).apply {
-            text = "News unavailable right now"; setTextColor(Color.rgb(100,116,139)); textSize = 9f; setPadding(8.dp(),8.dp(),8.dp(),8.dp())
+            text = "News unavailable right now"; setTextColor(Color.rgb(100,116,139)); textSize = 13f; setPadding(8.dp(),8.dp(),8.dp(),8.dp())
         })
     }
 
@@ -2350,6 +2359,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         val webView = sourceWebView ?: activeWebView()
+        if (android.os.Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            pendingLegacyDownload = { if (webView != null && tabs.any { it.webView === webView }) startDownload(url, contentDisposition, mimeType, userAgentOverride, webView, contentLength) }
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQ_DOWNLOAD_STORAGE)
+            return
+        }
 
         if (url.startsWith("blob:", ignoreCase = true)) {
             downloadBlobUrl(url, contentDisposition, mimeType, webView)
@@ -2747,6 +2761,7 @@ class MainActivity : AppCompatActivity() {
                 if (host != null) {
                     val sourceTabId = tabs.firstOrNull { it.webView === view }?.id ?: activeTabId
                     firstSiteLock(target, sourceTabId)?.let { lock ->
+                        if (!interactivePage(view)) return true
                         pendingLockedNavigationUrl = target
                         pendingLockedScopeType = lock.scopeType
                         pendingLockedScopeId = lock.scopeId
@@ -2760,6 +2775,7 @@ class MainActivity : AppCompatActivity() {
 
                 // Browser schemes such as mailto:, tel:, geo:, intent:, and custom
                 // app links belong to Android's external intent system, not WebView.
+                if (!interactivePage(view)) return true
                 return try {
                     val external = if (scheme == "intent") {
                         Intent.parseUri(target, Intent.URI_INTENT_SCHEME).apply {
@@ -2954,19 +2970,37 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Keep tab", null).show()
     }
 
-    private fun buildChromeClient(onTitleChanged: (String?) -> Unit): WebChromeClient {
+    private fun interactivePage(view: WebView?): Boolean = view != null && !homePageVisible &&
+        tabs.any { it.webView === view } && (view === activeWebView() || splitMode && view.visibility == View.VISIBLE) &&
+        (!prefs.getBoolean(KEY_BROWSER_LOCK, false) || browserUnlockedThisSession) &&
+        lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+
+    private fun buildChromeClient(source: WebView, onTitleChanged: (String?) -> Unit): WebChromeClient {
         return object : WebChromeClient() {
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 super.onReceivedTitle(view, title)
                 onTitleChanged(title)
             }
 
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                if (interactivePage(view)) return false
+                result?.cancel(); return true
+            }
+            override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                if (interactivePage(view)) return false
+                result?.cancel(); return true
+            }
+            override fun onJsPrompt(view: WebView?, url: String?, message: String?, defaultValue: String?, result: android.webkit.JsPromptResult?): Boolean {
+                if (interactivePage(view)) return false
+                result?.cancel(); return true
+            }
             override fun onCreateWindow(
                 view: WebView?,
                 isDialog: Boolean,
                 isUserGesture: Boolean,
                 resultMsg: android.os.Message?
             ): Boolean {
+                if (!isUserGesture || !interactivePage(view)) return false
                 val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
                 val sourceTabId = tabs.firstOrNull { it.webView === view }?.id ?: activeTabId
                 val wasSplit = splitMode
@@ -3052,12 +3086,17 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-                val allowed = request.resources.filter {
-                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
-                }.toTypedArray()
+                if (!interactivePage(source)) { request.deny(); return }
+                val allowed = request.resources.filter { it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE }.toTypedArray()
                 if (allowed.isEmpty()) { request.deny(); return }
-                pendingPermissionRequest?.deny()
-                pendingPermissionRequest = request
+                val generation = tabs.firstOrNull { it.webView === source }?.navigationGeneration
+                AlertDialog.Builder(this@MainActivity).setTitle("Website permission")
+                    .setMessage("Allow ${request.origin} to use ${allowed.joinToString { if (it == PermissionRequest.RESOURCE_AUDIO_CAPTURE) "the microphone" else "the camera" }}?\n\nKeyboard voice permission does not grant websites access.")
+                    .setNegativeButton("Block") { _, _ -> request.deny() }
+                    .setOnCancelListener { request.deny() }
+                    .setPositiveButton("Allow once") { _, _ ->
+                        if (!interactivePage(source) || tabs.firstOrNull { it.webView === source }?.navigationGeneration != generation) { request.deny(); return@setPositiveButton }
+                        pendingPermissionRequest?.deny(); pendingPermissionRequest = request
                 val needed = mutableListOf<String>()
                 if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in allowed &&
                     ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -3071,15 +3110,23 @@ class MainActivity : AppCompatActivity() {
                     request.grant(allowed)
                     pendingPermissionRequest = null
                 } else {
+                    pendingPermissionSource = source
+                    pendingPermissionNavigation = tabs.firstOrNull { it.webView === source }?.navigationGeneration
+                    pendingPermissionAllowed = allowed
                     pendingPermissionPermissions = needed.toTypedArray()
                     ActivityCompat.requestPermissions(this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS)
                 }
+                    }.show()
+            }
+            override fun onPermissionRequestCanceled(request: PermissionRequest?) {
+                if (pendingPermissionRequest === request) { pendingPermissionRequest = null; pendingPermissionSource = null; pendingPermissionAllowed = emptyArray() }
             }
 
             override fun onGeolocationPermissionsShowPrompt(
                 origin: String?,
                 callback: android.webkit.GeolocationPermissions.Callback?
             ) {
+                if (!interactivePage(source)) { callback?.invoke(origin, false, false); return }
                 this@MainActivity.pendingGeoCallback?.invoke(this@MainActivity.pendingGeoOrigin, false, false)
                 this@MainActivity.pendingGeoCallback = null
                 this@MainActivity.pendingGeoOrigin = null
@@ -3136,14 +3183,22 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
+            REQ_DOWNLOAD_STORAGE -> {
+                val pending = pendingLegacyDownload; pendingLegacyDownload = null
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) pending?.invoke()
+                else Toast.makeText(this, "Storage access is needed to save files on this Android version.", Toast.LENGTH_LONG).show()
+            }
             REQ_MEDIA_PERMISSIONS -> {
                 val request = pendingPermissionRequest
                 if (request != null) {
                     val granted = grantResults.isNotEmpty() &&
                         grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-                    if (granted) request.grant(request.resources) else request.deny()
+                    val source = pendingPermissionSource
+                    val samePage = source != null && interactivePage(source) && tabs.firstOrNull { it.webView === source }?.navigationGeneration == pendingPermissionNavigation
+                    if (granted && samePage) request.grant(pendingPermissionAllowed) else request.deny()
                 }
                 pendingPermissionRequest = null
+                pendingPermissionSource = null; pendingPermissionNavigation = null; pendingPermissionAllowed = emptyArray()
                 pendingPermissionPermissions = emptyArray()
             }
             REQ_GEOLOCATION -> {
@@ -3161,7 +3216,7 @@ class MainActivity : AppCompatActivity() {
             if (resultCode == Activity.RESULT_OK && data?.data != null) {
                 val uri = data.data!!
                 try {
-                    val takeFlags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    val takeFlags = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
                     //noinspection WrongConstant
                     if (takeFlags != 0) contentResolver.takePersistableUriPermission(uri, takeFlags)
                 } catch (_: SecurityException) { }

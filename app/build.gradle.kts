@@ -10,6 +10,7 @@ android {
     defaultConfig {
         applicationId = "com.uong.phormi"
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         targetSdk = 36
         versionCode = providers.environmentVariable("PHORMI_VERSION_CODE").orNull?.toIntOrNull() ?: 1
         versionName = providers.environmentVariable("PHORMI_VERSION_NAME").orNull ?: "1.0"
@@ -40,6 +41,10 @@ android {
 }
 
 dependencies {
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
     implementation("androidx.core:core-ktx:1.13.1")

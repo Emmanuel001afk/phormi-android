@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -376,12 +377,15 @@ class AiController(private val context: Context) {
         var step = 0
         var done = false
         while (!done && step < MAX_STEPS) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             step++
             val screen = withContext(Dispatchers.Main.immediate) { service.readScreen() }
             val result = askAiForNextAction(instruction, screen, onStatus) ?: run {
                 onStatus("All configured AI providers failed.")
                 return
             }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            check(PhormiAccessibilityService.instance === service) { "Accessibility session changed; task stopped." }
             val (decision, providerName) = result
             val action = decision.optString("action").lowercase()
             val description = when (action) {
@@ -442,7 +446,8 @@ class AiController(private val context: Context) {
                 val a = cleaned.indexOf('{'); val b = cleaned.lastIndexOf('}')
                 if (a >= 0 && b > a) return JSONObject(cleaned.substring(a, b + 1)) to provider.name
                 onStatus("${provider.name}: response was not an action JSON")
-            } catch (e: Exception) {
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (e: Exception) {
                 val message = e.message
                     ?.replace(Regex("\\s+"), " ")
                     ?.take(220)
@@ -508,8 +513,17 @@ class AiController(private val context: Context) {
                 if (continuation.isActive) continuation.resumeWithException(IOException("AI connection failed or timed out. Check your network and try again.", e))
             }
             override fun onResponse(call: Call, response: Response) {
+                if (!continuation.isActive) { response.close(); return }
                 try {
-                    val result = response.use { it.code to it.body?.string().orEmpty() }
+                    val result = response.use {
+                        val body = it.body
+                        val source = body?.source()
+                        val limit = 512L * 1024L
+                        if (body != null && body.contentLength() > limit) throw IOException("AI response is too large")
+                        source?.request(limit + 1)
+                        if (source != null && source.buffer.size > limit) throw IOException("AI response is too large")
+                        it.code to source?.readUtf8().orEmpty()
+                    }
                     if (continuation.isActive) continuation.resume(result)
                 } catch (e: IOException) {
                     if (continuation.isActive) continuation.resumeWithException(IOException("The AI connection ended before a complete answer arrived.", e))

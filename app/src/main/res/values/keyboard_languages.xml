@@ -1,0 +1,30 @@
+<resources>
+    <string name="keyboard_language_en_us">Phormi Keyboard - English (US)</string>
+    <string name="keyboard_language_en_gb">Phormi Keyboard - English (UK)</string>
+    <string name="keyboard_language_en_ng">Phormi Keyboard - English (Nigeria)</string>
+    <string name="keyboard_language_fr_fr">Phormi Keyboard - Français</string>
+    <string name="keyboard_language_es_es">Phormi Keyboard - Español</string>
+    <string name="keyboard_language_pt_br">Phormi Keyboard - Português</string>
+    <string name="keyboard_language_de_de">Phormi Keyboard - Deutsch</string>
+    <string name="keyboard_language_it_it">Phormi Keyboard - Italiano</string>
+    <string name="keyboard_language_id_id">Phormi Keyboard - Bahasa Indonesia</string>
+    <string name="keyboard_language_tr_tr">Phormi Keyboard - Türkçe</string>
+    <string name="keyboard_language_yo_ng">Phormi Keyboard - Yorùbá (Nigeria)</string>
+    <string name="keyboard_language_ig_ng">Phormi Keyboard - Igbo (Nigeria)</string>
+    <string name="keyboard_language_ha_ng">Phormi Keyboard - Hausa (Nigeria)</string>
+    <string name="keyboard_language_sw_ke">Phormi Keyboard - Kiswahili</string>
+    <string name="keyboard_language_ar_sa">Phormi Keyboard - العربية</string>
+    <string name="keyboard_language_ru_ru">Phormi Keyboard - Русский</string>
+    <string name="keyboard_language_uk_ua">Phormi Keyboard - Українська</string>
+    <string name="keyboard_language_pl_pl">Phormi Keyboard - Polski</string>
+    <string name="keyboard_language_nl_nl">Phormi Keyboard - Nederlands</string>
+    <string name="keyboard_language_sv_se">Phormi Keyboard - Svenska</string>
+    <string name="keyboard_language_no_no">Phormi Keyboard - Norsk</string>
+    <string name="keyboard_language_da_dk">Phormi Keyboard - Dansk</string>
+    <string name="keyboard_language_fi_fi">Phormi Keyboard - Suomi</string>
+    <string name="keyboard_language_cs_cz">Phormi Keyboard - Čeština</string>
+    <string name="keyboard_language_ro_ro">Phormi Keyboard - Română</string>
+    <string name="keyboard_language_hu_hu">Phormi Keyboard - Magyar</string>
+    <string name="keyboard_language_el_gr">Phormi Keyboard - Ελληνικά</string>
+    <string name="keyboard_language_he_il">Phormi Keyboard - עברית</string>
+</resources>

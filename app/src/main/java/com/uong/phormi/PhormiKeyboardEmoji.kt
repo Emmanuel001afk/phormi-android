@@ -75,7 +75,13 @@ object PhormiKeyboardEmoji {
         return names.toString()
     }
 
-    private val names by lazy { all.associateWith { unicodeName(it).lowercase(Locale.ROOT) } }
+    private val names by lazy {
+        all.associateWith { unicodeName(it).lowercase(Locale.ROOT) }.toMutableMap().apply {
+            countryFlags().zip(Locale.getISOCountries().toList()).forEach { (flag, code) ->
+                put(flag, Locale("", code).getDisplayCountry(Locale.ENGLISH).lowercase(Locale.ROOT) + " flag " + code.lowercase(Locale.ROOT))
+            }
+        }
+    }
     fun description(emoji: String): String = unicodeName(emoji).trim().lowercase(Locale.ROOT).ifBlank { "Emoji" }
     fun withTone(emoji: String, tone: Int): String {
         if (tone !in 1..5 || emoji.codePoints().anyMatch { it in 0x1F3FB..0x1F3FF }) return emoji
