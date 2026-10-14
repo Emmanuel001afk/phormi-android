@@ -1,0 +1,50 @@
+name: Validate browser and keyboard
+
+on:
+  push:
+    branches: ['arena/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phormi-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Android resources and DOM adapter
+        run: |
+          python3 tools/validate_resources.py
+          node --test tools/tests/assistant_dom.test.mjs
+      - name: Build, regression tests and Android lint (no publishing)
+        run: gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
+      - name: Upload validation reports and debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phormi-validation
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/lint-results-debug.*

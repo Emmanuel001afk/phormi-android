@@ -8,19 +8,13 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.lang.reflect.Method
-import java.util.WeakHashMap
 
-/** Runtime bridge for browser surfaces, environment lifecycle work, AI handoff, and downloads. */
+/** Legacy command routing only. MainActivity exclusively owns AI work and download callbacks. */
 class PhormiRepairApplication : Application() {
     private val handler = Handler(Looper.getMainLooper())
     private var resumedMain: MainActivity? = null
     private var lastEnvironmentCleanup = 0L
-    private var aiTaskRunning = false
-    private val downloadListeners = WeakHashMap<WebView, Boolean>()
 
     private val poll = object : Runnable {
         override fun run() {
@@ -39,7 +33,6 @@ class PhormiRepairApplication : Application() {
         super.onCreate()
         PhormiNotificationManager.ensureChannels(this)
         runCatching { PhormiEnvironmentManager.cleanupExpired(this, emptySet()) }
-        PhormiKeyboardAiBridge.start(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 if (activity is MainActivity) {
@@ -62,7 +55,6 @@ class PhormiRepairApplication : Application() {
         val activeProfiles = mutableSetOf<String>()
         tabs.forEach { tab ->
             (getField(tab, "profileName") as? String)?.let { activeProfiles += it }
-            installDownloadListener(activity, getField(tab, "webView") as? WebView)
         }
 
         val now = System.currentTimeMillis()
@@ -71,72 +63,6 @@ class PhormiRepairApplication : Application() {
             PhormiEnvironmentManager.cleanupExpired(activity, activeProfiles)
         }
         PhormiCommandBus.drain(activity).forEach { command -> runCatching { dispatch(activity, command.action, command.extras) } }
-        startPendingAiTask(activity)
-    }
-
-    private fun installDownloadListener(activity: MainActivity, webView: WebView?) {
-        if (webView == null || downloadListeners.containsKey(webView)) return
-        downloadListeners[webView] = true
-        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-            PhormiDownloadEngine.enqueue(activity, webView, url, contentDisposition, mimeType)
-        }
-    }
-
-    private fun startPendingAiTask(activity: MainActivity) {
-        if (aiTaskRunning) return
-        val task = PhormiAiPendingTask.take(activity) ?: return
-        val controller = AiController(applicationContext)
-        if (!controller.isActive()) {
-            PhormiAiPendingTask.saveStatus(activity, "AI is inactive. Enable a configured provider first.")
-            return
-        }
-        val tabs = getField(activity, "tabs") as? List<*> ?: run {
-            PhormiAiPendingTask.saveStatus(activity, "Browser tabs are not ready yet.")
-            return
-        }
-
-        if (task.target.isNotBlank()) {
-            val target = task.target.trim().lowercase()
-            val match = tabs.mapNotNull { tab ->
-                val id = getField(tab, "id") as? Int ?: return@mapNotNull null
-                val title = (getField(tab, "title") as? String).orEmpty()
-                val webView = getField(tab, "webView") as? WebView
-                val url = webView?.url.orEmpty()
-                val haystack = "$title $url".lowercase()
-                val score = when {
-                    haystack == target -> 100
-                    title.lowercase() == target -> 90
-                    url.lowercase() == target -> 90
-                    haystack.contains(target) -> 60
-                    target.startsWith("http") && url.lowercase().contains(target) -> 80
-                    else -> 0
-                }
-                if (score > 0) Triple(score, id, title) else null
-            }.maxByOrNull { it.first }
-
-            if (match != null) {
-                invoke(activity, "switchToTab", match.second)
-            } else if (task.target.startsWith("http://") || task.target.startsWith("https://")) {
-                invoke(activity, "createNewTab", task.target)
-            } else {
-                PhormiAiPendingTask.saveStatus(activity, "AI target tab not found: ${task.target.take(180)}")
-                return
-            }
-        }
-
-        aiTaskRunning = true
-        activity.lifecycleScope.launch {
-            try {
-                delay(500L)
-                controller.runTask(task.instruction) { status ->
-                    PhormiAiPendingTask.saveStatus(applicationContext, status)
-                }
-            } catch (t: Throwable) {
-                PhormiAiPendingTask.saveStatus(applicationContext, "AI task failed: ${t.message ?: "unknown error"}")
-            } finally {
-                aiTaskRunning = false
-            }
-        }
     }
 
     private fun dispatch(activity: MainActivity, action: String, extras: Map<String, String>) {

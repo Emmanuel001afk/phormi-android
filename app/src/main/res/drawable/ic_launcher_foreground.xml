@@ -1,12 +1,8 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Uses the real logo pulled from the Phormi website (public/favicon.ico),
-     inset so it sits correctly inside Android's adaptive-icon safe zone. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:insetLeft="18dp"
-    android:insetTop="18dp"
-    android:insetRight="18dp"
-    android:insetBottom="18dp">
-    <bitmap
-        android:src="@drawable/app_logo"
-        android:gravity="center" />
-</inset>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.82" android:scaleY="0.82" android:translateX="27.76" android:translateY="27.76">
+        <path android:fillColor="#978FFF" android:pathData="M18,51 L18,14 L35,14 C46,14 53,21 53,31 C53,41 46,48 35,48 L28,48 L28,39 L35,39 C41,39 44,36 44,31 C44,26 41,23 35,23 L27,23 L27,51 Z" />
+        <path android:fillColor="#58CDD0" android:pathData="M8,40 C6,27 13,15 25,10 L29,17 C20,21 15,29 17,38 C19,47 28,53 38,51 L41,59 C25,63 11,54 8,40 Z" />
+        <path android:fillColor="#EAE8FF" android:pathData="M49,9 A4,4 0,1 1,49 17 A4,4 0,1 1,49 9" />
+    </group>
+</vector>

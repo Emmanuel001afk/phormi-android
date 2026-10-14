@@ -26,6 +26,15 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
+import android.view.inputmethod.InputMethodSubtype
+import android.widget.PopupWindow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
 import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.FrameLayout
@@ -43,22 +52,25 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         private const val KEY_PENDING_URI = "pending_uri"
         private const val KEY_PENDING_TEXT = "pending_text"
         private var instance: PhormiKeyboardServiceV2? = null
+        internal val activeInstance: PhormiKeyboardServiceV2? get() = instance
         fun commitPickedContent(context: Context, uri: Uri): Boolean {
-            val service = instance
-            if (service?.currentInputConnection != null) return service.commitContentToEditor(uri)
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_URI, uri.toString()).apply()
+            val service = instance ?: return false
+            if (service.canCommitExternal()) return service.commitContentToEditor(uri)
+            service.queueExternal(KEY_PENDING_URI, uri.toString())
             return false
         }
-        fun startIntegratedVoiceRecognitionFromContext(context: Context, localeTag: String) { instance?.startIntegratedVoiceRecognition(localeTag) }
+        fun startIntegratedVoiceRecognitionFromContext(context: Context, localeTag: String, editorKey: String) {
+            instance?.let { it.pendingVoiceLocale = localeTag; it.pendingVoiceEditor = editorKey }
+        }
         fun commitExternalText(context: Context, text: String): Boolean {
             if (text.isBlank()) return false
-            val service = instance
-            if (service?.currentInputConnection != null) { service.commitTextToEditor(text); return true }
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_TEXT, text.take(4000)).apply()
+            val service = instance ?: return false
+            if (service.canCommitExternal()) { service.commitTextToEditor(text); return true }
+            service.queueExternal(KEY_PENDING_TEXT, text.take(4000))
             return false
         }
     }
-    enum class Panel { KEYBOARD, EMOJI, CLIPBOARD, AI_EMOJI, TOOLS, MEDIA, SETTINGS }
+    enum class Panel { KEYBOARD, EMOJI, CLIPBOARD, AI_EMOJI, TOOLS, MEDIA, SETTINGS, WRITING, VOICE }
     private enum class KeyboardPage { LETTERS, NUMBERS, SYMBOLS }
     private var panel = Panel.KEYBOARD
     private var page = KeyboardPage.LETTERS
@@ -88,15 +100,46 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var predictionRefreshRunnable: Runnable? = null
     private var lastPredictionWord = ""
     private var lastPredictionPrevious = ""
+    internal var activeSubtype: InputMethodSubtype? = null
+        private set
+    private var editorGeneration = 0L
+    private var lastEditorKey = ""
+    private var pendingVoiceLocale: String? = null
+    private var pendingVoiceEditor: String? = null
+    private val letterButtons = mutableListOf<Pair<Button, String>>()
+    private var shiftView: Button? = null
+    private data class CorrectionUndo(val original: String, val replacement: String, val before: String)
+    private var correctionUndo: CorrectionUndo? = null
+    private var alternativesPopup: PopupWindow? = null
+    private val writingScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var writingJob: Job? = null
+    private data class WritingCapture(val generation: Long, val editor: String, val connection: InputConnection,
+        val source: String, val selected: Boolean, val start: Int, val end: Int)
+    private var writingCapture: WritingCapture? = null
+    private var writingResult = ""
+    private var writingStatus = "Choose an edit. Text is sent only when you tap an action."
+    private var writingBusy = false
+    private val writingAi by lazy { AiController(applicationContext) }
+    private var selectionStart = -1
+    private var selectionEnd = -1
+    private var voiceStatus = "Ready to listen"
+    private var voicePartial = ""
+    private var voiceListening = false
 
     override fun onCreate() {
         super.onCreate(); instance = this
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { PhormiKeyboardClipboardStore.capturePrimaryClipboard(this) }
+        clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+            if (isInputViewShown && PhormiKeyboardTextEngine.allowsPersonalizedLearning(editorInfo))
+                PhormiKeyboardClipboardStore.capturePrimaryClipboard(this)
+        }
         clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
     }
     override fun onDestroy() {
-        speechRecognizer?.cancel(); speechRecognizer?.destroy(); speechRecognizer = null
+        stopVoice(true)
+        writingScope.cancel()
+        PhormiKeyboardSystemSpellChecker.close()
+        alternativesPopup?.dismiss()
         stopRepeat(); aiEmojiRunnable?.let { repeatHandler.removeCallbacks(it) }; aiEmojiRunnable = null
         predictionRefreshRunnable?.let { repeatHandler.removeCallbacks(it) }; predictionRefreshRunnable = null
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -104,7 +147,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (instance === this) instance = null; super.onDestroy()
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        stopVoice(true)
+        writingJob?.cancel(); writingJob = null
+        editorGeneration++
+        correctionUndo = null
+        writingCapture = null; writingResult = ""; writingBusy = false
+        selectionStart = attribute?.initialSelStart ?: -1; selectionEnd = attribute?.initialSelEnd ?: -1
         super.onStartInput(attribute, restarting); editorInfo = attribute; page = KeyboardPage.LETTERS; capsLock = false; shift = false
+        lastEditorKey = currentEditorKey()
+        activeSubtype = (getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)?.currentInputMethodSubtype
         autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute); panel = Panel.KEYBOARD
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -121,21 +172,51 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         setInputView(render())
         applyKeyboardWindowSize()
         applyPendingInput()
+        val voiceLocale = pendingVoiceLocale
+        if (voiceLocale != null && pendingVoiceEditor == currentEditorKey()) {
+            pendingVoiceLocale = null; pendingVoiceEditor = null
+            repeatHandler.postDelayed({ if (isInputViewShown) startIntegratedVoiceRecognition(voiceLocale) }, 180L)
+        } else { pendingVoiceLocale = null; pendingVoiceEditor = null }
     }
+
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype?) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        activeSubtype = newSubtype
+        PhormiKeyboardSystemSpellChecker.close()
+        lastPredictionWord = ""; lastPredictionPrevious = ""
+        if (isInputViewShown) setInputView(render())
+    }
+
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
+        selectionStart = newSelStart; selectionEnd = newSelEnd
         if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
             schedulePredictionRefresh()
             if(PhormiKeyboardPreferences.autoCaps(this)){
                 autoShift=PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection,editorInfo)
+                updateLetterCase()
             }
         }
     }
 
-    override fun onFinishInput() { stopRepeat(); editorInfo = null; super.onFinishInput() }
-    override fun onUnbindInput() { stopRepeat(); editorInfo = null; super.onUnbindInput() }
+    override fun onFinishInput() {
+        stopRepeat(); stopVoice(true); writingJob?.cancel(); editorGeneration++
+        editorInfo = null; correctionUndo = null
+        writingCapture = null; writingResult = ""
+        super.onFinishInput()
+    }
+    override fun onUnbindInput() {
+        stopRepeat(); stopVoice(true); writingJob?.cancel(); editorGeneration++
+        editorInfo = null; correctionUndo = null
+        super.onUnbindInput()
+    }
     override fun onFinishInputView(finishingInput: Boolean) {
         stopRepeat()
+        stopVoice(true)
+        writingJob?.cancel()
+        alternativesPopup?.dismiss()
+        predictionRefreshRunnable?.let(repeatHandler::removeCallbacks)
+        predictionRefreshRunnable = null
         // Do not rebuild/reposition the input view during dismissal. Rebuilding
         // here can produce a brief duplicate/miniature keyboard flash.
         runCatching { getWindow().window?.setWindowAnimations(0) }
@@ -152,6 +233,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     override fun onWindowHidden() {
         stopRepeat()
+        stopVoice(true)
+        writingJob?.cancel()
         runCatching {
             getWindow().window?.setWindowAnimations(0)
             getWindow().window?.decorView?.animate()?.cancel()
@@ -231,11 +314,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun themeKey(): Int = when (theme()) { 1 -> Color.rgb(48,53,61); 2 -> Color.rgb(18,52,79); 3 -> Color.WHITE; 4 -> Color.rgb(55,65,81); 5 -> Color.rgb(26,78,58); 6 -> Color.rgb(86,38,64); 7 -> Color.rgb(92,70,48); else -> Color.rgb(39,48,64) }
     private fun themePill(): Int = when (theme()) { 1 -> Color.rgb(37,42,49); 2 -> Color.rgb(15,45,69); 3 -> Color.rgb(224,228,234); 4 -> Color.rgb(47,58,73); 5 -> Color.rgb(20,63,48); 6 -> Color.rgb(70,31,53); 7 -> Color.rgb(78,59,41); else -> Color.rgb(31,41,55) }
     private fun themeText(): Int = if (theme() == 3) Color.rgb(20,27,36) else Color.WHITE
-    private fun accent(): Int = when (theme()) { 2 -> Color.rgb(65,135,220); 3 -> Color.rgb(98,72,220); 5 -> Color.rgb(52,211,153); 6 -> Color.rgb(244,114,182); 7 -> Color.rgb(245,158,11); else -> Color.rgb(112,75,255) }
+    private fun accent(): Int = PhormiAppearance.accent(this, theme() != 3)
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = radius.toFloat()
-        setStroke(dp(1), if (theme() == 3) Color.rgb(205,210,218) else Color.rgb(56,68,88))
+        setStroke(dp(1), androidx.core.graphics.ColorUtils.blendARGB(themeKey(), accent(), if (theme() == 3) 0.22f else 0.28f))
     }
     private fun root(): LinearLayout = LinearLayout(this).apply {
         orientation=LinearLayout.VERTICAL
@@ -248,13 +331,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         applyWallpaper(this)
     }
     private fun applyWallpaper(root: View) {
-        val value = PhormiKeyboardPreferences.wallpaperUri(this) ?: return
-        Thread {
-            val bitmap = runCatching { contentResolver.openInputStream(Uri.parse(value))?.use { BitmapFactory.decodeStream(it) } }.getOrNull() ?: return@Thread
-            Handler(Looper.getMainLooper()).post {
-                if (instance === this) root.background = BitmapDrawable(resources, bitmap).apply { alpha = 72 }
-            }
-        }.start()
+        val base = android.graphics.drawable.ColorDrawable(themeBackground())
+        val art = PhormiWallpapers.drawable(PhormiWallpapers.selected(this, true), theme() != 3)?.apply { alpha = 75 }
+        root.background = if (art == null) base else android.graphics.drawable.LayerDrawable(arrayOf(base, art))
+        val uri = PhormiKeyboardPreferences.wallpaperUri(this) ?: return
+        val baseColor = themeBackground()
+        PhormiWallpaperLoader.load(root, uri) { view, bitmap ->
+            val photo = BitmapDrawable(resources, bitmap).apply { alpha = 75 }
+            view.background = android.graphics.drawable.LayerDrawable(arrayOf(android.graphics.drawable.ColorDrawable(baseColor), photo))
+        }
     }
     private fun feedback(view: View) {
         if (PhormiKeyboardPreferences.haptic(this)) {
@@ -351,7 +436,13 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             PhormiKeyboardClipboardStore.capturePrimaryClipboard(this)
             setInputView(render())
         }
-        add("▦ Cabinet", 76) { panel = Panel.TOOLS; setInputView(render()) }
+        if (PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) {
+            add("Write", 60) { openWritingAssistant() }
+        }
+        if (editorInfo != null && !PhormiKeyboardTextEngine.isPrivateEditor(editorInfo)) {
+            add("🎙", 50) { launchVoice() }
+        }
+        add("▦ Tools", 76) { panel = Panel.TOOLS; setInputView(render()) }
         if (Build.VERSION.SDK_INT >= 28 && shouldOfferSwitchingToNextInputMethod()) {
             add("🌐", 52) { runCatching { switchToNextInputMethod(false) } }
         }
@@ -361,6 +452,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun predictionStrip(root:LinearLayout){
         val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
         predictionRow=row
+        lastPredictionWord = ""; lastPredictionPrevious = ""
         root.addView(row,LinearLayout.LayoutParams(-1,scaled(30)))
         refreshPredictionStrip()
     }
@@ -371,62 +463,60 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         repeatHandler.postDelayed(task, 70L)
     }
 
-    private fun refreshPredictionStrip(){
-        val row=predictionRow ?: return
-        val ic=currentInputConnection
-        val word=PhormiKeyboardTextEngine.currentWord(ic)
-        val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo))
-        if (word == lastPredictionWord && previous == lastPredictionPrevious && row.childCount > 0) return
-        lastPredictionWord = word
-        lastPredictionPrevious = previous
+    internal fun onSpellcheckUpdated(key: String) {
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+        if (isInputViewShown && key == PhormiKeyboardSystemSpellChecker.key(PhormiKeyboardTextEngine.currentWord(currentInputConnection), locale)) refreshPredictionStrip(true)
+    }
+
+    private fun refreshPredictionStrip(force: Boolean = false) {
+        val row = predictionRow ?: return
+        val ic = currentInputConnection
+        val word = PhormiKeyboardTextEngine.currentWord(ic)
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+        val previous = PhormiKeyboardTextEngine.previousWord(ic, locale)
+        if (!force && word == lastPredictionWord && previous == lastPredictionPrevious && row.childCount > 0) return
+        lastPredictionWord = word; lastPredictionPrevious = previous
         row.removeAllViews()
-        if(!PhormiKeyboardPreferences.suggestions(this) || !PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) return
-        val suggestions=if(word.isNotBlank()) PhormiKeyboardTextEngine.suggestions(this,word,PhormiKeyboardTextEngine.localeFor(editorInfo)) else PhormiKeyboardTextEngine.nextWordSuggestions(this,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
-        if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI expression"){insertAiEmojiExpression()},LinearLayout.LayoutParams(dp(94),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
-            val button=pill(value,{})
-            button.setOnClickListener {
-                feedback(button)
-                val ic = currentInputConnection
-                if (ic != null) {
-                    val liveWord = PhormiKeyboardTextEngine.currentWord(ic)
-                    if (liveWord.isNotBlank()) {
-                        ic.beginBatchEdit()
-                        try {
-                            ic.finishComposingText()
-                            ic.deleteSurroundingText(liveWord.length, 0)
-                            ic.commitText(value, 1)
-                            commitSpace()
-                        } finally {
-                            ic.endBatchEdit()
-                        }
-                    } else {
-                        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
-                        if (before.isNotEmpty() && !before.last().isWhitespace()) ic.commitText(" ", 1)
-                        ic.commitText(value, 1)
-                        commitSpace()
-                    }
+        val allowed = PhormiKeyboardPreferences.suggestions(this) && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
+        val suggestions = if (!allowed) emptyList() else if (word.isNotBlank())
+            PhormiKeyboardTextEngine.suggestions(this, word, locale)
+        else PhormiKeyboardTextEngine.nextWordSuggestions(this, previous, locale)
+        suggestions.take(3).forEach { value ->
+            val button = pill(value) {
+                val connection = currentInputConnection ?: return@pill
+                val live = PhormiKeyboardTextEngine.currentWord(connection)
+                // A stale suggestion must not replace a different word after cursor movement.
+                if (live != word) { refreshPredictionStrip(true); return@pill }
+                correctionUndo = null
+                connection.beginBatchEdit()
+                try {
+                    connection.finishComposingText()
+                    if (live.isNotBlank()) connection.deleteSurroundingText(live.length, 0)
+                    connection.commitText(value + " ", 1)
+                } finally { connection.endBatchEdit() }
+                if (value.equals(live, true)) PhormiKeyboardTextEngine.rememberLiteralChoice(this, value, editorInfo)
+                else {
+                    PhormiKeyboardTextEngine.learn(this, value, editorInfo)
+                    PhormiKeyboardTextEngine.learnCorrection(this, live, value, editorInfo)
                 }
-                schedulePredictionRefresh()
+                PhormiKeyboardTextEngine.learnPair(this, previous, value, editorInfo)
+                refreshAfterTextKey()
             }
-            button.setOnLongClickListener{
-                val removed=PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this,value,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
-                if(removed) {
-                    android.widget.Toast.makeText(this,"Removed \"$value\" from learned suggestions",android.widget.Toast.LENGTH_SHORT).show()
-                    schedulePredictionRefresh()
-                } else {
-                    android.widget.Toast.makeText(this,"Built-in suggestion — nothing learned to remove",android.widget.Toast.LENGTH_SHORT).show()
-                }
+            button.setOnLongClickListener {
+                val removed = PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this, value, previous, locale)
+                android.widget.Toast.makeText(this, if (removed) "Removed from your personal dictionary" else "Built-in word; no personal entry to remove", android.widget.Toast.LENGTH_SHORT).show()
+                refreshPredictionStrip(true)
                 true
             }
-            button.contentDescription="$value. Tap to insert. Long press to remove it from learned suggestions."
-            row.addView(button,LinearLayout.LayoutParams(0,scaled(32),1f).apply{setMargins(dp(2),0,dp(2),0)})
+            button.contentDescription = if (value == word) "Keep spelling $value" else "Insert suggestion $value"
+            row.addView(button, LinearLayout.LayoutParams(0, scaled(34), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
         }
-        row.visibility=if(row.childCount>0) View.VISIBLE else View.GONE
+        row.visibility = if (suggestions.isEmpty()) View.GONE else View.VISIBLE
     }
     private fun buildKeyboard():View{val root=root();if(page==KeyboardPage.LETTERS)predictionStrip(root);toolbar(root);val type=editorInfo?.inputType?:InputType.TYPE_CLASS_TEXT;val clazz=type and InputType.TYPE_MASK_CLASS;val variation=type and InputType.TYPE_MASK_VARIATION;val number=clazz==InputType.TYPE_CLASS_NUMBER;val phone=clazz==InputType.TYPE_CLASS_PHONE;val dateTime=clazz==InputType.TYPE_CLASS_DATETIME;val email=variation==InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS||variation==InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS;val uri=variation==InputType.TYPE_TEXT_VARIATION_URI;if((number||phone||dateTime)&&page==KeyboardPage.LETTERS)page=KeyboardPage.NUMBERS;when{phone->responsiveRows(root,listOf("1234567890","*#+","()-"));dateTime->responsiveRows(root,listOf("1234567890","4567890",":/-"));number&&page==KeyboardPage.SYMBOLS->buildSymbolPage(root);number->buildNumberPage(root);page==KeyboardPage.LETTERS->buildLetterPage(root,email,uri);page==KeyboardPage.NUMBERS->buildNumberPage(root);else->buildSymbolPage(root)};return root}
     private fun buildLetterPage(root:LinearLayout,email:Boolean,uri:Boolean){
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        responsiveRows(body,listOf("qwertyuiop","asdfghjkl","zxcvbnm"))
+        responsiveRows(body, PhormiKeyboardLayouts.rows(PhormiKeyboardTextEngine.localeFor(editorInfo)))
         if(email||uri){
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
             val tokens=if(email)listOf("@",".com",".net",".org")else listOf("/",".com","https://",".org")
@@ -500,10 +590,16 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 minimumWidth=0
             }
             chars.forEach{ch->
-                row.addView(keyButton(ch.toString()){
-                    val out=if(shift||capsLock||autoShift)ch.uppercaseChar().toString()else ch.toString()
-                    commitTextToEditor(out);if(shift&&!capsLock)shift=false;autoShift=false;refreshAfterTextKey()
-                }.apply{
+                val base = ch.toString()
+                row.addView(keyButton(base){
+                    val out = if (shift || capsLock || autoShift) base.uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else base
+                    commitTextToEditor(out); if (shift && !capsLock) shift = false; autoShift = false; refreshAfterTextKey()
+                }.apply {
+                    if (ch.isLetter()) {
+                        letterButtons.add(this to base)
+                        val options = PhormiKeyboardLayouts.alternatives(base, PhormiKeyboardTextEngine.localeFor(editorInfo))
+                        if (options.isNotEmpty()) setOnLongClickListener { showAlternatives(this, options); true }
+                    }
                     // Gboard-style compact letter sizing keeps every key inside the safe
                     // IME viewport even on narrow screens and reduced-width settings.
                     textSize=18f
@@ -523,6 +619,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             toggleShift()
             setInputView(render())
         }.apply {
+            shiftView = this
             // Keep one universal shift glyph; state is communicated by color.
             // Purple = one-letter capitalization, red = caps lock.
             background = rounded(
@@ -703,7 +800,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         list.addView(pill(if(PhormiKeyboardPreferences.pollinationsKey(this).isBlank())"Set Pollinations AI key"else"Pollinations AI key ✓"){startActivity(Intent(this,PhormiAiEmojiActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiAiEmojiActivity.EXTRA_CONFIG_ONLY,true)})},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
-    private fun render():View{
+    internal fun render(): View {
+        letterButtons.clear(); shiftView = null; predictionRow = null
         val view=when(panel){
             Panel.EMOJI->buildEmoji()
             Panel.CLIPBOARD->buildClipboard()
@@ -712,7 +810,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             Panel.MEDIA->buildMedia()
             Panel.SETTINGS->buildSettings()
             Panel.KEYBOARD->buildKeyboard()
+            Panel.WRITING->buildWritingAssistant()
+            Panel.VOICE->buildVoicePanel()
         }
+        updateLetterCase()
         val finalView = if (panel == Panel.KEYBOARD && (keyboardResizeMode || PhormiKeyboardPreferences.floating(this))) {
             FrameLayout(this).apply {
                 setBackgroundColor(Color.TRANSPARENT)
@@ -743,7 +844,37 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         finalView.post { applyKeyboardWindowSize() }
         return finalView
     }
-    private fun refreshAfterTextKey(){if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS) schedulePredictionRefresh()}
+    private fun refreshAfterTextKey() {
+        if (PhormiKeyboardPreferences.autoCaps(this)) autoShift = PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, editorInfo)
+        updateLetterCase()
+        if (panel == Panel.KEYBOARD && page == KeyboardPage.LETTERS) schedulePredictionRefresh()
+    }
+
+    private fun updateLetterCase() {
+        val upper = shift || capsLock || autoShift
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+        letterButtons.forEach { (button, base) -> button.text = if (upper) base.uppercase(locale) else base }
+        shiftView?.apply {
+            text = if (capsLock) "⇪" else "⇧"
+            background = rounded(if (upper) accent() else themePill(), dp(10))
+            setTextColor(if (upper) PhormiAppearance.onAccent(accent()) else themeText())
+            contentDescription = if (capsLock) "Caps lock on" else if (upper) "Shift on" else "Shift off"
+        }
+    }
+
+    private fun showAlternatives(anchor: View, options: List<String>) {
+        alternativesPopup?.dismiss()
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(5), dp(5), dp(5), dp(5)); background = rounded(themeBackground(), dp(14)) }
+        val popup = PopupWindow(row, -2, -2, false).apply { isOutsideTouchable = true; setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); elevation = dp(8).toFloat() }
+        alternativesPopup = popup
+        options.forEach { value ->
+            row.addView(pill(value) {
+                val output = if (shift || capsLock || autoShift) value.uppercase(PhormiKeyboardTextEngine.localeFor(editorInfo)) else value
+                commitTextToEditor(output); popup.dismiss(); refreshAfterTextKey()
+            }, LinearLayout.LayoutParams(dp(40), dp(48)))
+        }
+        if (anchor.windowToken != null) popup.showAsDropDown(anchor, 0, -anchor.height - dp(56))
+    }
     private fun launchMedia(mode:String){startActivity(Intent(this,PhormiKeyboardMediaActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiKeyboardMediaActivity.EXTRA_MODE,mode)})}
     private fun launchVoice() {
         if (currentInputConnection == null) {
@@ -759,56 +890,258 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     fun startIntegratedVoiceRecognition(localeTag: String) {
-        if (currentInputConnection == null) return
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            android.widget.Toast.makeText(this, "Speech recognition is not available on this device", android.widget.Toast.LENGTH_SHORT).show()
+        val connection = currentInputConnection ?: return
+        if (!isInputViewShown || PhormiKeyboardTextEngine.isPrivateEditor(editorInfo)) return
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            PhormiKeyboardVoiceActivity.requestPermissionFromKeyboard(this, localeTag)
             return
         }
-        speechRecognizer?.cancel()
-        speechRecognizer?.destroy()
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
-            sr.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: android.os.Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-                override fun onPartialResults(partialResults: android.os.Bundle?) {}
-                override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
-                override fun onError(error: Int) {
-                    speechRecognizer?.cancel()
-                }
-                override fun onResults(results: android.os.Bundle?) {
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { commitTextToEditor(it) }
-                    speechRecognizer?.cancel()
-                }
-            })
+        stopVoice(true)
+        panel = Panel.VOICE
+        voicePartial = ""
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            voiceStatus = "No speech service is installed. Enable a speech-recognition service in Android settings."
+            setInputView(render()); return
         }
+        val generation = editorGeneration
+        val editor = currentEditorKey()
+        val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer = recognizer
+        voiceListening = true
+        voiceStatus = "Starting microphone…"
+        fun valid() = speechRecognizer === recognizer && editorGeneration == generation && currentEditorKey() == editor && isInputViewShown
+        fun refresh() { if (valid() && panel == Panel.VOICE) setInputView(render()) }
+        recognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: android.os.Bundle?) { if (valid()) { voiceStatus = "Listening — speak now"; refresh() } }
+            override fun onBeginningOfSpeech() { if (valid()) { voiceStatus = "Listening…"; refresh() } }
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+            override fun onEndOfSpeech() { if (valid()) { voiceStatus = "Processing speech…"; refresh() } }
+            override fun onPartialResults(partialResults: android.os.Bundle?) {
+                if (valid()) {
+                    voicePartial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    refresh()
+                }
+            }
+            override fun onEvent(eventType: Int, params: android.os.Bundle?) = Unit
+            override fun onError(error: Int) {
+                if (!valid()) return
+                stopVoice(true)
+                voiceStatus = when (error) {
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required. Tap Try again to grant it."
+                    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER -> "The speech service could not connect. Check your network or install an offline speech pack."
+                    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech was recognized. Try again in a quieter place."
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "The microphone is busy. Close other voice apps and try again."
+                    SpeechRecognizer.ERROR_AUDIO -> "The microphone could not be opened. Check Android microphone access."
+                    else -> "Voice typing stopped (error $error). Try again."
+                }
+                if (panel == Panel.VOICE && isInputViewShown) setInputView(render())
+            }
+            override fun onResults(results: android.os.Bundle?) {
+                if (!valid()) return
+                val result = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                stopVoice(true)
+                if (currentInputConnection === connection && editorGeneration == generation && result.isNotBlank()) {
+                    val before = connection.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+                    val prefix = if (before.isNotEmpty() && !before.last().isWhitespace() && connection.getSelectedText(0).isNullOrEmpty()) " " else ""
+                    connection.commitText(prefix + result, 1)
+                    panel = Panel.KEYBOARD
+                    setInputView(render())
+                } else if (panel == Panel.VOICE) {
+                    voiceStatus = "No text was inserted. The editor changed or no speech was recognized."
+                    setInputView(render())
+                }
+            }
+        })
         val recognition = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, localeTag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         }
-        runCatching { speechRecognizer?.startListening(recognition) }
-            .onFailure {
-                speechRecognizer?.cancel()
-                android.widget.Toast.makeText(this, "Unable to start voice typing", android.widget.Toast.LENGTH_SHORT).show()
-            }
-    }
-    private fun shareSelectedText(){val text=currentInputConnection?.getSelectedText(0)?.toString().orEmpty();if(text.isBlank()){android.widget.Toast.makeText(this,"Select text first",android.widget.Toast.LENGTH_SHORT).show();return};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
-    private fun applyPendingInput(){val prefs=getSharedPreferences(PREFS,MODE_PRIVATE);prefs.getString(KEY_PENDING_TEXT,null)?.takeIf{it.isNotBlank()}?.let{commitTextToEditor(it)};prefs.edit().remove(KEY_PENDING_TEXT).apply();prefs.getString(KEY_PENDING_URI,null)?.let{runCatching{commitContentToEditor(Uri.parse(it))}};prefs.edit().remove(KEY_PENDING_URI).apply()}
-    private fun commitTextToEditor(text:String){
-        val ic=currentInputConnection ?: return
-        ic.commitText(text,1)
-        if(PhormiKeyboardPreferences.autoCaps(this) && text.any{it in charArrayOf('.','!','?',':',';','\n')}){
-            autoShift=PhormiKeyboardTextEngine.autoCapitalize(ic,editorInfo)
+        setInputView(render())
+        runCatching { recognizer.startListening(recognition) }.onFailure {
+            stopVoice(true); voiceStatus = "Voice typing could not start. Check the speech service and microphone permission."
+            if (isInputViewShown) setInputView(render())
         }
     }
-    private fun commitSpace(){val ic=currentInputConnection?:return;val current=PhormiKeyboardTextEngine.currentWord(ic);if(PhormiKeyboardPreferences.autocorrect(this)&&current.isNotBlank()){PhormiKeyboardTextEngine.correctionFor(this,current)?.let{correction->ic.deleteSurroundingText(current.length,0);ic.commitText(correction,1);PhormiKeyboardTextEngine.learnCorrection(this,current,correction,editorInfo)}};val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo));val corrected=PhormiKeyboardTextEngine.currentWord(ic);if(corrected.isNotBlank())PhormiKeyboardTextEngine.learn(this,corrected,editorInfo);ic.commitText(" ",1);if(previous.isNotBlank()&&corrected.isNotBlank())PhormiKeyboardTextEngine.learnPair(this,previous,corrected,editorInfo);if(PhormiKeyboardPreferences.autoCaps(this))autoShift=PhormiKeyboardTextEngine.autoCapitalize(ic,editorInfo);refreshAfterTextKey()}
-    private fun deleteBackward(){val ic=currentInputConnection?:return;val selected=ic.getSelectedText(0)?.toString();if(!selected.isNullOrEmpty())ic.commitText("",1)else ic.deleteSurroundingText(1,0)}
+
+    private fun stopVoice(discard: Boolean) {
+        val recognizer = speechRecognizer
+        if (!discard) { runCatching { recognizer?.stopListening() }; return }
+        speechRecognizer = null; voiceListening = false
+        runCatching { recognizer?.cancel(); recognizer?.destroy() }
+    }
+
+    private fun buildVoicePanel(): View {
+        val root = root()
+        addBackHeader(root, "← Keyboard · cancel voice") { stopVoice(true); panel = Panel.KEYBOARD; setInputView(render()) }
+        root.addView(TextView(this).apply { text = voiceStatus; setTextColor(themeText()); textSize = 17f; gravity = Gravity.CENTER; setPadding(dp(14), dp(12), dp(14), dp(8)) }, LinearLayout.LayoutParams(-1, -2))
+        val scroll = ScrollView(this)
+        scroll.addView(TextView(this).apply { text = voicePartial.ifBlank { "Speech appears here before it is inserted. Recognition is provided by your Android speech service." }; setTextColor(themeText()); textSize = 16f; setPadding(dp(16), dp(10), dp(16), dp(10)) })
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(pill(if (voiceListening) "Finish speaking" else "Try again") {
+            if (voiceListening) stopVoice(false) else launchVoice()
+        }, LinearLayout.LayoutParams(-1, scaled(44)))
+        return root
+    }
+
+    private fun openWritingAssistant() {
+        val connection = currentInputConnection ?: return
+        if (!PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) return
+        val selected = connection.getSelectedText(0)?.toString().orEmpty()
+        if (selected.length > 2000) {
+            android.widget.Toast.makeText(this, "Select at most 2,000 characters for a writing edit", android.widget.Toast.LENGTH_LONG).show(); return
+        }
+        val source = selected.ifBlank { connection.getTextBeforeCursor(2000, 0)?.toString().orEmpty() }
+        writingCapture = WritingCapture(editorGeneration, currentEditorKey(), connection, source, selected.isNotEmpty(), selectionStart, selectionEnd)
+        writingResult = ""; writingBusy = false
+        writingStatus = "${if (selected.isNotEmpty()) "Selected text" else "Text before the cursor"} · ${source.length} characters. Sent only after you choose an edit."
+        panel = Panel.WRITING
+        setInputView(render())
+    }
+
+    private fun buildWritingAssistant(): View {
+        val root = root()
+        addBackHeader(root, "← Keyboard · Writing assistant") { writingJob?.cancel(); panel = Panel.KEYBOARD; setInputView(render()) }
+        val actions = listOf("Fix grammar" to "Fix spelling and grammar without changing the language or meaning.",
+            "Rewrite" to "Rewrite clearly and naturally, preserving the meaning.",
+            "Shorten" to "Make the text concise, preserving its key points.",
+            "Continue" to "Continue with one or two sentences. Return the complete text, including the unchanged original.",
+            "Translate" to "Translate into ${PhormiKeyboardTextEngine.localeFor(editorInfo).displayLanguage}.")
+        val actionsScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        actions.forEach { (label, instruction) -> row.addView(pill(label) { requestWritingEdit(instruction) }.apply { isEnabled = !writingBusy }, LinearLayout.LayoutParams(dp(110), scaled(40))) }
+        actionsScroll.addView(row); root.addView(actionsScroll, LinearLayout.LayoutParams(-1, scaled(42)))
+        root.addView(TextView(this).apply { text = writingStatus; setTextColor(themeText()); textSize = 12f; setPadding(dp(10), dp(5), dp(10), dp(5)) }, LinearLayout.LayoutParams(-1, -2))
+        val preview = ScrollView(this)
+        preview.addView(TextView(this).apply { text = writingResult.ifBlank { writingCapture?.source.orEmpty().ifBlank { "Type or select some text in the current app, then open Write." } }; setTextColor(themeText()); textSize = 15f; setPadding(dp(12), dp(10), dp(12), dp(10)) })
+        root.addView(preview, LinearLayout.LayoutParams(-1, 0, 1f))
+        if (writingResult.isNotBlank()) {
+            val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            controls.addView(pill("Use this edit") { applyWritingResult() }, LinearLayout.LayoutParams(0, scaled(44), 1f))
+            controls.addView(pill("Copy") { (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Phormi writing suggestion", writingResult)) }, LinearLayout.LayoutParams(0, scaled(44), 1f))
+            root.addView(controls)
+        } else root.addView(pill(if (writingBusy) "Cancel request" else "Configure AI connection") {
+            if (writingBusy) { writingJob?.cancel(); writingBusy = false; writingStatus = "Request cancelled."; setInputView(render()) }
+            else startActivity(Intent(this, AiActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }, LinearLayout.LayoutParams(-1, scaled(42)))
+        return root
+    }
+
+    private fun requestWritingEdit(instruction: String) {
+        val capture = writingCapture ?: return
+        if (capture.source.isBlank() || writingBusy) return
+        writingBusy = true; writingResult = ""; writingStatus = "Asking your configured AI…"
+        setInputView(render())
+        writingJob = writingScope.launch {
+            try {
+                val result = writingAi.assistWriting(instruction, capture.source)
+                if (editorGeneration == capture.generation && panel == Panel.WRITING && writingCapture === capture) {
+                    writingResult = result; writingStatus = "Review the suggestion. Nothing changes until you tap Use this edit."
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { if (writingCapture === capture) writingStatus = error.message ?: "AI request failed. Try again." }
+            finally {
+                writingBusy = false
+                if (isInputViewShown && panel == Panel.WRITING && writingCapture === capture) setInputView(render())
+            }
+        }
+    }
+
+    private fun applyWritingResult() {
+        val capture = writingCapture ?: return
+        val connection = currentInputConnection
+        val sameSelection = selectionStart == capture.start && selectionEnd == capture.end
+        val unchanged = if (capture.selected) connection?.getSelectedText(0)?.toString() == capture.source
+            else connection?.getTextBeforeCursor(capture.source.length, 0)?.toString() == capture.source
+        if (writingResult.isBlank() || connection !== capture.connection || currentEditorKey() != capture.editor ||
+            editorGeneration != capture.generation || !sameSelection || !unchanged || PhormiKeyboardTextEngine.isPrivateEditor(editorInfo)) {
+            writingStatus = "The text field or cursor changed. Reopen Write to capture the current text; nothing was replaced."
+            setInputView(render()); return
+        }
+        connection.beginBatchEdit()
+        try {
+            connection.finishComposingText()
+            if (!capture.selected) connection.deleteSurroundingText(capture.source.length, 0)
+            connection.commitText(writingResult, 1)
+        } finally { connection.endBatchEdit() }
+        writingCapture = null; writingResult = ""; panel = Panel.KEYBOARD
+        setInputView(render())
+    }
+
+    private fun shareSelectedText(){val text=currentInputConnection?.getSelectedText(0)?.toString().orEmpty();if(text.isBlank()){android.widget.Toast.makeText(this,"Select text first",android.widget.Toast.LENGTH_SHORT).show();return};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
+    internal fun currentEditorKey(): String = editorInfo?.let { "${it.packageName}:${it.fieldId}:${it.inputType}" }.orEmpty()
+
+    private fun canCommitExternal(): Boolean = isInputViewShown && currentInputConnection != null && editorInfo != null && !PhormiKeyboardTextEngine.isPrivateEditor(editorInfo)
+
+    private fun queueExternal(key: String, value: String) {
+        if (lastEditorKey.isBlank()) return
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(key, value)
+            .putString("pending_editor", lastEditorKey).putLong("pending_at", System.currentTimeMillis()).apply()
+    }
+
+    private fun applyPendingInput() {
+        val pending = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val valid = pending.getString("pending_editor", null) == currentEditorKey() &&
+            System.currentTimeMillis() - pending.getLong("pending_at", 0) in 0..120_000L && !PhormiKeyboardTextEngine.isPrivateEditor(editorInfo)
+        if (valid) {
+            pending.getString(KEY_PENDING_TEXT, null)?.takeIf { it.isNotBlank() }?.let(::commitTextToEditor)
+            pending.getString(KEY_PENDING_URI, null)?.let { runCatching { commitContentToEditor(Uri.parse(it)) } }
+        }
+        pending.edit().clear().apply()
+    }
+
+    private fun commitTextToEditor(text: String) {
+        val ic = currentInputConnection ?: return
+        correctionUndo = null
+        ic.commitText(text, 1)
+        if (PhormiKeyboardPreferences.autoCaps(this)) autoShift = PhormiKeyboardTextEngine.autoCapitalize(ic, editorInfo)
+    }
+
+    private fun commitSpace() {
+        val ic = currentInputConnection ?: return
+        val original = PhormiKeyboardTextEngine.currentWord(ic)
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+        val previous = PhormiKeyboardTextEngine.previousWord(ic, locale)
+        val before = ic.getTextBeforeCursor(240, 0)?.toString().orEmpty()
+        val correction = if (PhormiKeyboardPreferences.autocorrect(this) && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) && original.isNotBlank())
+            PhormiKeyboardTextEngine.correctionFor(this, original, locale) else null
+        ic.beginBatchEdit()
+        try {
+            ic.finishComposingText()
+            if (correction != null) {
+                ic.deleteSurroundingText(original.length, 0)
+                ic.commitText(correction, 1)
+            }
+            ic.commitText(" ", 1)
+        } finally { ic.endBatchEdit() }
+        correctionUndo = correction?.let { CorrectionUndo(original, it, before.dropLast(original.length)) }
+        if (correction == null && original.isNotBlank()) PhormiKeyboardTextEngine.learn(this, original, editorInfo)
+        val completed = correction ?: original
+        PhormiKeyboardTextEngine.learnPair(this, previous, completed, editorInfo)
+        refreshAfterTextKey()
+    }
+
+    private fun deleteBackward() {
+        val ic = currentInputConnection ?: return
+        val selected = ic.getSelectedText(0)?.toString()
+        val undo = correctionUndo
+        correctionUndo = null
+        if (!selected.isNullOrEmpty()) { ic.commitText("", 1); return }
+        val before = ic.getTextBeforeCursor(300, 0)?.toString().orEmpty()
+        if (undo != null && before.endsWith(undo.before + undo.replacement + " ")) {
+            ic.beginBatchEdit()
+            try {
+                ic.deleteSurroundingText(undo.replacement.length + 1, 0)
+                ic.commitText(undo.original, 1)
+            } finally { ic.endBatchEdit() }
+            PhormiKeyboardTextEngine.rememberLiteralChoice(this, undo.original, editorInfo)
+            return
+        }
+        val length = PhormiTypingRules.deletionLength(before)
+        if (length > 0) ic.deleteSurroundingText(length, 0)
+    }
     private fun moveCursor(delta:Int){val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
     private fun toggleShift(){if(capsLock){capsLock=false;shift=false;autoShift=false}else if(shift||autoShift){capsLock=true;shift=false;autoShift=false}else shift=true}
     private fun actionLabel():String=if(editorInfo?.let{it.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0}==true)"↵" else when(editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)){EditorInfo.IME_ACTION_GO->"Go";EditorInfo.IME_ACTION_SEARCH->"Search";EditorInfo.IME_ACTION_SEND->"Send";EditorInfo.IME_ACTION_NEXT->"Next";EditorInfo.IME_ACTION_DONE->"Done";else->"Enter"}

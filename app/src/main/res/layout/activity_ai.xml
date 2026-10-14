@@ -8,15 +8,19 @@
 <Button android:id="@+id/btn_ai_memory_retention" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="AI memory retention"/>
 
 <EditText android:id="@+id/input_provider_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Provider name (e.g. OpenAI)" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
-<EditText android:id="@+id/input_api_key" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API key" android:inputType="textPassword" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
+<EditText android:id="@+id/input_api_key" android:saveEnabled="false" android:importantForAutofill="no" android:imeOptions="flagNoPersonalizedLearning" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API key" android:inputType="textPassword" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <EditText android:id="@+id/input_endpoint" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="HTTPS chat endpoint" android:inputType="textUri" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <EditText android:id="@+id/input_model" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Model ID" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <Button android:id="@+id/btn_template" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Choose provider preset"/>
 <Button android:id="@+id/btn_save_keys" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Test &amp; save connection"/>
 <Button android:id="@+id/btn_web_ai" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Use AI on the web inside Phormi"/>
+<Button android:id="@+id/btn_manage_providers" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Manage saved providers"/>
+<Button android:id="@+id/btn_ai_target" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Choose target tab"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Only the selected tab is shared with AI. Drafts are not submitted automatically; form submissions require your confirmation. For rewriting text, use the keyboard’s Write tool." android:textColor="#94A3B8" android:textSize="13sp"/>
 <TextView android:id="@+id/key_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:textColor="#CBD5E1"/>
 <EditText android:id="@+id/input_instruction" android:layout_width="match_parent" android:layout_height="110dp" android:layout_marginTop="16dp" android:gravity="top" android:hint="Ask Phormi to do something on the current page" android:textColor="#F8FAFC" android:textColorHint="#64748B"/>
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"><Button android:id="@+id/btn_voice" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Voice"/><Button android:id="@+id/btn_run" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Run"/></LinearLayout>
+<Button android:id="@+id/btn_stop_tasks" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Stop browser AI tasks"/>
 <TextView android:id="@+id/status_log" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:textColor="#CBD5E1" android:textSize="13sp"/>
 </LinearLayout>
 </ScrollView>

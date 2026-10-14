@@ -95,7 +95,6 @@ class MenuActivity : AppCompatActivity() {
         }
         val openUrl = data.getStringExtra("open_url") ?: data.getStringExtra(AccountsActivity.EXTRA_OPEN_URL)
         if (!openUrl.isNullOrBlank()) {
-            PhormiCommandBus.enqueue(this, "open_url", mapOf("open_url" to openUrl))
             setResult(RESULT_OK, Intent().putExtra("open_url", openUrl))
             finish()
         }

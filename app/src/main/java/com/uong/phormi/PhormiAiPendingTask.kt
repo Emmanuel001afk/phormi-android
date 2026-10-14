@@ -41,10 +41,29 @@ object PhormiAiPendingTask {
     }
 
     @Synchronized
-    fun take(context: Context): Task? = takeAll(context).firstOrNull()
+    fun take(context: Context): Task? {
+        val tasks = read(context)
+        write(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE), tasks.drop(1))
+        return tasks.firstOrNull()
+    }
 
     @Synchronized
     fun pendingCount(context: Context): Int = read(context).size
+
+    @Synchronized
+    fun cancelAll(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        write(prefs, emptyList())
+        prefs.edit().putBoolean("cancel_requested", true).apply()
+    }
+
+    @Synchronized
+    fun consumeCancellation(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val requested = prefs.getBoolean("cancel_requested", false)
+        prefs.edit().remove("cancel_requested").apply()
+        return requested
+    }
 
     fun saveStatus(context: Context, status: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

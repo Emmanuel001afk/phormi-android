@@ -9,10 +9,12 @@ import android.os.Bundle
 /** Activity-hosted speech UI used by the system keyboard. */
 class PhormiKeyboardVoiceActivity : Activity() {
     private var localeTag: String = "en-US"
+    private var editorKey: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         localeTag = intent?.getStringExtra(EXTRA_LOCALE).orEmpty().ifBlank { "en-US" }
+        editorKey = intent?.getStringExtra("editor_key").orEmpty()
         if (android.os.Build.VERSION.SDK_INT >= 23 &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_PERMISSION)
@@ -29,7 +31,7 @@ class PhormiKeyboardVoiceActivity : Activity() {
     }
 
     private fun startRecognitionAndFinish() {
-        PhormiKeyboardServiceV2.startIntegratedVoiceRecognitionFromContext(this, localeTag)
+        PhormiKeyboardServiceV2.startIntegratedVoiceRecognitionFromContext(this, localeTag, editorKey)
         finish()
     }
 
@@ -40,7 +42,8 @@ class PhormiKeyboardVoiceActivity : Activity() {
         fun requestPermissionFromKeyboard(service: PhormiKeyboardServiceV2, localeTag: String) {
             service.startActivity(Intent(service, PhormiKeyboardVoiceActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(EXTRA_LOCALE, localeTag))
+                .putExtra(EXTRA_LOCALE, localeTag)
+                .putExtra("editor_key", service.currentEditorKey()))
         }
     }
 }

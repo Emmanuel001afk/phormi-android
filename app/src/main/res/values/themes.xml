@@ -2,7 +2,7 @@
     <style name="Theme.Phormi" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">#0F172A</item>
         <item name="colorPrimaryDark">#0F172A</item>
-        <item name="colorAccent">#38BDF8</item>
+        <item name="colorAccent">#978FFF</item>
         <item name="android:windowBackground">#0F172A</item>
     </style>
     <style name="PhormiMenuItem">
