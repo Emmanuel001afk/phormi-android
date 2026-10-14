@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
-"""Expose bounded fixture-only emulator previews for restricted CI artifact reviewers.
+"""Bounded fixture-only previews for restricted CI artifact reviewers.
 
-Full screenshots/XML remain in the normal artifact. No production device/user data
-is collected; these files come only from the instrumentation test's clean fixture.
+Checks truncate individual messages at 4 KiB, so previews use numbered chunks.
+Full PNG/XML evidence remains in the normal artifact; no real user data is read.
 """
 from pathlib import Path
 import base64
+import json
+import xml.etree.ElementTree as ET
 
 root = Path('app/build/reports/smoke')
-preferred = ['phormi-typing-failure', 'phormi-typing-smoke', 'phormi-emoji-smoke', 'phormi-writing-smoke', 'phormi-phone-smoke', 'phormi-browser-keyboard-smoke', 'phormi-panel-final']
+for xml in root.glob('**/*typing-failure.xml'):
+    try:
+        keys = [{k: node.get(k) for k in ('text', 'bounds', 'clickable', 'enabled', 'focused')}
+                for node in ET.parse(xml).iter('node') if node.get('text') in ('⌫', 'Space', '↵', 'Hello the ')]
+        print('::notice title=Keyboard hit regions::PHORMI_BOUNDS|' + json.dumps(keys, ensure_ascii=False))
+    except (ET.ParseError, OSError):
+        pass
+preferred = ['phormi-typing-failure', 'phormi-browser-keyboard-smoke', 'phormi-emoji-smoke']
 for name in preferred:
     paths = list(root.glob(f'**/{name}-preview.jpg'))
     if not paths:
         continue
     encoded = base64.b64encode(paths[0].read_bytes()).decode('ascii')
-    if len(encoded) < 60000:
-        print(f'::notice title=Emulator fixture preview::PHORMI_PREVIEW|{name}|{encoded}')
+    if len(encoded) > 60000:
+        continue
+    chunks = [encoded[i:i + 3000] for i in range(0, len(encoded), 3000)]
+    for index, chunk in enumerate(chunks):
+        print(f'::notice title=Emulator fixture preview::PHORMI_PREVIEW|{name}|{index}|{len(chunks)}|{chunk}')
