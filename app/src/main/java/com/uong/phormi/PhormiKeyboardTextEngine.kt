@@ -195,6 +195,7 @@ object PhormiKeyboardTextEngine {
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
         if (ic == null || info == null || isPrivateEditor(info) || isUriLike(info) || inputClass(info) != InputType.TYPE_CLASS_TEXT) return false
+        if (ic is PhormiEditorConnection && !ic.hasFreshContext()) return false
         val type = info.inputType
         if (type and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0) return true
         val before = ic.getTextBeforeCursor(128, 0)?.toString().orEmpty()

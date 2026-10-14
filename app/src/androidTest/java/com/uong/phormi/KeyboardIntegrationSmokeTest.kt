@@ -7,7 +7,6 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.SearchCondition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.*
@@ -52,12 +51,8 @@ class KeyboardIntegrationSmokeTest {
     }
     private fun expect(scenario: ActivityScenario<KeyboardSmokeActivity>, value: String) {
         var actual = ""
-        device.wait(object : SearchCondition<Boolean>() {
-            override fun apply(device: UiDevice): Boolean {
-                scenario.onActivity { actual = it.editor.text.toString() }
-                return actual == value
-            }
-        }, 3_000)
+        device.wait(Until.hasObject(By.res("android", "edit").text(value)), 3_000)
+        scenario.onActivity { actual = it.editor.text.toString() }
         if (actual != value) capture("phormi-typing-failure")
         assertEquals(value, actual)
     }

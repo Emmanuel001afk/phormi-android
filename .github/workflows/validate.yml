@@ -37,7 +37,7 @@ jobs:
       - name: Build, regression tests and Android lint (no publishing)
         run: |
           set -o pipefail
-          gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-validation.log
+          gradle :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-validation.log
           python3 tools/summarize_tests.py
       - name: Annotate build/test diagnostics
         if: failure()

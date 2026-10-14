@@ -13,7 +13,7 @@ import android.widget.TextView
 internal object PhormiAppearanceDialogs {
     fun accent(activity: Activity, changed: () -> Unit) {
         val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(activity, 16), dp(activity, 8), dp(activity, 16), dp(activity, 8)) }
-        val dialog = AlertDialog.Builder(activity).setTitle("Browser + keyboard accent").setView(content).setNegativeButton("Cancel", null).create()
+        val dialog = AlertDialog.Builder(activity).setTitle("Browser + keyboard accent").setView(ScrollView(activity).apply { addView(content) }).setNegativeButton("Cancel", null).create()
         PhormiAppearance.accents.forEach { accent ->
             content.addView(Button(activity).apply {
                 text = accent.label + if (PhormiAppearance.selected(activity) == accent.id) "  ✓" else ""

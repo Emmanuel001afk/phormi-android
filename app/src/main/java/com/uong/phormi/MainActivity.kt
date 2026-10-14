@@ -1852,6 +1852,13 @@ class MainActivity : AppCompatActivity() {
         var restored = false
         if (!restoredStateBase64.isNullOrBlank() && !recoveryPaused && PhormiSearchPages.query(url) == null) {
             restored = restoreWebViewState(webView, restoredStateBase64)
+            if (restored) {
+                // Older builds sometimes lost URL metadata but still retained the real history.
+                webView.copyBackForwardList().currentItem?.let { item ->
+                    tab.url = BrowserSessionRules.durableUrl(tab.url, item.url)
+                    item.title?.takeIf { it.isNotBlank() && it != NEW_TAB_URL }?.let { tab.title = it }
+                }
+            }
         }
         if (!restored && url != NEW_TAB_URL && !recoveryPaused) loadDurableAddress(tab)
         if (activate) switchToTab(id) else {
@@ -2103,8 +2110,8 @@ class MainActivity : AppCompatActivity() {
                         requestedCreatedAt = saved.createdAt, restoredStateBase64 = saved.webViewState,
                         activate = false, requestedLastUsed = saved.lastUsed, recoveryPaused = saved.recoveryPaused)
                     tabs.last().let { tab ->
-                        tab.title = saved.title
-                        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = saved.title
+                        tab.title = saved.title.takeUnless { it.isBlank() || it.equals(getString(R.string.new_tab), true) } ?: tab.title
+                        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
                     }
                 }
                 switchToTabUnlocked(session.activeId)

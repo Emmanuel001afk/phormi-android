@@ -37,6 +37,7 @@ internal class PhormiEditorConnection(
     private var fresh = initialStart == 0 && initialEnd == 0
 
     init { refresh(0) }
+    fun hasFreshContext(): Boolean = fresh && !closed
     fun dispose() { closed = true; task?.cancel(true); worker.shutdownNow() }
 
     /** Reads never wait on the UI looper; stale snapshots cannot replace newer keys. */

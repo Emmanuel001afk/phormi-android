@@ -4,7 +4,7 @@ Android minimum: API 26. Compile/target: API 36. JDK 17, Gradle 8.11.1.
 
 ```sh
 python3 tools/audit_project.py
-gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+gradle :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug
 ```
 
 A Gradle wrapper is not checked in; install the stated Gradle version, JDK and Android SDK first. The build also needs access to Google's Android/Maven dependencies. `.github/workflows/validate.yml` provisions this environment without running the publishing workflow.
