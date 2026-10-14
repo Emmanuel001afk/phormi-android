@@ -46,8 +46,8 @@ class BrowserHomeNavigationTest {
             val view = views[index % views.size]
             view.webViewClient.onPageStarted(view, "https://old.example/late-$index", null)
             view.webViewClient.onPageFinished(view, "https://old.example/late-$index")
-            view.webChromeClient.onReceivedTitle(view, "Old page title $index")
-            assertFalse(view.webChromeClient.onCreateWindow(view, false, false, null))
+            requireNotNull(view.webChromeClient).onReceivedTitle(view, "Old page title $index")
+            assertFalse(requireNotNull(view.webChromeClient).onCreateWindow(view, false, false, null))
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.start_page_container).visibility)
             assertEquals("https://my-new-address.example", search.text.toString())
             assertEquals(1, ReflectionHelpers.getField<Int>(activity, "activeTabId"))

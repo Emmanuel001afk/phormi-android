@@ -25,9 +25,11 @@ internal data class BrowserSession(
 internal object BrowserSessionRules {
     const val NEW_TAB = "about:blank"
 
-    fun durableUrl(known: String, observed: String?): String =
-        observed?.trim()?.takeIf { it.isNotEmpty() && it != NEW_TAB }
+    fun durableUrl(known: String, observed: String?): String {
+        if (PhormiSearchPages.query(known) != null && PhormiSearchPages.generated(observed)) return known
+        return observed?.trim()?.takeIf { it.isNotEmpty() && it != NEW_TAB }
             ?: known.trim().ifEmpty { NEW_TAB }
+    }
 
     fun expired(lastUsed: Long, now: Long, retentionMs: Long?, protected: Boolean): Boolean =
         !protected && retentionMs != null && retentionMs > 0 && lastUsed > 0 &&

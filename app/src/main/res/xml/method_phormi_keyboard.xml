@@ -5,29 +5,29 @@
     <subtype android:label="@string/keyboard_language_en_us" android:imeSubtypeLocale="en_US" android:languageTag="en-US" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
     <subtype android:label="@string/keyboard_language_en_gb" android:imeSubtypeLocale="en_GB" android:languageTag="en-GB" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
     <subtype android:label="@string/keyboard_language_en_ng" android:imeSubtypeLocale="en_NG" android:languageTag="en-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
-    <subtype android:label="@string/keyboard_language_fr_fr" android:imeSubtypeLocale="fr_FR" android:languageTag="fr-FR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_es_es" android:imeSubtypeLocale="es_ES" android:languageTag="es-ES" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_pt_br" android:imeSubtypeLocale="pt_BR" android:languageTag="pt-BR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_de_de" android:imeSubtypeLocale="de_DE" android:languageTag="de-DE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_it_it" android:imeSubtypeLocale="it_IT" android:languageTag="it-IT" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="@string/keyboard_language_fr_fr" android:imeSubtypeLocale="fr_FR" android:languageTag="fr-FR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_es_es" android:imeSubtypeLocale="es_ES" android:languageTag="es-ES" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_pt_br" android:imeSubtypeLocale="pt_BR" android:languageTag="pt-BR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_de_de" android:imeSubtypeLocale="de_DE" android:languageTag="de-DE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_it_it" android:imeSubtypeLocale="it_IT" android:languageTag="it-IT" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
     <subtype android:label="@string/keyboard_language_id_id" android:imeSubtypeLocale="id_ID" android:languageTag="id-ID" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
-    <subtype android:label="@string/keyboard_language_tr_tr" android:imeSubtypeLocale="tr_TR" android:languageTag="tr-TR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_yo_ng" android:imeSubtypeLocale="yo_NG" android:languageTag="yo-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_ig_ng" android:imeSubtypeLocale="ig_NG" android:languageTag="ig-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_ha_ng" android:imeSubtypeLocale="ha_NG" android:languageTag="ha-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_sw_ke" android:imeSubtypeLocale="sw_KE" android:languageTag="sw-KE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="@string/keyboard_language_tr_tr" android:imeSubtypeLocale="tr_TR" android:languageTag="tr-TR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_yo_ng" android:imeSubtypeLocale="yo_NG" android:languageTag="yo-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_ig_ng" android:imeSubtypeLocale="ig_NG" android:languageTag="ig-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_ha_ng" android:imeSubtypeLocale="ha_NG" android:languageTag="ha-NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_sw_ke" android:imeSubtypeLocale="sw_KE" android:languageTag="sw-KE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
     <subtype android:label="@string/keyboard_language_ar_sa" android:imeSubtypeLocale="ar_SA" android:languageTag="ar-SA" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="@string/keyboard_language_ru_ru" android:imeSubtypeLocale="ru_RU" android:languageTag="ru-RU" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="@string/keyboard_language_uk_ua" android:imeSubtypeLocale="uk_UA" android:languageTag="uk-UA" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_pl_pl" android:imeSubtypeLocale="pl_PL" android:languageTag="pl-PL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_nl_nl" android:imeSubtypeLocale="nl_NL" android:languageTag="nl-NL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_sv_se" android:imeSubtypeLocale="sv_SE" android:languageTag="sv-SE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_no_no" android:imeSubtypeLocale="no_NO" android:languageTag="no-NO" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_da_dk" android:imeSubtypeLocale="da_DK" android:languageTag="da-DK" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_fi_fi" android:imeSubtypeLocale="fi_FI" android:languageTag="fi-FI" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_cs_cz" android:imeSubtypeLocale="cs_CZ" android:languageTag="cs-CZ" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_ro_ro" android:imeSubtypeLocale="ro_RO" android:languageTag="ro-RO" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="@string/keyboard_language_hu_hu" android:imeSubtypeLocale="hu_HU" android:languageTag="hu-HU" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="@string/keyboard_language_pl_pl" android:imeSubtypeLocale="pl_PL" android:languageTag="pl-PL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_nl_nl" android:imeSubtypeLocale="nl_NL" android:languageTag="nl-NL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_sv_se" android:imeSubtypeLocale="sv_SE" android:languageTag="sv-SE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_no_no" android:imeSubtypeLocale="no_NO" android:languageTag="no-NO" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_da_dk" android:imeSubtypeLocale="da_DK" android:languageTag="da-DK" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_fi_fi" android:imeSubtypeLocale="fi_FI" android:languageTag="fi-FI" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_cs_cz" android:imeSubtypeLocale="cs_CZ" android:languageTag="cs-CZ" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_ro_ro" android:imeSubtypeLocale="ro_RO" android:languageTag="ro-RO" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/keyboard_language_hu_hu" android:imeSubtypeLocale="hu_HU" android:languageTag="hu-HU" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
     <subtype android:label="@string/keyboard_language_el_gr" android:imeSubtypeLocale="el_GR" android:languageTag="el-GR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="@string/keyboard_language_he_il" android:imeSubtypeLocale="he_IL" android:languageTag="he-IL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
 </input-method>

@@ -615,6 +615,7 @@ class PhormiDownloadService : Service() {
                         if (cancelSignals[record.id] == Control.CANCEL) throw CancelException()
                         if (cancelSignals[record.id] == Control.PAUSE) throw PauseException()
                         PhormiDownloadEngine.updateProgress(this, record.id, downloaded, total)
+                        if (total >= 0L && downloaded > total) throw IntegrityFailure("The server sent more bytes than declared. Choose another source or retry.")
                         if (total > 0L && downloaded < total) {
                             throw IOException("Connection ended before the file was complete")
                         }

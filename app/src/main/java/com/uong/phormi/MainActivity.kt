@@ -563,7 +563,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.btn_refresh).setOnClickListener {
             tabs.firstOrNull { it.id == activeTabId }?.let { tab ->
-                if (tab.recoveryPaused) navigateTab(tab.webView, tab.url) else tab.webView.reload()
+                refreshCurrentPage()
             }
         }
         findViewById<TextView>(R.id.btn_favorite).setOnClickListener { addCurrentPageToBookmarks() }
@@ -580,7 +580,7 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
 
-        swipeRefresh.setOnRefreshListener { activeWebView()?.reload() }
+        swipeRefresh.setOnRefreshListener { refreshCurrentPage() }
         swipeRefresh.isEnabled = prefs.getBoolean(KEY_PULL_TO_REFRESH, true)
         swipeRefresh.setOnChildScrollUpCallback { _, _ ->
             val wv = activeWebView() ?: return@setOnChildScrollUpCallback false
@@ -1039,13 +1039,18 @@ class MainActivity : AppCompatActivity() {
         val endpoint: (String) -> String
     )
 
-    private fun runUnifiedSearch(query: String) {
+    private fun runUnifiedSearch(query: String, target: WebView? = null) {
         homePageVisible = false
         localSearchPageActive = true
-        val webView = activeWebView() ?: run {
+        val webView = target ?: activeWebView() ?: run {
             createNewTab(NEW_TAB_URL)
             activeWebView()
         } ?: return
+        val tab = tabs.firstOrNull { it.webView === webView } ?: return
+        val address = PhormiSearchPages.address(query)
+        tab.url = address; tab.title = "Search · ${query.take(80)}"; tab.savedState = null
+        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+        saveTabs()
 
         val generation = unifiedSearchGeneration.incrementAndGet()
         // Stop work belonging to a previous query so an old search cannot consume
@@ -1077,7 +1082,8 @@ class MainActivity : AppCompatActivity() {
         )
 
         val loadingHtml = unifiedSearchHtml(query, emptyList(), true, 0, providers.size)
-        webView.loadDataWithBaseURL("https://phormi.local/", loadingHtml, "text/html", "UTF-8", null)
+        PhormiSearchPages.save(this, tab.id, address, unifiedSearchHtml(query, emptyList(), false, 0, providers.size))
+        webView.loadDataWithBaseURL(PhormiSearchPages.BASE, loadingHtml, "text/html", "UTF-8", null)
 
         val remaining = AtomicInteger(providers.size)
         val all = java.util.Collections.synchronizedList(mutableListOf<UnifiedResult>())
@@ -1099,39 +1105,15 @@ class MainActivity : AppCompatActivity() {
                 val mergedSnapshot = mergeUnifiedResults(snapshot, query)
                 runOnUiThread {
                     if (generation != unifiedSearchGeneration.get()) return@runOnUiThread
-                    if (activeWebView() === webView) {
-                        webView.loadDataWithBaseURL(
-                            "https://phormi.local/",
-                            unifiedSearchHtml(
-                                query,
-                                mergedSnapshot,
-                                done < providers.size,
-                                done,
-                                providers.size,
-                                successfulSnapshot,
-                                finishedSnapshot
-                            ),
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
+                    // A previous search must never overwrite a URL opened since it began.
+                    if (tabs.none { it === tab } || tab.webView !== webView || tab.url != address) return@runOnUiThread
+                    val html = unifiedSearchHtml(query, mergedSnapshot, done < providers.size, done, providers.size, successfulSnapshot, finishedSnapshot)
+                    PhormiSearchPages.save(this, tab.id, address, unifiedSearchHtml(query, mergedSnapshot, false, done, providers.size, successfulSnapshot, finishedSnapshot))
+                    if (activeWebView() === webView && !homePageVisible) {
+                        webView.loadDataWithBaseURL(PhormiSearchPages.BASE, html, "text/html", "UTF-8", null)
                     }
-                    if (done == providers.size && mergedSnapshot.isNotEmpty() && aiController.hasAnyKey()) {
-                        lifecycleScope.launch {
-                            val evidence = mergedSnapshot.take(12).joinToString("\n") {
-                                "${it.title}\n${it.url}\n${it.snippet}\nSources: ${it.source}"
-                            }
-                            val answer = aiController.synthesizeSearchAnswer(query, evidence)
-                            if (generation != unifiedSearchGeneration.get()) return@launch
-                            if (answer != null && activeWebView() === webView) {
-                                webView.loadDataWithBaseURL(
-                                    "https://phormi.local/",
-                                    unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer),
-                                    "text/html", "UTF-8", null
-                                )
-                            }
-                        }
-                    }
+                    // Search does not silently spend AI tokens. Ask the browser assistant
+                    // to summarize these results when an AI answer is wanted.
                 }
             }
             synchronized(unifiedSearchLock) { unifiedSearchFutures.add(future) }
@@ -1523,6 +1505,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showStartPage() {
         homePageVisible = true
+        unifiedSearchGeneration.incrementAndGet()
+        synchronized(unifiedSearchLock) { unifiedSearchFutures.forEach { it.cancel(true) }; unifiedSearchFutures.clear() }
         localSearchPageActive = false
         if (splitMode) setSplitMode(false)
         startPageContainer.visibility = View.VISIBLE
@@ -1670,8 +1654,9 @@ class MainActivity : AppCompatActivity() {
         tabs.find { it.id == tabId }?.lastUsed = System.currentTimeMillis()
         updateNavButtons()
         updateFavoriteButton()
-        val url = tabs.find { it.id == tabId }?.webView?.url.orEmpty()
-        urlBar.setText(url.takeIf { it.isNotBlank() && it != NEW_TAB_URL } ?: "")
+        val url = tabs.find { it.id == tabId }?.url.orEmpty()
+        val address = PhormiSearchPages.query(url) ?: url
+        urlBar.setText(address.takeIf { it.isNotBlank() && it != NEW_TAB_URL } ?: "")
         tabs.forEach { it.chipView.alpha = if (it.id == tabId) 1f else 0.55f }
     }
 
@@ -1783,7 +1768,7 @@ class MainActivity : AppCompatActivity() {
         newWebView.webChromeClient = tabChromeClient(tab)
         tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text =
             if (tab.title.isBlank()) target else "${tab.title} · $target"
-        if (url.isBlank() || url == NEW_TAB_URL) updateStartPageVisibility() else newWebView.loadUrl(url)
+        if (url.isBlank() || url == NEW_TAB_URL) updateStartPageVisibility() else loadDurableAddress(tab)
         saveTabs()
         if (tab.id == activeTabId) {
             updateNavButtons()
@@ -1865,10 +1850,10 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = tabChromeClient(tab)
         var restored = false
-        if (!restoredStateBase64.isNullOrBlank() && !recoveryPaused) {
+        if (!restoredStateBase64.isNullOrBlank() && !recoveryPaused && PhormiSearchPages.query(url) == null) {
             restored = restoreWebViewState(webView, restoredStateBase64)
         }
-        if (!restored && url != NEW_TAB_URL && !recoveryPaused) webView.loadUrl(url)
+        if (!restored && url != NEW_TAB_URL && !recoveryPaused) loadDurableAddress(tab)
         if (activate) switchToTab(id) else {
             webView.visibility = View.GONE
             webView.onPause()
@@ -1922,7 +1907,7 @@ class MainActivity : AppCompatActivity() {
         updateTabCount()
         updateNavButtons()
         updateFavoriteButton()
-        val current = selected.url
+        val current = PhormiSearchPages.query(selected.url) ?: selected.url
         if (current != NEW_TAB_URL) urlBar.setText(current) else urlBar.setText("")
         if (selected.recoveryPaused && !restoringTabs) showRendererRecovery(selected)
         saveTabs()
@@ -1967,6 +1952,7 @@ class MainActivity : AppCompatActivity() {
         if (index == -1) return
         val tab = tabs[index]
         unregisterForContextMenu(tab.webView)
+        PhormiSearchPages.delete(this, tab.id)
         pageDownloadBridges.remove(tab.webView)?.close()
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
@@ -1990,10 +1976,25 @@ class MainActivity : AppCompatActivity() {
     private fun tabChromeClient(tab: Tab): WebChromeClient = buildChromeClient(tab.webView) { title ->
         // Empty/blank renderer titles during startup must not erase a restored title.
         if (!title.isNullOrBlank() && title != NEW_TAB_URL) {
-            tab.title = title
-            tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = title
+            val durableTitle = PhormiSearchPages.query(tab.url)?.let { "Search · ${it.take(80)}" } ?: title
+            tab.title = durableTitle
+            tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = durableTitle
             saveTabs()
         }
+    }
+
+    private fun loadDurableAddress(tab: Tab) {
+        val query = PhormiSearchPages.query(tab.url)
+        if (query == null) { tab.webView.loadUrl(tab.url); return }
+        val html = PhormiSearchPages.read(this, tab.id, tab.url)
+            ?: unifiedSearchHtml(query, emptyList(), false, 0, 0)
+        tab.webView.loadDataWithBaseURL(PhormiSearchPages.BASE, html, "text/html", "UTF-8", null)
+    }
+    private fun refreshCurrentPage() {
+        val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
+        val query = PhormiSearchPages.query(tab.url)
+        if (query != null) runUnifiedSearch(query, tab.webView)
+        else if (tab.recoveryPaused) navigateTab(tab.webView, tab.url) else tab.webView.reload()
     }
 
     private fun navigateTab(webView: WebView, url: String, reveal: Boolean = true) {
@@ -2005,7 +2006,8 @@ class MainActivity : AppCompatActivity() {
         }
         if (reveal && webView === activeWebView()) homePageVisible = false
         webView.stopLoading()
-        webView.loadUrl(url)
+        val tab = tabs.firstOrNull { it.webView === webView }
+        if (tab != null) loadDurableAddress(tab) else webView.loadUrl(url)
         updateStartPageVisibility()
         saveTabs()
     }
@@ -2757,6 +2759,10 @@ class MainActivity : AppCompatActivity() {
                 val targetUri = request?.url ?: return false
                 val target = targetUri.toString()
                 if (target.isBlank()) return false
+                PhormiSearchPages.query(target)?.let { query ->
+                    if (interactivePage(view) && view != null && request.isForMainFrame) runUnifiedSearch(query, view)
+                    return true
+                }
                 val host = PhormiSiteLockManager.normalizeHost(target)
                 if (host != null) {
                     val sourceTabId = tabs.firstOrNull { it.webView === view }?.id ?: activeTabId
@@ -2909,7 +2915,7 @@ class MainActivity : AppCompatActivity() {
                 tab.savedState = null
                 tab.recoveryPaused = count >= 2
                 // Never select a background tab or erase its URL/title after a renderer crash.
-                if (!tab.recoveryPaused && tab.url != NEW_TAB_URL) replacement.loadUrl(tab.url)
+                if (!tab.recoveryPaused && tab.url != NEW_TAB_URL) loadDurableAddress(tab)
                 replacement.visibility = if (tab.id == activeTabId && !homePageVisible) View.VISIBLE else View.GONE
                 saveTabsImmediate()
                 if (tab.recoveryPaused && tab.id == activeTabId && !homePageVisible) showRendererRecovery(tab)
@@ -2921,7 +2927,7 @@ class MainActivity : AppCompatActivity() {
                     val u = view?.url ?: url ?: ""
                     val tab = tabs.find { it.webView === view }
                     if (tab != null && !tab.isGhost) {
-                        HistoryActivity.record(this@MainActivity, t, u)
+                        HistoryActivity.record(this@MainActivity, t, if (PhormiSearchPages.generated(u)) tab.url else u)
                     }
 
                 if (view != null && url.orEmpty().startsWith("http", true) && isDesktopModeFor(url.orEmpty())) {
@@ -2943,7 +2949,7 @@ class MainActivity : AppCompatActivity() {
                     // finish a previous navigation after the user has already started typing;
                     // replacing the field here made it look as if Phormi jumped back to an old tab.
                     if (!homePageVisible && !urlBar.hasFocus() && !startPageSearch.hasFocus() && !url.isNullOrBlank() && url != NEW_TAB_URL) {
-                        urlBar.setText(url)
+                        urlBar.setText(tab?.let { PhormiSearchPages.query(it.url) ?: it.url } ?: url)
                     }
                     updateNavButtons()
                     updateFavoriteButton()
@@ -3097,25 +3103,25 @@ class MainActivity : AppCompatActivity() {
                     .setPositiveButton("Allow once") { _, _ ->
                         if (!interactivePage(source) || tabs.firstOrNull { it.webView === source }?.navigationGeneration != generation) { request.deny(); return@setPositiveButton }
                         pendingPermissionRequest?.deny(); pendingPermissionRequest = request
-                val needed = mutableListOf<String>()
-                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in allowed &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    needed.add(Manifest.permission.CAMERA)
-                }
-                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in allowed &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    needed.add(Manifest.permission.RECORD_AUDIO)
-                }
-                if (needed.isEmpty()) {
-                    request.grant(allowed)
-                    pendingPermissionRequest = null
-                } else {
-                    pendingPermissionSource = source
-                    pendingPermissionNavigation = tabs.firstOrNull { it.webView === source }?.navigationGeneration
-                    pendingPermissionAllowed = allowed
-                    pendingPermissionPermissions = needed.toTypedArray()
-                    ActivityCompat.requestPermissions(this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS)
-                }
+                        val needed = mutableListOf<String>()
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in allowed &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            needed.add(Manifest.permission.CAMERA)
+                        }
+                        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in allowed &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            needed.add(Manifest.permission.RECORD_AUDIO)
+                        }
+                        if (needed.isEmpty()) {
+                            request.grant(allowed)
+                            pendingPermissionRequest = null
+                        } else {
+                            pendingPermissionSource = source
+                            pendingPermissionNavigation = tabs.firstOrNull { it.webView === source }?.navigationGeneration
+                            pendingPermissionAllowed = allowed
+                            pendingPermissionPermissions = needed.toTypedArray()
+                            ActivityCompat.requestPermissions(this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS)
+                        }
                     }.show()
             }
             override fun onPermissionRequestCanceled(request: PermissionRequest?) {

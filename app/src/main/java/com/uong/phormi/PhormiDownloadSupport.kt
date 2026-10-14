@@ -89,10 +89,13 @@ object PhormiDownloadSupport {
     }
 
     private fun sanitizeFileName(name: String): String {
-        val cleaned = name.replace(Regex("[\\\\/:*?\"<>|\\p{Cc}]+"), "_").trim().trim('.')
+        val cleaned = name.filterNot { it in '\u202A'..'\u202E' || it in '\u2066'..'\u2069' || it == '\u200E' || it == '\u200F' }.replace(Regex("[\\\\/:*?\"<>|\\p{Cc}]+"), "_").trim().trim('.')
         val extension = cleaned.substringAfterLast('.', "").takeIf { it.length in 1..12 }?.let { ".$it" }.orEmpty()
         val base = if (extension.isNotEmpty()) cleaned.dropLast(extension.length) else cleaned
-        return (base.take(160) + extension).ifBlank { "phormi_download" }
+        var clipped = base.take(160)
+        if (clipped.lastOrNull()?.isHighSurrogate() == true) clipped = clipped.dropLast(1)
+        while (clipped.toByteArray(Charsets.UTF_8).size > 180) clipped = clipped.dropLast(if (clipped.last().isLowSurrogate()) 2 else 1)
+        return (clipped + extension).ifBlank { "phormi_download" }
     }
 
     fun category(fileName: String, mime: String): String {

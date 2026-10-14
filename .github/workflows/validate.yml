@@ -38,6 +38,7 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-validation.log
+          python3 tools/summarize_tests.py
       - name: Annotate build/test diagnostics
         if: failure()
         run: python3 tools/report_validation.py /tmp/phormi-validation.log
@@ -78,16 +79,11 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: |
-            mkdir -p app/build/reports/smoke
-            adb shell settings put secure show_ime_with_hard_keyboard 1
-            gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace > /tmp/phormi-smoke.log 2>&1
-            adb logcat -d -b crash > app/build/reports/smoke/crashes.txt
-            adb pull /sdcard/Android/data/com.uong.phormi/files/ app/build/reports/smoke/
+          script: bash tools/run_emulator_smoke.sh
       - name: Annotate emulator diagnostics
         if: failure()
         run: |
-          test -f /tmp/phormi-smoke.log && python3 tools/report_validation.py /tmp/phormi-smoke.log
+          if [ -f /tmp/phormi-smoke.log ]; then python3 tools/report_validation.py /tmp/phormi-smoke.log; fi
       - name: Upload emulator evidence
         if: always()
         uses: actions/upload-artifact@v4

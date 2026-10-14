@@ -312,6 +312,7 @@ class AiController(private val context: Context) {
         ?: "No external AI connections saved.\nUse Central Hub, or add a provider below."
 
     suspend fun synthesizeSearchAnswer(query: String, evidence: String): String? = withContext(Dispatchers.IO) {
+        if (!isActive()) return@withContext null
         if (isCentralHubActive()) return@withContext callCentralHub("You are Phormi's browser search assistant. Combine the supplied evidence accurately, do not invent facts, and clearly mark uncertainty.\nQuestion: $query\n\nSearch evidence:\n$evidence")
         val provider = listProviders().firstOrNull { it.apiKey.isNotBlank() && it.endpoint.isNotBlank() && it.model.isNotBlank() } ?: return@withContext null
         callTextProvider(provider,
