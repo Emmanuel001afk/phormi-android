@@ -50,4 +50,17 @@ class PhormiKeyboardSurfaceTest {
         assertTrue(heights.all { it > 0 })
         assertEquals(1, heights.distinct().size)
     }
+    @Test fun `docked footer reserves the system navigation area without accumulating padding`() {
+        service.onStartInput(EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT; packageName = "test" }, false)
+        val view = service.render()
+        val initial = view.paddingBottom
+        val insets = androidx.core.view.WindowInsetsCompat.Builder()
+            .setInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars(), androidx.core.graphics.Insets.of(0, 0, 0, 24))
+            .build()
+        androidx.core.view.ViewCompat.dispatchApplyWindowInsets(view, insets)
+        assertEquals(initial + 24, view.paddingBottom)
+        androidx.core.view.ViewCompat.dispatchApplyWindowInsets(view, insets)
+        assertEquals(initial + 24, view.paddingBottom)
+    }
+
 }

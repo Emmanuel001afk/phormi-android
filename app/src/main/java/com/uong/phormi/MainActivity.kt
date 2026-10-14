@@ -770,19 +770,24 @@ class MainActivity : AppCompatActivity() {
         val toolbar = if (dark) Color.rgb(15, 23, 42) else Color.rgb(255, 255, 255)
         val text = if (dark) Color.rgb(226, 232, 240) else Color.rgb(31, 31, 31)
         val secondary = if (dark) Color.rgb(148, 163, 184) else Color.rgb(92, 82, 78)
+        val accent = PhormiAppearance.accent(this, dark)
+        val control = if (dark) Color.rgb(23, 32, 51) else Color.rgb(248, 246, 250)
+        val outline = androidx.core.graphics.ColorUtils.blendARGB(control, accent, 0.35f)
         findViewById<View>(R.id.main_root)?.setBackgroundColor(background)
         findViewById<View>(R.id.top_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu, R.id.btn_refresh,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
-            findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
-                PhormiAppearance.accent(this, dark) else text)
+            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads, R.id.btn_favorite).forEach { id ->
+            findViewById<TextView>(id)?.apply {
+                setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai) accent else text)
+                styleSurface(this, control, outline, 24)
+            }
         }
-        findViewById<TextView>(R.id.tab_count)?.setTextColor(
-            PhormiAppearance.accent(this, dark)
-        )
+        findViewById<TextView>(R.id.tab_count)?.apply {
+            setTextColor(accent); styleSurface(this, control, accent, 24)
+        }
         findViewById<EditText>(R.id.url_bar)?.apply {
             setTextColor(text)
             setHintTextColor(secondary)

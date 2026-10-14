@@ -301,6 +301,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val floating = PhormiKeyboardPreferences.floating(this)
         val resizeMode = keyboardResizeMode
         val attrs = window.attributes
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        window.navigationBarColor = themeBackground()
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightNavigationBars = theme() == 3
         // A floating/resizeable keyboard must not participate in the app's IME inset.
         // Otherwise Android moves/resizes the page underneath it, which is unlike a
         // floating Gboard window and makes dragging/resizing feel attached to the page.
@@ -966,6 +970,18 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         list.addView(pill(if(PhormiKeyboardPreferences.pollinationsKey(this).isBlank())"Set Pollinations AI key"else"Pollinations AI key ✓"){startActivity(Intent(this,PhormiAiEmojiActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiAiEmojiActivity.EXTRA_CONFIG_ONLY,true)})},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
+    private fun applyInputInsets(view: View) {
+        val left = view.paddingLeft; val top = view.paddingTop
+        val right = view.paddingRight; val bottom = view.paddingBottom
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(view) { target, insets ->
+            val raw = androidx.core.view.ViewCompat.getRootWindowInsets(target) ?: insets
+            val bars = raw.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+            val docked = !PhormiKeyboardPreferences.floating(this) && !keyboardResizeMode
+            target.setPadding(left + if (docked) bars.left else 0, top, right + if (docked) bars.right else 0,
+                bottom + if (docked) bars.bottom else 0)
+            insets
+        }
+    }
     internal fun render(): View {
         if (panel != Panel.AI_EMOJI) { activeEmojiGeneration?.cancel(); activeEmojiGeneration = null }
         letterButtons.clear(); shiftView = null; predictionRow = null
@@ -1008,7 +1024,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 )
             }
         } else view
-        finalView.post { applyKeyboardWindowSize() }
+        applyInputInsets(finalView)
+        finalView.post { applyKeyboardWindowSize(); androidx.core.view.ViewCompat.requestApplyInsets(finalView) }
         return finalView
     }
     private fun refreshAfterTextKey() {

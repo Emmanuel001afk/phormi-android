@@ -24,15 +24,27 @@ class KeyboardIntegrationSmokeTest {
     @Before fun setup() {
         context.getSharedPreferences("phormi_tabs", Context.MODE_PRIVATE).edit().putBoolean("news_enabled", false).commit()
         context.getSharedPreferences("phormi_keyboard", Context.MODE_PRIVATE).edit().clear().putBoolean("haptic", false).putBoolean("sound", false).commit()
-        device.executeShellCommand("ime enable com.uong.phormi/.PhormiKeyboardServiceV2")
-        device.executeShellCommand("ime set com.uong.phormi/.PhormiKeyboardServiceV2")
+        device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
+        var status = ""
+        repeat(30) {
+            status = device.executeShellCommand("ime enable com.uong.phormi/.PhormiKeyboardServiceV2") +
+                device.executeShellCommand("ime set com.uong.phormi/.PhormiKeyboardServiceV2")
+            if (device.executeShellCommand("settings get secure default_input_method").contains("PhormiKeyboardServiceV2")) return
+            android.os.SystemClock.sleep(100)
+        }
+        fail("Phormi IME was not registered/selected: $status")
     }
     private fun openEditor(): ActivityScenario<KeyboardSmokeActivity> = ActivityScenario.launch<KeyboardSmokeActivity>(
         Intent(context, KeyboardSmokeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    ).also { scenario -> scenario.onActivity { activity ->
-        activity.editor.requestFocus()
-        (activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(activity.editor, InputMethodManager.SHOW_IMPLICIT)
-    } }
+    ).also { scenario ->
+        val editor = device.wait(Until.findObject(By.res("android", "edit")), 8_000)
+        assertNotNull("Editor window not attached", editor)
+        editor!!.click(); device.waitForIdle()
+        scenario.onActivity { activity ->
+            activity.editor.requestFocus()
+            (activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(activity.editor, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
     private fun tap(label: String) {
         val key = device.wait(Until.findObject(By.text(label).clazz("android.widget.Button")), 8_000)
         assertNotNull("Keyboard control not visible: $label", key)

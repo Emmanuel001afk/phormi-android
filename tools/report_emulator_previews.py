@@ -17,14 +17,18 @@ for xml in root.glob('**/*typing-failure.xml'):
         print('::notice title=Keyboard hit regions::PHORMI_BOUNDS|' + json.dumps(keys, ensure_ascii=False))
     except (ET.ParseError, OSError):
         pass
-preferred = ['phormi-typing-failure', 'phormi-browser-keyboard-smoke', 'phormi-emoji-smoke']
+preferred = ['phormi-typing-failure', 'phormi-typing-final', 'phormi-browser-keyboard-smoke', 'phormi-emoji-smoke', 'phormi-panel-final']
+count = 0
 for name in preferred:
+    if count >= 3:
+        break
     paths = list(root.glob(f'**/{name}-preview.jpg'))
     if not paths:
         continue
     encoded = base64.b64encode(paths[0].read_bytes()).decode('ascii')
     if len(encoded) > 60000:
         continue
+    count += 1
     chunks = [encoded[i:i + 3000] for i in range(0, len(encoded), 3000)]
     for index, chunk in enumerate(chunks):
         print(f'::notice title=Emulator fixture preview::PHORMI_PREVIEW|{name}|{index}|{len(chunks)}|{chunk}')
