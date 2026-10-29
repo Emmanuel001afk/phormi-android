@@ -349,7 +349,6 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             )
         }
         add("😀") { panel = Panel.EMOJI; setInputView(render()) }
-        if (page == KeyboardPage.LETTERS) add("≠ Symbols", 82) { page = KeyboardPage.SYMBOLS; setInputView(render()) }
         add("📋") {
             panel = Panel.CLIPBOARD
             confirmClearClipboard = false
@@ -595,19 +594,25 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         when(currentPage){
             KeyboardPage.LETTERS->{
                 add("?123",0.9f){page=KeyboardPage.NUMBERS;setInputView(render())}
+                add("Symbols",0.9f){page=KeyboardPage.SYMBOLS;setInputView(render())}
                 bottom.addView(shiftKey(0.9f),LinearLayout.LayoutParams(0,scaled(44),0.9f).apply{
                     setMargins(dp(1),dp(1),dp(1),dp(1))
                     width=0
                 })
             }
-            KeyboardPage.NUMBERS->{add("ABC",0.9f){page=KeyboardPage.LETTERS;setInputView(render())};add("Symbols",0.9f){page=KeyboardPage.SYMBOLS;setInputView(render())}}
+            KeyboardPage.NUMBERS->{add("ABC",0.9f){page=KeyboardPage.LETTERS;setInputView(render())}}
             KeyboardPage.SYMBOLS->{
                 add("ABC",0.9f){page=KeyboardPage.LETTERS;setInputView(render())}
                 add("123",0.9f){page=KeyboardPage.NUMBERS;setInputView(render())}
             }
         }
         add(",",0.65f){commitTextToEditor(",");refreshAfterTextKey()}
-        val space=keyButton("Space",3.1f){commitSpace()}
+        val spaceWeight = when (currentPage) {
+            KeyboardPage.LETTERS -> 2.2f // Symbols sits directly on the ABC row.
+            KeyboardPage.NUMBERS -> 4.0f // No duplicate Symbols key on the number row.
+            KeyboardPage.SYMBOLS -> 3.1f
+        }
+        val space=keyButton("Space",spaceWeight){commitSpace()}
         space.setOnTouchListener{_,event->when(event.actionMasked){
             MotionEvent.ACTION_DOWN->{spaceDownX=event.x;spaceMoved=false;true}
             MotionEvent.ACTION_MOVE->{if(!spaceMoved&&abs(event.x-spaceDownX)>dp(28)){spaceMoved=true;moveCursor(if(event.x>spaceDownX)1 else -1)};true}
@@ -615,7 +620,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             MotionEvent.ACTION_CANCEL->{spaceMoved=false;true}
             else->true
         }}
-        bottom.addView(space,LinearLayout.LayoutParams(0,scaled(44),3.1f).apply{setMargins(dp(1),dp(1),dp(1),dp(1));width=0})
+        bottom.addView(space,LinearLayout.LayoutParams(0,scaled(44),spaceWeight).apply{setMargins(dp(1),dp(1),dp(1),dp(1));width=0})
         add(".",0.65f){commitTextToEditor(".");refreshAfterTextKey()}
         val back=keyButton("⌫",0.9f){deleteBackward();refreshAfterTextKey()}
         installRepeat(back){deleteBackward();refreshAfterTextKey()}
@@ -945,7 +950,16 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         } else ic.deleteSurroundingText(1, 0)
     }
     private fun moveCursor(delta:Int){val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
-    private fun toggleShift(){if(capsLock){capsLock=false;shift=false;autoShift=false}else if(shift||autoShift){capsLock=true;shift=false;autoShift=false}else shift=true}
+    private fun toggleShift() {
+        when {
+            capsLock -> { capsLock = false; shift = false; autoShift = false }
+            shift -> { capsLock = true; shift = false; autoShift = false }
+            // Automatic sentence capitalization is a suggested one-letter shift, not
+            // a deliberate first tap. Tapping it turns capitalization off, not lock on.
+            autoShift -> autoShift = false
+            else -> shift = true
+        }
+    }
     private fun actionLabel():String=if(editorInfo?.let{it.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0}==true)"↵" else when(editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)){EditorInfo.IME_ACTION_GO->"Go";EditorInfo.IME_ACTION_SEARCH->"Search";EditorInfo.IME_ACTION_SEND->"Send";EditorInfo.IME_ACTION_NEXT->"Next";EditorInfo.IME_ACTION_DONE->"Done";else->"Enter"}
     private fun sendEditorAction() {
         val ic = currentInputConnection ?: return
