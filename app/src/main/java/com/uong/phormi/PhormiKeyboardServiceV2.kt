@@ -66,6 +66,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var shift = false
     private var capsLock = false
     private var autoShift = false
+    private var shiftKeyView: Button? = null
+    private var renderedShiftState = -1
     private var emojiCategory = 0
     private var editorInfo: EditorInfo? = null
     private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
@@ -132,11 +134,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             if(PhormiKeyboardPreferences.autoCaps(this)){
                 autoShift=PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection,editorInfo)
             }
+            updateShiftKeyAppearance()
         }
     }
 
-    override fun onFinishInput() { stopRepeat(); editorInfo = null; super.onFinishInput() }
-    override fun onUnbindInput() { stopRepeat(); editorInfo = null; super.onUnbindInput() }
+    override fun onFinishInput() { stopRepeat(); shiftKeyView = null; editorInfo = null; super.onFinishInput() }
+    override fun onUnbindInput() { stopRepeat(); shiftKeyView = null; editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) {
         stopRepeat()
         // Do not rebuild/reposition the input view during dismissal. Rebuilding
@@ -547,33 +550,37 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)).apply{width=-1})
         }
     }
-    private fun shiftKey(weight: Float): Button {
+    private fun shiftKey(weight: Float): Button = keyButton("⇧", weight) {
+        toggleShift()
+        // Update just this key. Rebuilding the IME for a shift tap can flicker and
+        // briefly displace the suggestion strip and letter keys.
+        updateShiftKeyAppearance()
+    }.apply {
+        shiftKeyView = this
+        textSize = 21f
+        updateShiftKeyAppearance()
+    }
+
+    private fun updateShiftKeyAppearance() {
+        val key = shiftKeyView ?: return
         val state = when {
             capsLock -> 2
             shift || autoShift -> 1
             else -> 0
         }
-        return keyButton("⇧", weight) {
-            toggleShift()
-            setInputView(render())
-        }.apply {
-            // Keep one universal shift glyph; state is communicated by color.
-            // Purple = one-letter capitalization, red = caps lock.
-            background = rounded(
-                when (state) {
-                    2 -> Color.rgb(220, 38, 38)
-                    1 -> Color.rgb(124, 58, 237)
-                    else -> themeKey()
-                },
-                dp(9)
-            )
-            setTextColor(Color.WHITE)
-            textSize = 21f
-            contentDescription = when (state) {
-                2 -> "Caps lock — all letters uppercase"
-                1 -> "Shift — next letter uppercase"
-                else -> "Shift — next letter uppercase"
-            }
+        if (renderedShiftState == state) return
+        renderedShiftState = state
+        // Purple = one-letter capitalization; red = caps lock.
+        key.background = rounded(when (state) {
+            2 -> Color.rgb(220, 38, 38)
+            1 -> Color.rgb(124, 58, 237)
+            else -> themeKey()
+        }, dp(9))
+        key.setTextColor(Color.WHITE)
+        key.contentDescription = when (state) {
+            2 -> "Caps lock — all letters uppercase"
+            1 -> "Shift — next letter uppercase"
+            else -> "Shift — off"
         }
     }
 
@@ -787,6 +794,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
     private fun render():View{
+        shiftKeyView = null
+        renderedShiftState = -1
         val view=when(panel){
             Panel.EMOJI->buildEmoji()
             Panel.CLIPBOARD->buildClipboard()
@@ -826,7 +835,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         finalView.post { applyKeyboardWindowSize() }
         return finalView
     }
-    private fun refreshAfterTextKey(){if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS) schedulePredictionRefresh()}
+    private fun refreshAfterTextKey() {
+        if (panel == Panel.KEYBOARD && page == KeyboardPage.LETTERS) {
+            updateShiftKeyAppearance()
+            schedulePredictionRefresh()
+        }
+    }
     private fun launchMedia(mode:String){startActivity(Intent(this,PhormiKeyboardMediaActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiKeyboardMediaActivity.EXTRA_MODE,mode)})}
     private fun launchVoice() {
         if (currentInputConnection == null) {
