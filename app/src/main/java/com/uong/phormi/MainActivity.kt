@@ -1726,7 +1726,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.download_status_chip)?.apply {
             visibility = if (count > 0 && customView == null && !isInPictureInPictureMode &&
                 !splitChromeLocked) View.VISIBLE else View.GONE
-            active.firstOrNull()?.let { item ->
+            (active.firstOrNull { it.state == PhormiDownloadEngine.State.RUNNING }
+                ?: active.firstOrNull())?.let { item ->
                 val progress = when {
                     item.total > 0L -> "${(item.downloaded * 100.0 / item.total).toInt().coerceIn(0, 100)}%"
                     item.downloaded > 0L -> "${item.downloaded / 1024} KB"
