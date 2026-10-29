@@ -64,8 +64,9 @@ class DownloadsActivity : AppCompatActivity() {
                 view.findViewById<TextView>(R.id.download_title).text = row.title
                 view.findViewById<TextView>(R.id.download_status).text = row.status
                 val progress = view.findViewById<ProgressBar>(R.id.download_progress)
-                progress.progress = row.progress
-                progress.visibility = if (row.total > 0L && row.state != "COMPLETED") View.VISIBLE else View.GONE
+                progress.isIndeterminate = row.total <= 0L && row.state in setOf("RUNNING", "QUEUED")
+                if (!progress.isIndeterminate) progress.progress = row.progress
+                progress.visibility = if (row.state in setOf("RUNNING", "QUEUED", "PAUSED")) View.VISIBLE else View.GONE
 
                 val action = view.findViewById<TextView>(R.id.download_action)
                 val delete = view.findViewById<TextView>(R.id.download_delete)
@@ -195,6 +196,13 @@ class DownloadsActivity : AppCompatActivity() {
         rows.sortWith(compareByDescending<Row> { it.createdAt }.thenByDescending { it.id })
         empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
+        val active = rows.count { it.state == "RUNNING" || it.state == "QUEUED" }
+        val paused = rows.count { it.state == "PAUSED" }
+        findViewById<TextView>(R.id.downloads_summary).text = when {
+            active > 0 -> "$active downloading${if (paused > 0) " · $paused paused" else ""} · Tap a download for details"
+            paused > 0 -> "$paused paused · Resume when ready"
+            else -> "${rows.size} downloads · Nothing downloading right now"
+        }
         adapter.notifyDataSetChanged()
     }
 

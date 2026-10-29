@@ -1,5 +1,7 @@
 package com.uong.phormi
 
+import android.content.Context
+import org.json.JSONArray
 import android.icu.lang.UCharacter
 import android.icu.lang.UProperty
 import android.os.Build
@@ -12,6 +14,19 @@ import java.util.Locale
  */
 object PhormiKeyboardEmoji {
     private val unicode17Additions = listOf("🫪", "🫯", "🫝", "🫍", "🫈", "🪊", "🛘", "🪎", "🧑‍🩰")
+
+    // Android 8/8.1 do not expose ICU's Emoji property. Offer a useful offline
+    // baseline rather than a nearly empty palette on those supported devices.
+    private val legacyEmoji = ("""
+        😀 😁 😂 🤣 😃 😄 😅 😆 😉 😊 😋 😎 😍 😘 😗 😙 😚 ☺️ 🙂 🤗 🤔 😐 😑 😶 🙄 😏 😣 😥 😮 🤐 😯 😪 😫 😴 😌 😛 😜 😝 😒 😓 😔 😕 🙃 🤑 😲 🙁 ☹️ 😖 😞 😟 😤 😢 😭 😦 😧 😨 😩 😬 😰 😱 😳 😵 😡 😠 😇 🤠 🤡 🤥 🤧 🤒 🤕 🤢
+        👶 👧 👦 👩 👨 👵 👴 👩‍💻 👨‍💻 🙋 🙌 🙏 👏 👍 👎 👊 ✊ 🤝 👋 ✋ 👌 ✌️ 🤞 👉 👈 👆 👇 ☝️ 💪 👀 👂 👃 👄 👅 💋 👣 👪 👭 👬 💑 💏
+        🐶 🐱 🐭 🐹 🐰 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐒 🐔 🐧 🐦 🐤 🐣 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🕷 🐢 🐍 🦎 🦂 🦀 🐙 🐠 🐟 🐬 🐳 🐘 🐪 🐄 🐎 🐖 🐑 🐐 🐕 🐈 🌹 🌷 🌼 🌻 🌺 🌸 🌲 🌳 🌴 🌵 🍀 🍁 🍂 🌿 🌈 ☀️ ☁️ 🌧 ❄️
+        🍎 🍏 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍈 🍒 🍑 🍍 🥝 🥑 🍅 🍆 🥕 🌽 🌶 🥒 🍞 🥐 🥖 🧀 🍳 🥞 🥓 🍔 🍟 🍕 🌭 🌮 🌯 🍿 🍚 🍜 🍣 🍤 🍰 🎂 🍫 🍬 🍭 🍯 🍵 ☕ 🍶 🍺 🍻 🍷 🍸 🍹
+        ⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🥋 🥅 ⛳ 🎣 🎿 ⛷ 🏂 🏊 🚴 🏆 🥇 🥈 🥉 🎮 🕹 🎲 🎯 🎳 🎨 🎭 🎤 🎧 🎼 🎹 🥁 🎸 🎻 🎺 🎷 🎬 🎪 🎉 🎊 🎈 🎁
+        🚗 🚕 🚙 🚌 🚎 🏎 🚓 🚑 🚒 🚐 🚚 🚛 🚜 🚲 🛵 🏍 🚂 🚆 🚇 🚉 🚊 🚝 🚞 🚋 ✈️ 🛫 🛬 🚁 🚀 🛸 🚢 ⛵ 🚤 🏠 🏡 🏢 🏦 🏫 🏥 🏨 🏰 🗼 🗽 🌋 ⛰ 🏔 🏖 🏝 🌍 🌎 🌏 🗺
+        ⌚ 📱 💻 🖥 🖨 ⌨️ 🖱 💽 💾 💿 📷 📸 📹 📺 📻 ⏰ ⏳ 🔋 🔌 💡 🔦 🕯 📖 📚 📔 📰 📄 📅 📌 📎 ✂️ 🔒 🔑 🔨 🔧 ⚙️ 🛠 📦 ✉️ 📬 💰 💳 💵 💎 🔔 🎀 🛒
+        ❤️ 🧡 💛 💚 💙 💜 🖤 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ ☸️ ✡️ ☯️ ♻️ ⚠️ ⛔ ✅ ❌ ❓ ❗ 💯 ✨ ⭐ 🌟 🔥 ➡️ ⬅️ ⬆️ ⬇️ 🔄 🔀 ▶️ ⏸ ⏹
+    """).trimIndent().split(Regex("\\s+")).filter(String::isNotBlank)
 
     private val specialSequences = listOf(
         "❤️", "❤️‍🔥", "❤️‍🩹", "☺️", "☹️", "☠️", "❣️", "👁️‍🗨️",
@@ -31,7 +46,8 @@ object PhormiKeyboardEmoji {
         val result = ArrayList<Int>()
         fun scan(start: Int, end: Int) {
             for (cp in start..end) {
-                if (UCharacter.hasBinaryProperty(cp, UProperty.EMOJI) && cp !in 0x1F1E6..0x1F1FF) result.add(cp)
+                if (UCharacter.hasBinaryProperty(cp, UProperty.EMOJI) &&
+                    cp !in 0x1F1E6..0x1F1FF && cp !in 0x1F3FB..0x1F3FF) result.add(cp)
             }
         }
         scan(0, 0x2FFF)
@@ -55,7 +71,8 @@ object PhormiKeyboardEmoji {
 
     private val all: List<String> by lazy {
         val result = LinkedHashSet<String>()
-        unicodeEmojiCodePoints().forEach { result.add(codePointEmoji(it)) }
+        if (Build.VERSION.SDK_INT < 28) result.addAll(legacyEmoji)
+        else unicodeEmojiCodePoints().forEach { result.add(codePointEmoji(it)) }
         val modifiers = intArrayOf(0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF)
         modifierBases().forEach { base ->
             val root = codePointEmoji(base)
@@ -114,8 +131,30 @@ object PhormiKeyboardEmoji {
         return "🔣"
     }
 
+    val categoryNames = listOf("Recent", "Smileys", "People", "Nature", "Food", "Activities",
+        "Travel", "Objects", "Symbols", "Flags")
+    private const val PREFS = "phormi_keyboard_emoji"
+    private const val KEY_RECENT = "recent"
+    private val starter = listOf("😊", "😂", "❤️", "🥳", "👍", "🙏", "🎉", "🔥", "😭", "😍", "🤔", "✨")
+
+    fun recent(context: Context): List<String> = runCatching {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_RECENT, "[]")
+        val array = JSONArray(raw ?: "[]")
+        buildList { for (i in 0 until array.length()) array.optString(i).takeIf(String::isNotBlank)?.let(::add) }
+    }.getOrDefault(emptyList()).ifEmpty { starter }
+
+    fun recordRecent(context: Context, emoji: String) {
+        val values = (listOf(emoji) + recent(context)).distinct().take(48)
+        val array = JSONArray()
+        values.forEach(array::put)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_RECENT, array.toString()).apply()
+    }
+
+    fun forCategory(context: Context, index: Int): List<String> =
+        if (index == 0) recent(context) else categories.values.elementAtOrNull(index).orEmpty()
+
     val categories: LinkedHashMap<String, List<String>> by lazy {
-        val order = listOf("😀","👤","🐾","🍔","⚽","🚗","💻","🔣","🏳️")
+        val order = listOf("🕘","😀","👤","🐾","🍔","⚽","🚗","💻","🔣","🏳️")
         val grouped = linkedMapOf<String, MutableList<String>>()
         order.forEach { grouped[it] = mutableListOf() }
         all.forEach { emoji -> grouped.getValue(classify(emoji)).add(emoji) }

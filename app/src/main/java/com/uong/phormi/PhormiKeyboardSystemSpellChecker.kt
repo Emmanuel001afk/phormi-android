@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.view.inputmethod.CompletionInfo
 import android.view.textservice.SuggestionsInfo
 import android.view.textservice.SpellCheckerSession
 import android.view.textservice.TextInfo
@@ -18,7 +17,8 @@ object PhormiKeyboardSystemSpellChecker {
     private val main = Handler(Looper.getMainLooper())
     private var session: SpellCheckerSession? = null
     private var sessionLocale: Locale? = null
-    private var lastKey = ""
+    private val requestKeys = ConcurrentHashMap<Int, String>()
+    private val sequence = java.util.concurrent.atomic.AtomicInteger()
     private var pendingRequest: Runnable? = null
 
     fun cached(word: String, locale: Locale): List<String> = cache[key(word, locale)].orEmpty()
@@ -47,8 +47,10 @@ object PhormiKeyboardSystemSpellChecker {
             session = runCatching { manager.newSpellCheckerSession(null, locale, listener, true) }.getOrNull()
             sessionLocale = locale
         }
-        lastKey = k
-        runCatching { session?.getSuggestions(TextInfo(clean), 5) }
+        val id = sequence.incrementAndGet()
+        requestKeys[id] = k
+        runCatching { session?.getSuggestions(TextInfo(clean, 0, id), 5) }
+            .onFailure { requestKeys.remove(id) }
     }
 
     private val listener = object : SpellCheckerSession.SpellCheckerSessionListener {
@@ -57,32 +59,16 @@ object PhormiKeyboardSystemSpellChecker {
             val values = buildList {
                 for (i in 0 until result.suggestionsCount.coerceAtLeast(0)) result.getSuggestionAt(i)?.takeIf { it.isNotBlank() }?.let(::add)
             }.distinct().take(5)
-            if (values.isEmpty()) return
-            val key = lastKey
-            if (key.isBlank()) return
+            val key = requestKeys.remove(result.sequence) ?: return
             cache[key] = values
-            main.post { refreshKeyboard(key, values) }
+            if (values.isNotEmpty()) main.post { refreshKeyboard(key) }
         }
         override fun onGetSentenceSuggestions(results: Array<out android.view.textservice.SentenceSuggestionsInfo>?) = Unit
     }
 
-    private fun refreshKeyboard(requestedKey: String, values: List<String>) {
-        runCatching {
-            val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
-            val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
-            val service = field?.get(companion) as? PhormiKeyboardServiceV2 ?: return
-            val current = PhormiKeyboardTextEngine.currentWord(service.currentInputConnection)
-            val requestedWord = requestedKey.substringAfter('|')
-            if (current.isBlank() || !current.equals(requestedWord, true)) return
-            var type: Class<*>? = service.javaClass
-            var completionsField: java.lang.reflect.Field? = null
-            while (type != null && completionsField == null) { completionsField = type.declaredFields.firstOrNull { it.name == "completions" }; type = type.superclass }
-            completionsField?.apply { isAccessible = true }?.set(service, values.mapIndexed { index, value -> CompletionInfo(-7000L - index, index, value) })
-            type = service.javaClass
-            var method: java.lang.reflect.Method? = null
-            while (type != null && method == null) { method = type.declaredMethods.firstOrNull { it.name == "refreshPredictions" && it.parameterTypes.size == 1 }; type = type.superclass }
-            method?.apply { isAccessible = true }?.invoke(service, true)
-        }
+    private fun refreshKeyboard(requestedKey: String) {
+        val service = PhormiKeyboardServiceV2.activeInstance() ?: return
+        service.onSpellCheckerSuggestions(requestedKey.substringAfter('|'))
     }
 
     private fun key(word: String, locale: Locale): String = locale.toLanguageTag() + "|" + word.lowercase(locale)

@@ -2,30 +2,36 @@ package com.uong.phormi
 
 import java.util.Locale
 
-/** Local semantic mood shortcuts for the Phormi AI Emoji layer. */
+/** Private, on-device contextual emoji suggestions. Results are Unicode text, never images. */
 object PhormiKeyboardAiContext {
     data class Mood(val emoji: String, val label: String)
 
-    private val moods = listOf(
-        Mood("😂", "Laugh"), Mood("❤️", "Love"), Mood("🥳", "Celebrate"),
-        Mood("😢", "Sad"), Mood("😡", "Angry"), Mood("😮", "Wow"), Mood("🙏", "Thanks"), Mood("🔥", "Hype")
-    )
-
     fun suggestions(text: String): List<Mood> {
-        val p = text.lowercase(Locale.US)
+        val words = text.takeLast(240).lowercase(Locale.ROOT)
         val result = mutableListOf<Mood>()
-        fun add(vararg words: String, mood: Mood) {
-            if (words.any { p.contains(it) }) result += mood
+        fun add(emoji: String, label: String, vararg cues: String) {
+            if (cues.any { cue -> Regex("(?<![\\p{L}])${Regex.escape(cue)}(?![\\p{L}])").containsMatchIn(words) }) {
+                result.add(Mood(emoji, label))
+            }
         }
-        add("love", "loving", "heart", "miss you", "kiss", mood = Mood("❤️", "Love"))
-        add("haha", "lol", "funny", "laugh", "joke", mood = Mood("😂", "Laugh"))
-        add("happy", "congrats", "congrat", "party", "celebrate", "win", mood = Mood("🥳", "Celebrate"))
-        add("sad", "sorry", "cry", "hurt", "miss", "bad day", mood = Mood("😢", "Sad"))
-        add("angry", "mad", "furious", "hate", "annoyed", mood = Mood("😡", "Angry"))
-        add("wow", "amazing", "incredible", "really", "surprise", mood = Mood("😮", "Wow"))
-        add("thank", "thanks", "appreciate", "grateful", mood = Mood("🙏", "Thanks"))
-        add("fire", "hype", "awesome", "perfect", "go", mood = Mood("🔥", "Hype"))
-        result += Mood("😊", "Happy")
-        return result.distinctBy { it.emoji }.take(5)
+        add("❤️", "Love", "love", "loving", "heart", "miss you", "kiss", "crush")
+        add("😂", "Laugh", "haha", "lol", "funny", "laugh", "joke", "hilarious")
+        add("🥳", "Celebrate", "happy", "congrats", "congratulations", "party", "celebrate", "birthday", "win")
+        add("😢", "Comfort", "sad", "sorry", "cry", "hurt", "miss", "bad day", "grief")
+        add("😡", "Frustrated", "angry", "mad", "furious", "hate", "annoyed", "frustrated")
+        add("😮", "Surprised", "wow", "amazing", "incredible", "surprised", "shocked")
+        add("🙏", "Grateful", "thank", "thanks", "appreciate", "grateful", "bless")
+        add("😴", "Sleepy", "tired", "sleep", "bedtime", "exhausted", "good night")
+        add("🤞", "Good luck", "good luck", "wish me luck", "exam", "interview")
+        add("🫶", "Get well", "get well", "feel better", "recover", "healing")
+        add("✈️", "Travel", "travel", "trip", "flight", "vacation", "holiday")
+        add("🍽️", "Food", "eat", "lunch", "dinner", "food", "hungry", "delicious")
+        add("💻", "Work", "work", "code", "coding", "project", "deadline")
+        add("🔥", "Hype", "fire", "hype", "awesome", "perfect")
+        if (words.trimEnd().endsWith("?")) result.add(Mood("🤔", "Thinking"))
+        if (words.trimEnd().endsWith("!")) result.add(Mood("✨", "Excited"))
+        return (result + listOf(Mood("😊", "Warm"), Mood("✨", "Sparkle"),
+            Mood("👍", "Agree"), Mood("🤔", "Thinking"), Mood("❤️", "Love")))
+            .distinctBy { it.emoji }.take(6)
     }
 }

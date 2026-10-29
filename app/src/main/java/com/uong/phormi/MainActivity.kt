@@ -83,7 +83,8 @@ class MainActivity : AppCompatActivity() {
         val isGhost: Boolean = false,
         var lastUsed: Long = System.currentTimeMillis(),
         var createdAt: Long = System.currentTimeMillis(),
-        var profileName: String = DEFAULT_PROFILE_NAME
+        var profileName: String = DEFAULT_PROFILE_NAME,
+        var searchQuery: String? = null
     )
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -142,7 +143,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_TAB_PROFILES = "tab_profiles"
         private const val KEY_TAB_ENVIRONMENT = "tab_environment"
         private const val KEY_TAB_WEBVIEW_STATES = "tab_webview_states"
-        private const val WEBVIEW_STATE_MAX_BYTES = 64 * 1024
+        private const val KEY_TAB_SEARCH_QUERIES = "tab_search_queries"
+        private const val WEBVIEW_STATE_MAX_BYTES = 512 * 1024
         private const val DEFAULT_PROFILE_NAME = "Default"
         private const val GHOST_PROFILE_NAME = "Ghost"
         private const val KEY_TAB_RETENTION = "tab_retention"
@@ -196,27 +198,30 @@ class MainActivity : AppCompatActivity() {
 
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: android.webkit.GeolocationPermissions.Callback? = null
-    private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var reloadRunnable: Runnable? = null
+    private val downloadBadgeHandler = Handler(Looper.getMainLooper())
+    private val downloadBadgePoll = object : Runnable {
+        override fun run() {
+            updateDownloadBadge()
+            if (browserAiForeground) downloadBadgeHandler.postDelayed(this, 2000L)
+        }
+    }
     private val tabSaveHandler = Handler(Looper.getMainLooper())
     private var tabSaveRunnable: Runnable? = null
-    private var twoFingerHoldActive = false
-    private var twoFingerStartX = 0f
-    private var twoFingerStartY = 0f
-    private var twoFingerStartSpan = 0f
     private var threeFingerStartX = 0f
     private var threeFingerTracking = false
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
     private val aiController by lazy { AiController(applicationContext) }
     private var aiTaskRunning = false
+    private var browserAiForeground = false
+    private var aiReviewOpen = false
     /** Tabs currently executing AI work. They stay rendered/resumed but transparent to the user. */
     private val aiBackgroundTabIds = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
     private val aiRunningTaskIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val mainExecutor = java.util.concurrent.Executor { command -> Handler(Looper.getMainLooper()).post(command) }
     private val unifiedSearchGeneration = AtomicInteger(0)
     private val unifiedSearchLock = Any()
-    private var unifiedSearchFutures = mutableListOf<java.util.concurrent.Future<*>>()
-    private var localSearchPageActive = false
+    private val unifiedSearchFutures = mutableMapOf<Int, MutableList<java.util.concurrent.Future<*>>>()
+    private val unifiedSearchGenerations = mutableMapOf<Int, Int>()
     private val rendererCrashCounts = mutableMapOf<Int, Int>()
     private var lastHttpErrorKey: String = ""
     private var lastHttpErrorAt: Long = 0L
@@ -224,9 +229,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        browserAiForeground = true
         if (::prefs.isInitialized) {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
+            tabs.forEach { it.webView.settings.textZoom = PhormiBrowserPreferences.textZoom(this) }
+            updateHomeChromeVisibility()
+            downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
+            downloadBadgeHandler.post(downloadBadgePoll)
             applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
             PhormiEnvironmentManager.cleanupExpired(this, tabs.map { it.profileName }.toSet())
             pruneExpiredTabs()
@@ -237,26 +247,56 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runPendingAiTask() {
-        val pending = PhormiAiPendingTask.takeAll(applicationContext)
-        if (pending.isEmpty()) return
-        val available = pending.filter { aiRunningTaskIds.add(it.id) }.take(3)
-        if (available.isEmpty()) return
+        if (!browserAiForeground || aiTaskRunning || !::prefs.isInitialized) return
+        val next = PhormiAiPendingTask.takeImmediate(applicationContext, 1).firstOrNull()
+        if (next == null) {
+            reviewScheduledAiTasks()
+            return
+        }
+        runAiTask(next)
+    }
+
+    private fun reviewScheduledAiTasks() {
+        if (aiReviewOpen || isFinishing || isDestroyed) return
+        val task = PhormiAiPendingTask.dueForReview(this).firstOrNull() ?: return
+        aiReviewOpen = true
+        AlertDialog.Builder(this).setTitle("Scheduled AI task is ready")
+            .setMessage("${task.instruction.take(280)}\n\nAI will inspect browser page text using your selected provider. Run it now in the open browser?")
+            .setPositiveButton("Run now") { _, _ ->
+                PhormiAiPendingTask.takeScheduled(this, task.id)?.let(::runAiTask)
+            }
+            .setNeutralButton("Later", null)
+            .setNegativeButton("Cancel task") { _, _ -> PhormiAiPendingTask.cancel(this, task.id) }
+            .setOnDismissListener { aiReviewOpen = false }
+            .show()
+    }
+
+    private fun runAiTask(task: PhormiAiPendingTask.Task) {
+        if (aiTaskRunning) return
         aiTaskRunning = true
-        PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_AI, 7101, "Phormi AI working", available.joinToString(" • ") { it.instruction.take(55) }, Intent(this, MainActivity::class.java), ongoing = true, autoCancel = false)
-        available.forEach { task ->
-            lifecycleScope.launch {
-                try {
-                    runBrowserAiTask(task)
-                } catch (t: Throwable) {
-                    val status = "Phormi AI task stopped: " + (t.message ?: "unknown error")
-                    PhormiAiPendingTask.saveStatus(applicationContext, status)
-                    Toast.makeText(this@MainActivity, status, Toast.LENGTH_LONG).show()
-                } finally {
-                    aiRunningTaskIds.remove(task.id)
-                    if (aiRunningTaskIds.isEmpty()) {
-                        aiTaskRunning = false
-                        PhormiNotificationManager.cancel(this@MainActivity, 7101)
-                    }
+        updateAiStatusBadge()
+        PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_AI, 7101,
+            "Phormi AI working", task.instruction.take(75), Intent(this, MainActivity::class.java),
+            ongoing = true, autoCancel = false)
+        lifecycleScope.launch {
+            try {
+                runBrowserAiTask(task)
+            } catch (t: Throwable) {
+                PhormiAiPendingTask.saveStatus(applicationContext,
+                    "Browser task stopped: ${t.message?.take(150) ?: "unexpected error"}")
+            } finally {
+                aiBackgroundTabIds.clear()
+                updateAiBackgroundTabVisibility()
+                aiTaskRunning = false
+                updateAiStatusBadge()
+                PhormiNotificationManager.cancel(this@MainActivity, 7101)
+                val result = PhormiAiPendingTask.lastStatus(this@MainActivity)
+                PhormiNotificationManager.post(this@MainActivity, PhormiNotificationManager.CHANNEL_AI,
+                    task.id.hashCode(), "Phormi AI task update", result.take(150),
+                    Intent(this@MainActivity, AiActivity::class.java))
+                if (browserAiForeground) {
+                    Toast.makeText(this@MainActivity, "AI update: ${result.take(100)}", Toast.LENGTH_LONG).show()
+                    runPendingAiTask()
                 }
             }
         }
@@ -264,154 +304,237 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun runBrowserAiTask(task: PhormiAiPendingTask.Task) {
         if (!aiController.isActive()) {
-            PhormiAiPendingTask.saveStatus(applicationContext, "AI is inactive.")
+            PhormiAiPendingTask.saveStatus(this, "AI is inactive. Configure a provider before running tasks.")
             return
         }
-        if (tabs.isEmpty()) {
-            PhormiAiPendingTask.saveStatus(applicationContext, "No browser tabs are available.")
+        var targetId = task.target.removePrefix("tab:").toIntOrNull()
+            ?: activeTabId
+        if (tabs.none { it.id == targetId && !it.isGhost }) {
+            PhormiAiPendingTask.saveStatus(this, "The selected normal tab is no longer available.")
             return
         }
-        val tabCatalog = readAiTabCatalog()
+        val goal = task.instruction + if (task.target.startsWith("tab:"))
+            "\nStart in tab $targetId; you may work across other normal tabs if needed." else ""
         var previous = ""
-        var targetTabId = -1
-        var finished = false
-
-        repeat(30) { step ->
-            if (finished) return@repeat
-            val screen = if (targetTabId > 0) readAiTabScreen(targetTabId) else tabCatalog
-            val action = aiController.planBrowserAction(task.instruction, tabCatalog, screen, previous)
-            if (action == null) {
-                PhormiAiPendingTask.saveStatus(applicationContext, "AI could not produce a browser action.")
-                finished = true
-                return@repeat
+        for (step in 1..30) {
+            if (!browserAiForeground) {
+                PhormiAiPendingTask.saveStatus(this, "Task paused when the browser left the foreground. Review and run it again if needed.")
+                return
             }
-            val proposedTab = action.optInt("tabId", -1)
-            if (targetTabId <= 0) targetTabId = proposedTab
-            if (proposedTab > 0 && proposedTab != targetTabId) {
-                PhormiAiPendingTask.saveStatus(applicationContext, "AI tried to change browser tabs mid-task.")
-                finished = true
-                return@repeat
+            val tab = tabs.firstOrNull { it.id == targetId && !it.isGhost } ?: run {
+                PhormiAiPendingTask.saveStatus(this, "AI tab was closed; task stopped.")
+                return
             }
-            if (targetTabId <= 0 || tabs.none { it.id == targetTabId }) {
-                PhormiAiPendingTask.saveStatus(applicationContext, "AI could not identify the correct open tab.")
-                finished = true
-                return@repeat
-            }
-            aiBackgroundTabIds.add(targetTabId)
+            aiBackgroundTabIds.clear()
+            if (tab.id != activeTabId) aiBackgroundTabIds.add(tab.id)
             updateAiBackgroundTabVisibility()
-
-            val actionName = action.optString("action").lowercase(Locale.getDefault())
-            if (actionName == "done") {
-                PhormiAiPendingTask.saveStatus(applicationContext, action.optString("summary", "Task completed."))
-                finished = true
-                return@repeat
+            var action = aiController.planBrowserAction(goal, readAiTabCatalog(), readAiTabScreen(tab.id), previous)
+            if (action == null) {
+                PhormiAiPendingTask.saveStatus(this, "AI could not plan the next action. Check your connection.")
+                return
             }
-            if (actionName == "stuck") {
-                PhormiAiPendingTask.saveStatus(applicationContext, action.optString("summary", "Task could not continue."))
-                finished = true
-                return@repeat
+            var actionName = action.optString("action").lowercase(Locale.US)
+            if (actionName == "open_tab") {
+                val url = action.optString("url").trim()
+                if (!PhormiBrowserAiSafety.allowedUrl(url)) {
+                    PhormiAiPendingTask.saveStatus(this, "AI supplied an unsafe or invalid URL.")
+                    return
+                }
+                if (tabs.count { !it.isGhost } >= 20) {
+                    PhormiAiPendingTask.saveStatus(this, "AI tab limit reached (20). Close a tab and retry.")
+                    return
+                }
+                createNewTab(url, activate = false)
+                targetId = tabs.last().id
+                previous = "Opened tab $targetId for ${Uri.parse(url).host.orEmpty()}."
+                continue
             }
-
-            val ok = executeAiBrowserAction(targetTabId, action)
-            previous = "Step " + (step + 1) + ": " + actionName + " (" + (if (ok) "ok" else "failed") + ")"
-            PhormiAiPendingTask.saveStatus(applicationContext, previous)
-            if (!ok) {
-                finished = true
-                return@repeat
+            val proposed = action.optInt("tabId", targetId)
+            if (proposed != targetId && tabs.any { it.id == proposed && !it.isGhost }) {
+                targetId = proposed
+                // Inspect the destination before acting; a plan based on the previous tab
+                // must never click or type in a different tab without seeing its page.
+                action = aiController.planBrowserAction(goal, readAiTabCatalog(), readAiTabScreen(targetId), previous)
+                if (action == null || action.optInt("tabId", targetId) != targetId) {
+                    PhormiAiPendingTask.saveStatus(this, "AI could not safely inspect the chosen tab.")
+                    return
+                }
+                actionName = action.optString("action").lowercase(Locale.US)
+            } else if (proposed != targetId) {
+                PhormiAiPendingTask.saveStatus(this, "AI requested a tab that is not available.")
+                return
             }
-            kotlinx.coroutines.delay(350)
+            if (actionName == "done" || actionName == "stuck") {
+                val summary = PhormiBrowserAiSafety.safeSummary(action.optString("summary",
+                    if (actionName == "done") "Task completed." else "Task could not continue."))
+                PhormiAiPendingTask.saveStatus(this, summary)
+                return
+            }
+            if (actionName == "switch_tab") {
+                previous = "Now inspecting tab $targetId."
+                continue
+            }
+            if (!browserAiForeground) return
+            val maySubmitForm = actionName == "click" && aiClickMaySubmit(targetId, action.optString("text"))
+            if ((PhormiBrowserAiSafety.requiresConfirmation(actionName, action.optString("text")) || maySubmitForm) &&
+                !confirmAiAction(targetId, actionName, action.optString("text"))) {
+                PhormiAiPendingTask.saveStatus(this, "Action not approved; no further browser actions were taken.")
+                return
+            }
+            val ok = executeAiBrowserAction(targetId, action)
+            previous = (previous + "\nStep $step: $actionName on tab $targetId (${if (ok) "ok" else "failed"}).").takeLast(900)
+            PhormiAiPendingTask.saveStatus(this, previous.takeLast(160))
+            if (!ok) return
+            kotlinx.coroutines.delay(if (actionName in setOf("navigate", "click", "press_enter")) 900L else 350L)
         }
-
-        if (!finished) PhormiAiPendingTask.saveStatus(applicationContext, "AI stopped after 30 browser actions.")
-        if (targetTabId > 0) aiBackgroundTabIds.remove(targetTabId)
-        updateAiBackgroundTabVisibility()
+        PhormiAiPendingTask.saveStatus(this, "AI stopped after 30 actions. Review the page before starting again.")
     }
 
-    private suspend fun readAiTabCatalog(): String {
-        val rows = mutableListOf<String>()
-        for (tab in tabs.take(20)) {
-            val snapshot = readAiTabScreen(tab.id)
-            rows += "TAB " + tab.id + " | title=" + tab.title + " | url=" + tab.webView.url.orEmpty() + "\n" + snapshot
+    /** A harmless-looking button label may still submit a payment, message or account form. */
+    private suspend fun aiClickMaySubmit(tabId: Int, label: String): Boolean {
+        val view = tabs.firstOrNull { it.id == tabId && !it.isGhost }?.webView ?: return true
+        val quoted = JSONObject.quote(label.trim().take(160))
+        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            view.evaluateJavascript("""(function(){var q=$quoted.toLowerCase();
+                var es=Array.from(document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit],label'))
+                    .filter(function(e){return e.getClientRects().length && !e.disabled});
+                function text(e){return ((e.innerText||e.value||e.getAttribute('aria-label')||e.title||'')+'').trim().toLowerCase()}
+                var e=es.find(function(x){return text(x)===q})||es.find(function(x){return text(x).includes(q)&&q.length>=3});
+                return !e || !!e.closest('form') || e.type==='submit' || e.getAttribute('role')==='button' && !!e.closest('[role=dialog]')})()""") { raw ->
+                if (continuation.isActive) continuation.resume(raw != "false") {}
+            }
         }
-        return rows.joinToString("\n---\n").take(30000)
+    }
+
+    private suspend fun confirmAiAction(tabId: Int, action: String, label: String): Boolean =
+        kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            val title = tabs.firstOrNull { it.id == tabId }?.title.orEmpty().take(45)
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("Allow AI to ${action.replace('_', ' ')}?")
+                .setMessage("Tab: $title\nControl: ${label.take(100).ifBlank { "focused field / form" }}\n\nSensitive actions require your approval each time.")
+                .setPositiveButton("Allow once") { _, _ -> if (continuation.isActive) continuation.resume(true) {} }
+                .setNegativeButton("Stop task") { _, _ -> if (continuation.isActive) continuation.resume(false) {} }
+                .setOnCancelListener { if (continuation.isActive) continuation.resume(false) {} }
+                .create()
+            continuation.invokeOnCancellation { dialog.dismiss() }
+            dialog.show()
+        }
+
+    private fun readAiTabCatalog(): String = tabs.filterNot { it.isGhost }.take(20).joinToString("\n") { tab ->
+        // Keep other tabs' page contents and URL query tokens out of the planner prompt.
+        val host = Uri.parse(tab.webView.url.orEmpty()).host.orEmpty()
+        "TAB ${tab.id} | title=${tab.title.take(90)} | host=$host"
     }
 
     private suspend fun readAiTabScreen(tabId: Int): String {
-        val tab = tabs.firstOrNull { it.id == tabId } ?: return "TAB_NOT_FOUND"
-        val webView = tab.webView
+        val view = tabs.firstOrNull { it.id == tabId && !it.isGhost }?.webView ?: return "TAB_NOT_FOUND"
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-            runOnUiThread {
-                webView.onResume()
-                webView.evaluateJavascript(
-                    "(function(){return JSON.stringify({title:document.title||'',url:location.href||'',text:(document.body&&document.body.innerText||'').slice(0,12000),controls:Array.from(document.querySelectorAll('input,textarea,button,[role=button],[contenteditable=true]')).slice(0,160).map(function(e){return {tag:e.tagName,text:(e.innerText||e.value||e.getAttribute('aria-label')||e.getAttribute('placeholder')||'').trim().slice(0,160),placeholder:e.getAttribute('placeholder')||'',aria:e.getAttribute('aria-label')||'',editable:!!(e.isContentEditable||e.tagName==='INPUT'||e.tagName==='TEXTAREA')}})})})()"
-                ) { raw ->
-                    val decoded = runCatching { org.json.JSONTokener(raw).nextValue().toString() }.getOrDefault(raw)
-                    if (continuation.isActive) continuation.resume(decoded) {}
-                }
+            view.onResume()
+            view.evaluateJavascript(
+                """(function(){
+                    function privateField(e){
+                      var hint=((e.type||'')+' '+(e.name||'')+' '+(e.autocomplete||'')).toLowerCase();
+                      return /password|one.time.code|otp|pin|credit.card|cc.number|cc.csc|cvv|secret|token/.test(hint);
+                    }
+                    var text=(document.body&&document.body.innerText||'').slice(0,12000)
+                      .replace(/\\b(?:\\d[ -]?){12,19}\\b/g,'[private number]');
+                    return JSON.stringify({title:document.title||'',url:location.href.split(/[?#]/)[0],text:text,
+                      controls:Array.from(document.querySelectorAll('input,textarea,button,a,select,[role=button],[contenteditable=true]'))
+                        .filter(function(e){return !privateField(e)})
+                        .slice(0,120).map(function(e){return {tag:e.tagName,
+                          text:(e.tagName==='INPUT'||e.tagName==='TEXTAREA'?'':e.innerText||'').trim().slice(0,100),
+                          label:(e.getAttribute('aria-label')||e.getAttribute('placeholder')||e.name||'').slice(0,100),
+                          editable:!!(e.isContentEditable||e.tagName==='INPUT'||e.tagName==='TEXTAREA')}})})
+                })()""".trimIndent()
+            ) { raw ->
+                val decoded = runCatching { org.json.JSONTokener(raw).nextValue().toString() }.getOrDefault(raw)
+                if (continuation.isActive) continuation.resume(decoded) {}
             }
         }
     }
 
     private suspend fun executeAiBrowserAction(tabId: Int, action: JSONObject): Boolean {
-        val tab = tabs.firstOrNull { it.id == tabId } ?: return false
-        val webView = tab.webView
-        val name = action.optString("action").lowercase(Locale.getDefault())
+        val view = tabs.firstOrNull { it.id == tabId && !it.isGhost }?.webView ?: return false
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-            runOnUiThread {
-                webView.onResume()
-                val script = when (name) {
-                    "navigate" -> {
-                        val url = action.optString("url").trim()
-                        if (url.isBlank() || !(url.startsWith("http://") || url.startsWith("https://"))) return@runOnUiThread continuation.resume(false) {}
-                        webView.loadUrl(url)
-                        return@runOnUiThread continuation.resume(true) {}
+            val script = when (action.optString("action").lowercase(Locale.US)) {
+                "navigate" -> {
+                    val url = action.optString("url").trim()
+                    if (!PhormiBrowserAiSafety.allowedUrl(url)) {
+                        continuation.resume(false) {}; return@suspendCancellableCoroutine
                     }
-                    "click" -> {
-                        val q = JSONObject.quote(action.optString("text").trim())
-                        "(function(){var q=" + q + ".toLowerCase();var es=[...document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit],label')];var e=es.find(function(x){var s=((x.innerText||x.value||x.getAttribute('aria-label')||x.getAttribute('title')||'')+'').trim().toLowerCase();return s===q||s.includes(q)||(q.includes(s)&&s.length>0)});if(!e)return false;e.click();return true})()"
-                    }
-                    "type" -> {
-                        val text = JSONObject.quote(action.optString("text"))
-                        "(function(){var e=document.activeElement;if(!e||!(e.tagName==='INPUT'||e.tagName==='TEXTAREA'||e.isContentEditable)){e=document.querySelector('textarea,input:not([type=password]):not([type=hidden]),[contenteditable=true]')}if(!e)return false;e.focus();var v=" + text + ";try{var p=Object.getOwnPropertyDescriptor(e.constructor.prototype,'value');if(p&&p.set)p.set.call(e,v);else e.value=v}catch(_){e.value=v}e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()"
-                    }
-                    "press_enter" -> "(function(){var e=document.activeElement;if(!e)return false;e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));e.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return true})()"
-                    "scroll" -> if (action.optString("direction","down").equals("up", true)) "window.scrollBy(0,-700);true" else "window.scrollBy(0,700);true"
-                    "back" -> { webView.goBack(); return@runOnUiThread continuation.resume(true) {} }
-                    else -> return@runOnUiThread continuation.resume(false) {}
+                    view.loadUrl(url)
+                    continuation.resume(true) {}; return@suspendCancellableCoroutine
                 }
-                webView.evaluateJavascript(script) { raw ->
-                    val ok = raw == "true" || raw == "1"
-                    if (continuation.isActive) continuation.resume(ok) {}
+                "click" -> {
+                    val label = JSONObject.quote(action.optString("text").trim().take(160))
+                    """(function(){var q=$label.toLowerCase();if(!q)return false;
+                       var es=Array.from(document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit],label'))
+                         .filter(function(e){return e.getClientRects().length && !e.disabled});
+                       function text(e){return ((e.innerText||e.value||e.getAttribute('aria-label')||e.title||'')+'').trim().toLowerCase()}
+                       var e=es.find(function(x){return text(x)===q})||es.find(function(x){return text(x).includes(q)&&q.length>=3});
+                       if(!e||e.closest('form')&&e.closest('form').querySelector('input[type=password]'))return false;
+                       e.click();return true})()""".trimIndent()
                 }
+                "type" -> {
+                    val value = JSONObject.quote(action.optString("text").take(3000))
+                    val field = JSONObject.quote(action.optString("field").trim().take(100))
+                    """(function(){var name=$field.toLowerCase();var es=Array.from(document.querySelectorAll('textarea,input,[contenteditable=true]'));
+                       var e=name?es.find(function(x){return ((x.getAttribute('aria-label')||'')+' '+(x.placeholder||'')+' '+(x.name||'')).toLowerCase().includes(name)}):document.activeElement;
+                       if(!e||!es.includes(e))e=es.find(function(x){return x.getClientRects().length&&!x.disabled});
+                       if(!e||!e.getClientRects().length||e.disabled||e.readOnly)return false;
+                       var kind=((e.type||'')+' '+(e.name||'')+' '+(e.autocomplete||'')).toLowerCase();
+                       if(/password|otp|one.time.code|pin|cc.number|cc.csc|cvv|credit.card|secret|token/.test(kind))return false;
+                       e.focus();var v=$value;
+                       if(e.isContentEditable){e.textContent=v}else{var setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value');
+                         if(setter&&setter.set)setter.set.call(e,v);else e.value=v}
+                       e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()""".trimIndent()
+                }
+                "press_enter" -> """(function(){var e=document.activeElement;if(!e)return false;
+                    if(e.form){if(e.form.querySelector('input[type=password]'))return false;
+                      if(e.form.requestSubmit)e.form.requestSubmit();else e.form.submit();return true}
+                    e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));return true})()"""
+                "scroll" -> if (action.optString("direction", "down").equals("up", true))
+                    "window.scrollBy(0,-650);true" else "window.scrollBy(0,650);true"
+                "back" -> {
+                    if (view.canGoBack()) view.goBack() else { continuation.resume(false) {}; return@suspendCancellableCoroutine }
+                    continuation.resume(true) {}; return@suspendCancellableCoroutine
+                }
+                "wait" -> { continuation.resume(true) {}; return@suspendCancellableCoroutine }
+                else -> { continuation.resume(false) {}; return@suspendCancellableCoroutine }
             }
+            view.onResume()
+            view.evaluateJavascript(script) { raw ->
+                if (continuation.isActive) continuation.resume(raw == "true" || raw == "1") {}
+            }
+        }
+    }
+
+    private fun updateAiStatusBadge() {
+        if (!::prefs.isInitialized) return
+        findViewById<TextView>(R.id.btn_bottom_ai)?.apply {
+            text = if (aiTaskRunning) "✦•" else "✦"
+            contentDescription = if (aiTaskRunning) "Browser AI working · tap for task status" else "Ask Phormi AI"
+        }
+        findViewById<TextView>(R.id.btn_top_ai)?.apply {
+            text = if (aiTaskRunning) "✦•" else "✦"
+            contentDescription = if (aiTaskRunning) "Browser AI working · tap for task status" else "Ask Phormi AI"
         }
     }
 
     private fun updateAiBackgroundTabVisibility() {
         if (!::webViewContainer.isInitialized) return
-        val visibleActive = activeTabId
+        val visible = if (splitMode) setOf(activeTabId, splitTopTabId, splitBottomTabId) else setOf(activeTabId)
         tabs.forEach { tab ->
-            val bg = tab.id in aiBackgroundTabIds && tab.id != visibleActive
-            if (bg) {
-                tab.webView.visibility = View.VISIBLE
-                tab.webView.alpha = 0f
-                tab.webView.isClickable = false
-                tab.webView.isFocusable = false
-                tab.webView.onResume()
-            } else if (tab.id == visibleActive) {
-                tab.webView.visibility = View.VISIBLE
-                tab.webView.alpha = 1f
-                tab.webView.isClickable = true
-                tab.webView.isFocusable = true
-                tab.webView.onResume()
-            } else {
-                tab.webView.visibility = View.GONE
-                tab.webView.alpha = 1f
-                tab.webView.isClickable = true
-                tab.webView.isFocusable = true
-                tab.webView.onPause()
-            }
+            val background = tab.id in aiBackgroundTabIds && tab.id !in visible
+            val live = tab.id in visible || background
+            tab.webView.visibility = if (live) View.VISIBLE else View.GONE
+            tab.webView.alpha = if (background) 0f else 1f
+            tab.webView.isClickable = !background
+            tab.webView.isFocusable = tab.id == activeTabId
+            if (live) tab.webView.onResume() else tab.webView.onPause()
         }
+        // An invisible background WebView must never cover the user's current tab.
+        activeWebView()?.takeIf { it.parent === webViewContainer }?.bringToFront()
     }
 
     override fun onStart() {
@@ -484,6 +607,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btn_forward).setOnClickListener {
             activeWebView()?.let { if (it.canGoForward()) it.goForward() }
         }
+        findViewById<TextView>(R.id.btn_top_back).setOnClickListener {
+            activeWebView()?.let { if (it.canGoBack()) it.goBack() }
+        }
+        findViewById<TextView>(R.id.btn_top_forward).setOnClickListener {
+            activeWebView()?.let { if (it.canGoForward()) it.goForward() }
+        }
+        findViewById<TextView>(R.id.btn_top_ai).setOnClickListener { openAiFromBottom(it) }
+        findViewById<TextView>(R.id.btn_top_downloads).setOnClickListener { openDownloadsFromBottom(it) }
+        findViewById<TextView>(R.id.download_status_chip).setOnClickListener { openDownloadsFromBottom(it) }
         updateNavButtons()
 
         startPageSearch.setOnEditorActionListener { _, actionId, event ->
@@ -498,8 +630,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.start_page_ai).setOnClickListener {
-            startActivity(Intent(this, AiActivity::class.java))
+            startActivity(Intent(this, AiActivity::class.java).putExtra("target_tab_id", activeTabId))
         }
+
+        findViewById<TextView>(R.id.start_page_action_tabs).setOnClickListener {
+            saveTabs()
+            startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
+        }
+        findViewById<TextView>(R.id.start_page_action_bookmarks).setOnClickListener {
+            startActivityForResult(Intent(this, BookmarksActivity::class.java), REQ_MENU)
+        }
+        findViewById<TextView>(R.id.start_page_action_downloads).setOnClickListener { openDownloadsFromBottom(it) }
+        findViewById<TextView>(R.id.start_page_action_ai).setOnClickListener { openAiFromBottom(it) }
 
         findViewById<TextView>(R.id.start_page_engine).setOnClickListener {
             showSearchProviderChooser()
@@ -519,9 +661,7 @@ class MainActivity : AppCompatActivity() {
         // + = new tab; tabs button = circular tab overview
         findViewById<TextView>(R.id.btn_new_tab).setOnClickListener {
             createNewTab(NEW_TAB_URL)
-            urlBar.setText("")
-            urlBar.requestFocus()
-            showKeyboard()
+            focusNewTabSearch()
         }
         // The circular count is the single combined Tab Overview + Counter control.
         findViewById<TextView>(R.id.tab_count).setOnClickListener {
@@ -529,7 +669,7 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
 
-        findViewById<TextView>(R.id.btn_refresh).setOnClickListener { activeWebView()?.reload() }
+        findViewById<TextView>(R.id.btn_refresh).setOnClickListener { refreshActivePage() }
         findViewById<TextView>(R.id.btn_favorite).setOnClickListener { addCurrentPageToBookmarks() }
         splitLockButton.setOnClickListener { setSplitChromeLocked(!splitChromeLocked) }
         installSplitDividerResize()
@@ -544,8 +684,9 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
 
-        swipeRefresh.setOnRefreshListener { activeWebView()?.reload() }
-        swipeRefresh.isEnabled = prefs.getBoolean(KEY_PULL_TO_REFRESH, true)
+        swipeRefresh.setOnRefreshListener { refreshActivePage() }
+        swipeRefresh.setDistanceToTriggerSync(160.dp())
+        swipeRefresh.isEnabled = PhormiBrowserPreferences.pullToRefresh(this)
         swipeRefresh.setOnChildScrollUpCallback { _, _ ->
             val wv = activeWebView() ?: return@setOnChildScrollUpCallback false
             wv.canScrollVertically(-1)
@@ -609,7 +750,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPullToRefreshChooser() {
         val labels = arrayOf("Arrow refresh only", "Arrow + pull down to refresh")
-        val current = if (prefs.getBoolean(KEY_PULL_TO_REFRESH, true)) 1 else 0
+        val current = if (PhormiBrowserPreferences.pullToRefresh(this)) 1 else 0
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Refresh gesture")
             .setSingleChoiceItems(labels, current) { dialog, which ->
@@ -713,6 +854,11 @@ class MainActivity : AppCompatActivity() {
         val outline = if (dark) Color.rgb(51, 65, 85) else Color.rgb(224, 214, 208)
         styleSurface(findViewById(R.id.start_page_search_box), surface, outline, 28)
         styleSurface(findViewById(R.id.start_page_ai), surfaceSoft, outline, 22)
+        listOf(R.id.start_page_action_tabs, R.id.start_page_action_bookmarks,
+            R.id.start_page_action_downloads, R.id.start_page_action_ai).forEach { id ->
+            styleSurface(findViewById(id), surfaceSoft, outline, 16)
+            findViewById<TextView>(id)?.setTextColor(if (id == R.id.start_page_action_ai) accent else primary)
+        }
 
         val uri = prefs.getString(KEY_WALLPAPER_URI, null)
         if (!uri.isNullOrBlank()) {
@@ -747,8 +893,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu, R.id.btn_refresh,
-            R.id.btn_back, R.id.btn_forward, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
-            findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai)
+            R.id.btn_back, R.id.btn_forward, R.id.btn_top_back, R.id.btn_top_forward,
+            R.id.btn_top_ai, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
+            findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai || id == R.id.btn_top_ai)
                 (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
         findViewById<TextView>(R.id.tab_count)?.setTextColor(
@@ -1010,18 +1157,16 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun runUnifiedSearch(query: String) {
-        localSearchPageActive = true
-        val webView = activeWebView() ?: run {
-            createNewTab(NEW_TAB_URL)
-            activeWebView()
-        } ?: return
-
+        if (activeWebView() == null) createNewTab(NEW_TAB_URL)
+        val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
+        val webView = tab.webView
+        tab.searchQuery = query
         val generation = unifiedSearchGeneration.incrementAndGet()
-        // Stop work belonging to a previous query so an old search cannot consume
-        // resources after the user has already started a new one.
+        // Each tab owns its own search and results. Starting another search in a new tab
+        // must not cancel the first tab's work or overwrite its address bar.
         synchronized(unifiedSearchLock) {
-            unifiedSearchFutures.forEach { it.cancel(true) }
-            unifiedSearchFutures.clear()
+            unifiedSearchFutures.remove(tab.id)?.forEach { it.cancel(true) }
+            unifiedSearchGenerations[tab.id] = generation
         }
         startPageContainer.visibility = View.GONE
         startPageContainer.isClickable = false
@@ -1067,9 +1212,8 @@ class MainActivity : AppCompatActivity() {
                 val finishedSnapshot = synchronized(unifiedSearchLock) { finishedEngines.toList() }
                 val mergedSnapshot = mergeUnifiedResults(snapshot, query)
                 runOnUiThread {
-                    if (generation != unifiedSearchGeneration.get()) return@runOnUiThread
-                    if (activeWebView() === webView) {
-                        webView.loadDataWithBaseURL(
+                    if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@runOnUiThread
+                    webView.loadDataWithBaseURL(
                             "https://phormi.local/",
                             unifiedSearchHtml(
                                 query,
@@ -1084,15 +1228,14 @@ class MainActivity : AppCompatActivity() {
                             "UTF-8",
                             null
                         )
-                    }
-                    if (done == providers.size && mergedSnapshot.isNotEmpty() && aiController.hasAnyKey()) {
+                    if (done == providers.size && mergedSnapshot.isNotEmpty() && aiController.isActive()) {
                         lifecycleScope.launch {
                             val evidence = mergedSnapshot.take(12).joinToString("\n") {
                                 "${it.title}\n${it.url}\n${it.snippet}\nSources: ${it.source}"
                             }
                             val answer = aiController.synthesizeSearchAnswer(query, evidence)
-                            if (generation != unifiedSearchGeneration.get()) return@launch
-                            if (answer != null && activeWebView() === webView) {
+                            if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@launch
+                            if (answer != null) {
                                 webView.loadDataWithBaseURL(
                                     "https://phormi.local/",
                                     unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer),
@@ -1103,7 +1246,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-            synchronized(unifiedSearchLock) { unifiedSearchFutures.add(future) }
+            synchronized(unifiedSearchLock) { unifiedSearchFutures.getOrPut(tab.id) { mutableListOf() }.add(future) }
         }
     }
 
@@ -1454,7 +1597,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openShortcut(url: String) {
-        localSearchPageActive = false
         createNewTab(url)
     }
 
@@ -1481,8 +1623,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showStartPage() {
-        localSearchPageActive = false
+        tabs.firstOrNull { it.id == activeTabId }?.searchQuery = null
         if (splitMode) setSplitMode(false)
+        activeWebView()?.loadUrl(NEW_TAB_URL)
         startPageContainer.visibility = View.VISIBLE
         activeWebView()?.visibility = View.GONE
         urlBar.setText("")
@@ -1494,16 +1637,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateHomeChromeVisibility() {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
+        val fullscreen = customView != null || isInPictureInPictureMode
+        findViewById<View>(R.id.top_toolbar)?.visibility = if (fullscreen || splitChromeLocked) View.GONE else View.VISIBLE
         findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
         findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
         findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.bottom_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        swipeRefresh.isEnabled = !onHome && prefs.getBoolean(KEY_PULL_TO_REFRESH, true)
+        val bottom = PhormiBrowserPreferences.showBottomToolbar(this)
+        // Favorite remains in the Browse menu; reserve more width for the address field.
+        findViewById<View>(R.id.btn_favorite)?.visibility = if (onHome || !bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.bottom_toolbar)?.visibility =
+            if (onHome || !bottom || splitChromeLocked || fullscreen) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_ai)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_back)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_forward)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
+        updateDownloadBadge()
+        swipeRefresh.isEnabled = !onHome && PhormiBrowserPreferences.pullToRefresh(this)
     }
 
     private fun updateStartPageVisibility() {
         val url = activeWebView()?.url
-        if (localSearchPageActive) {
+        if (tabs.firstOrNull { it.id == activeTabId }?.searchQuery != null) {
             startPageContainer.visibility = View.GONE
             startPageContainer.isClickable = false
             activeWebView()?.visibility = View.VISIBLE
@@ -1515,15 +1668,76 @@ class MainActivity : AppCompatActivity() {
         } else {
             startPageContainer.visibility = View.GONE
             startPageContainer.isClickable = false
-            swipeRefresh.isEnabled = true
             activeWebView()?.visibility = View.VISIBLE
             activeWebView()?.isClickable = true
         }
         updateHomeChromeVisibility()
     }
 
+    private fun refreshActivePage() {
+        val query = tabs.firstOrNull { it.id == activeTabId }?.searchQuery
+        if (query != null) runUnifiedSearch(query) else {
+            val page = activeWebView()
+            if (page == null || page.url.isNullOrBlank() || page.url == NEW_TAB_URL) {
+                swipeRefresh.isRefreshing = false
+            } else page.reload()
+        }
+    }
+
     private fun updateTabCount() {
         tabCountView.text = tabs.size.toString()
+    }
+
+    private fun saveCurrentPageAsPdf() {
+        val page = activeWebView()
+        if (page == null || startPageContainer.visibility == View.VISIBLE || page.url.isNullOrBlank()) {
+            Toast.makeText(this, "Open a page to save it as PDF", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // Android's native print UI offers Save as PDF without copying the page or
+        // granting Phormi storage access. The active tab remains where it is.
+        val title = page.title.orEmpty().ifBlank { "Phormi page" }.take(60)
+        runCatching {
+            val printManager = getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
+            val adapter = page.createPrintDocumentAdapter(title)
+            printManager.print(title, adapter, android.print.PrintAttributes.Builder().build())
+        }.onFailure {
+            Toast.makeText(this, "PDF export is unavailable on this device", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun updateDownloadBadge() {
+        if (!::prefs.isInitialized) return
+        val active = PhormiDownloadEngine.items(this).filter {
+            it.state == PhormiDownloadEngine.State.RUNNING || it.state == PhormiDownloadEngine.State.QUEUED
+        }
+        val count = active.size
+        findViewById<TextView>(R.id.btn_bottom_downloads)?.apply {
+            text = if (count == 0) "↓" else "↓ $count"
+            contentDescription = if (count == 0) "Downloads" else "$count downloads in progress"
+            setTextColor(if (count == 0) Color.rgb(203, 213, 225) else Color.rgb(56, 189, 248))
+        }
+        findViewById<TextView>(R.id.btn_top_downloads)?.apply {
+            visibility = if (count > 0 && (startPageContainer.visibility == View.VISIBLE ||
+                !PhormiBrowserPreferences.showBottomToolbar(this@MainActivity)) &&
+                customView == null && !isInPictureInPictureMode) View.VISIBLE else View.GONE
+            contentDescription = "$count downloads in progress"
+        }
+        findViewById<TextView>(R.id.download_status_chip)?.apply {
+            visibility = if (count > 0 && customView == null && !isInPictureInPictureMode &&
+                !splitChromeLocked) View.VISIBLE else View.GONE
+            (active.firstOrNull { it.state == PhormiDownloadEngine.State.RUNNING }
+                ?: active.firstOrNull())?.let { item ->
+                val progress = when {
+                    item.total > 0L -> "${(item.downloaded * 100.0 / item.total).toInt().coerceIn(0, 100)}%"
+                    item.downloaded > 0L -> "${item.downloaded / 1024} KB"
+                    else -> "starting"
+                }
+                text = "↓ ${item.title.ifBlank { "Download" }.take(22)} · $progress" +
+                    if (count > 1) "  +${count - 1}" else ""
+                contentDescription = "${item.title}, $progress; $count downloads in progress. Open downloads"
+            }
+        }
     }
 
     private fun updateFavoriteButton() {
@@ -1547,6 +1761,8 @@ class MainActivity : AppCompatActivity() {
         forward.isEnabled = webView?.canGoForward() == true
         back.alpha = if (back.isEnabled) 1f else 0.35f
         forward.alpha = if (forward.isEnabled) 1f else 0.35f
+        findViewById<TextView>(R.id.btn_top_back)?.apply { isEnabled = back.isEnabled; alpha = back.alpha }
+        findViewById<TextView>(R.id.btn_top_forward)?.apply { isEnabled = forward.isEnabled; alpha = forward.alpha }
     }
 
 
@@ -1566,17 +1782,25 @@ class MainActivity : AppCompatActivity() {
             else -> searchUrlForProvider(raw)
         }
         val webView = activeWebView()
-        localSearchPageActive = false
+        tabs.firstOrNull { it.id == activeTabId }?.searchQuery = null
         if (webView != null) {
             startPageContainer.visibility = View.GONE
             startPageContainer.isClickable = false
-            swipeRefresh.isEnabled = true
             webView.visibility = View.VISIBLE
             webView.isClickable = true
             webView.loadUrl(url)
         } else createNewTab(url)
         hideKeyboard()
         urlBar.clearFocus()
+    }
+
+    private fun focusNewTabSearch() {
+        urlBar.setText("")
+        startPageSearch.setText("")
+        val input = if (startPageContainer.visibility == View.VISIBLE) startPageSearch else urlBar
+        input.requestFocus()
+        input.post { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
     }
 
     private fun showKeyboard() {
@@ -1760,18 +1984,20 @@ class MainActivity : AppCompatActivity() {
         splitChromeLocked = locked
         if (splitMode) {
             findViewById<View>(R.id.top_toolbar)?.visibility = if (locked) View.GONE else View.VISIBLE
-            findViewById<View>(R.id.bottom_toolbar)?.visibility = if (locked) View.GONE else View.VISIBLE
+            findViewById<View>(R.id.bottom_toolbar)?.visibility =
+                if (locked || !PhormiBrowserPreferences.showBottomToolbar(this)) View.GONE else View.VISIBLE
             splitLockButton.visibility = View.VISIBLE
             splitLockButton.text = if (locked) "🔓" else "🔒"
             splitLockButton.contentDescription = if (locked) "Show browser controls" else "Hide browser controls"
         } else {
             splitLockButton.visibility = View.GONE
         }
+        updateDownloadBadge()
     }
 
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
 
-    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null, restoredStateBase64: String? = null) {
+    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null, restoredStateBase64: String? = null, activate: Boolean = true) {
         val ghostRequested = forceGhost || prefs.getBoolean("ghost_next_tab", false)
         if (ghostRequested) prefs.edit().putBoolean("ghost_next_tab", false).apply()
         val id = requestedId?.takeIf { it > 0 } ?: nextTabId++
@@ -1834,7 +2060,11 @@ class MainActivity : AppCompatActivity() {
             }.getOrDefault(false)
         }
         if (!restored && url != NEW_TAB_URL) webView.loadUrl(url)
-        switchToTab(id)
+        if (activate) switchToTab(id) else {
+            // AI-created work tabs must not steal the page, address bar or keyboard.
+            webView.visibility = View.GONE
+            webView.onPause()
+        }
         updateTabCount()
         saveTabs()
     }
@@ -1876,13 +2106,21 @@ class MainActivity : AppCompatActivity() {
             }
             tab.chipView.alpha = if (isActive) 1f else 0.55f
         }
+        if (!splitMode) activeWebView()?.let { webViewContainer.bringChildToFront(it) }
         updateStartPageVisibility()
         updateTabCount()
         updateNavButtons()
         updateFavoriteButton()
         val current = tabs.find { it.id == id }?.webView?.url
-        if (!current.isNullOrBlank() && current != "about:blank") urlBar.setText(current) else urlBar.setText("")
+        val query = tabs.firstOrNull { it.id == id }?.searchQuery
+        if (query != null) urlBar.setText(query)
+        else if (!current.isNullOrBlank() && current != NEW_TAB_URL) urlBar.setText(current)
+        else urlBar.setText("")
         saveTabs()
+        val searchTab = tabs.firstOrNull { it.id == id }
+        if (searchTab?.searchQuery != null && searchTab.webView.url.orEmpty() == NEW_TAB_URL) {
+            runUnifiedSearch(searchTab.searchQuery.orEmpty())
+        }
     }
 
     private fun siteLockScopesForTab(tabId: Int): List<Pair<String, String>> {
@@ -1923,6 +2161,10 @@ class MainActivity : AppCompatActivity() {
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
         val tab = tabs[index]
+        synchronized(unifiedSearchLock) {
+            unifiedSearchFutures.remove(tab.id)?.forEach { it.cancel(true) }
+            unifiedSearchGenerations.remove(tab.id)
+        }
         unregisterForContextMenu(tab.webView)
         webViewContainer.removeView(tab.webView)
         tabStripContainer.removeView(tab.chipView)
@@ -1961,18 +2203,20 @@ class MainActivity : AppCompatActivity() {
         val profiles = JSONArray()
         val ids = JSONArray()
         val webViewStates = JSONArray()
+        val searchQueries = JSONArray()
         persistTabs.forEach { tab ->
-            val u = tab.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
+            val u = if (tab.searchQuery != null) NEW_TAB_URL else tab.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
             urls.put(u)
             titles.put(tab.title.ifBlank { "Tab" })
             lastUsed.put(tab.lastUsed)
             createdAt.put(tab.createdAt)
             profiles.put(tab.profileName)
             ids.put(tab.id)
-            webViewStates.put(if (captureWebViewState) (saveWebViewState(tab.webView) ?: "") else "")
+            webViewStates.put(if (captureWebViewState && tab.searchQuery == null) (saveWebViewState(tab.webView) ?: "") else "")
+            searchQueries.put(tab.searchQuery.orEmpty())
         }
         if (urls.length() == 0) {
-            urls.put(NEW_TAB_URL); titles.put(getString(R.string.new_tab)); lastUsed.put(System.currentTimeMillis()); createdAt.put(System.currentTimeMillis()); profiles.put(DEFAULT_PROFILE_NAME); ids.put(nextTabId++); webViewStates.put("")
+            urls.put(NEW_TAB_URL); titles.put(getString(R.string.new_tab)); lastUsed.put(System.currentTimeMillis()); createdAt.put(System.currentTimeMillis()); profiles.put(DEFAULT_PROFILE_NAME); ids.put(nextTabId++); webViewStates.put(""); searchQueries.put("")
         }
         val activeIndex = persistTabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0)
         prefs.edit()
@@ -1983,6 +2227,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_TAB_PROFILES, profiles.toString())
             .putString(KEY_TAB_IDS, ids.toString())
             .putString(KEY_TAB_WEBVIEW_STATES, webViewStates.toString())
+            .putString(KEY_TAB_SEARCH_QUERIES, searchQueries.toString())
             .putString(KEY_TAB_RETENTION, prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER)
             .putString(KEY_TAB_ENVIRONMENT, selectedTabEnvironment())
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
@@ -2065,6 +2310,7 @@ class MainActivity : AppCompatActivity() {
             val createdAt = runCatching { JSONArray(prefs.getString(KEY_TAB_CREATED_AT, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val ids = runCatching { JSONArray(prefs.getString(KEY_TAB_IDS, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val webViewStates = runCatching { JSONArray(prefs.getString(KEY_TAB_WEBVIEW_STATES, "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val searchQueries = runCatching { JSONArray(prefs.getString(KEY_TAB_SEARCH_QUERIES, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val count = arr.length()
             val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
@@ -2074,6 +2320,7 @@ class MainActivity : AppCompatActivity() {
                 val restoredCreatedAt = createdAt.optLong(i, 0L).takeIf { it > 0L } ?: lastUsed.optLong(i, System.currentTimeMillis()).takeIf { it > 0L }
                 val restoredState = webViewStates.optString(i, "").trim().takeIf { it.isNotBlank() }
                 createNewTab(restoredUrl, restoredProfile, requestedId = restoredId, requestedCreatedAt = restoredCreatedAt, restoredStateBase64 = restoredState)
+                tabs.getOrNull(i)?.searchQuery = searchQueries.optString(i).takeIf { it.isNotBlank() }
                 if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
                 if (restoredTitle.isNotBlank() && i < tabs.size) {
@@ -2290,7 +2537,8 @@ class MainActivity : AppCompatActivity() {
             userAgentOverride = userAgentOverride,
             contentLength = contentLength
         )
-        Toast.makeText(this, "Download added", Toast.LENGTH_SHORT).show()
+        updateDownloadBadge()
+        Toast.makeText(this, "Download queued · tap ↓ to follow progress", Toast.LENGTH_LONG).show()
     }
 
     private fun downloadBlobUrl(url: String, contentDisposition: String?, mimeType: String?, sourceWebView: WebView?) {
@@ -2642,6 +2890,8 @@ class MainActivity : AppCompatActivity() {
 
 
     override fun onPause() {
+        browserAiForeground = false
+        downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
         // Persist both browser state and website sessions when the app leaves the foreground.
         saveTabsImmediate(true)
         CookieManager.getInstance().flush()
@@ -2666,9 +2916,10 @@ class MainActivity : AppCompatActivity() {
         if (isInPictureInPictureMode) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
             findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
+            updateDownloadBadge()
         } else if (customView == null && !splitChromeLocked) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
-            findViewById<View>(R.id.bottom_toolbar)?.visibility = View.VISIBLE
+            updateHomeChromeVisibility()
         }
     }
     override fun onTrimMemory(level: Int) {
@@ -2684,14 +2935,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        reloadRunnable?.let(reloadHandler::removeCallbacks)
-        reloadRunnable = null
         tabSaveRunnable?.let(tabSaveHandler::removeCallbacks)
         tabSaveRunnable = null
         synchronized(unifiedSearchLock) {
             unifiedSearchGeneration.incrementAndGet()
-            unifiedSearchFutures.forEach { it.cancel(true) }
+            unifiedSearchFutures.values.flatten().forEach { it.cancel(true) }
             unifiedSearchFutures.clear()
+            unifiedSearchGenerations.clear()
         }
         unifiedSearchExecutor.shutdownNow()
         rendererCrashCounts.clear()
@@ -2735,6 +2985,7 @@ class MainActivity : AppCompatActivity() {
             }
             mediaPlaybackRequiresUserGesture = false
             setGeolocationEnabled(true)
+            textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
             mixedContentMode = if (prefs.getBoolean("security_mixed_content", false)) {
                 android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             } else {
@@ -2858,6 +3109,10 @@ class MainActivity : AppCompatActivity() {
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
                 val target = url.orEmpty()
+                if (view != null && target.startsWith("http", true) &&
+                    !target.startsWith("https://phormi.local/")) {
+                    tabs.firstOrNull { it.webView === view }?.searchQuery = null
+                }
                 if (view != null && target.startsWith("http", true)) {
                     val desktop = isDesktopModeFor(target)
                     val desiredUa = desktopUserAgent(desktop)
@@ -2947,7 +3202,8 @@ class MainActivity : AppCompatActivity() {
                     val t = view?.title ?: ""
                     val u = view?.url ?: url ?: ""
                     val tab = tabs.find { it.webView === view }
-                    if (tab != null && !tab.isGhost) {
+                    if (tab != null && !tab.isGhost && tab.searchQuery == null &&
+                        (u.startsWith("https://") || u.startsWith("http://"))) {
                         HistoryActivity.record(this@MainActivity, t, u)
                     }
 
@@ -2969,8 +3225,10 @@ class MainActivity : AppCompatActivity() {
                     // the user is actively editing the unified URL/search field. WebView can
                     // finish a previous navigation after the user has already started typing;
                     // replacing the field here made it look as if Phormi jumped back to an old tab.
-                    if (!urlBar.hasFocus() && !url.isNullOrBlank() && url != "about:blank") {
-                        urlBar.setText(url)
+                    if (!urlBar.hasFocus()) {
+                        val query = tabs.firstOrNull { it.webView === view }?.searchQuery
+                        if (query != null) urlBar.setText(query)
+                        else if (!url.isNullOrBlank() && url != NEW_TAB_URL) urlBar.setText(url)
                     }
                     updateNavButtons()
                     updateFavoriteButton()
@@ -3217,46 +3475,16 @@ class MainActivity : AppCompatActivity() {
             filePathCallback = null
             return
         }
-        if (requestCode == REQ_TABS_OVERVIEW && resultCode == Activity.RESULT_OK && data != null) {
-            when (data.getStringExtra("action")) {
-                "new_tab" -> {
-                    createNewTab(NEW_TAB_URL)
-                    urlBar.setText("")
-                    urlBar.requestFocus()
-                    showKeyboard()
-                }
-                "select" -> {
-                    val tabId = data.getIntExtra("tab_id", -1)
-                    tabs.firstOrNull { it.id == tabId }?.let { switchToTab(it.id) }
-                }
-                "close" -> {
-                    val tabId = data.getIntExtra("tab_id", -1)
-                    tabs.firstOrNull { it.id == tabId }?.let { closeTab(it.id) }
-                }
-                "toggle_split" -> setSplitMode(!splitMode)
-                "assign_group" -> {
-                    val groupId = data.getStringExtra("group_id").orEmpty()
-                    val tabId = data.getIntExtra("tab_id", -1)
-                    if (groupId.isNotBlank() && tabId > 0) {
-                        TabGroupManager(this).assignTab(groupId, tabId, tabs.find { it.id == tabId }?.webView?.url.orEmpty())
-                    }
-                }
-                "reassign_env" -> {
-                    val tabId = data.getIntExtra("tab_id", -1)
-                    val profile = data.getStringExtra("profile").orEmpty()
-                    if (tabId > 0 && profile.isNotBlank()) reassignTabEnvironment(tabId, profile)
-                }
-            }
+        if (requestCode == REQ_TABS_OVERVIEW && resultCode == RESULT_OK && data != null) {
+            handleTabsOverviewResult(data)
             return
         }
-        
+
         if (requestCode == REQ_MENU && resultCode == RESULT_OK) {
             when (data?.getStringExtra(MenuActivity.EXTRA_ACTION)) {
                 MenuActivity.ACTION_NEW_TAB -> {
                     createNewTab(NEW_TAB_URL)
-                    urlBar.setText("")
-                    urlBar.requestFocus()
-                    showKeyboard()
+                    focusNewTabSearch()
                 }
                 MenuActivity.ACTION_GHOST -> {
                     createGhostTab()
@@ -3273,6 +3501,11 @@ class MainActivity : AppCompatActivity() {
                     if (!enabled) authenticateBrowserLock()
                 }
                 MenuActivity.ACTION_TAB_ENVIRONMENT -> showTabEnvironmentChooser()
+                MenuActivity.ACTION_TABS_RESULT -> data?.let(::handleTabsOverviewResult)
+                MenuActivity.ACTION_BACK -> activeWebView()?.let { if (it.canGoBack()) it.goBack() }
+                MenuActivity.ACTION_FORWARD -> activeWebView()?.let { if (it.canGoForward()) it.goForward() }
+                MenuActivity.ACTION_REFRESH -> refreshActivePage()
+                MenuActivity.ACTION_SAVE_PDF -> saveCurrentPageAsPdf()
                 MenuActivity.ACTION_SPLIT_SCREEN -> setSplitMode(!splitMode)
                 MenuActivity.ACTION_NOTIFICATIONS -> {
                     val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -3320,8 +3553,38 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    private fun handleTabsOverviewResult(data: Intent) {
+            when (data.getStringExtra("action")) {
+                "new_tab" -> {
+                    createNewTab(NEW_TAB_URL)
+                    focusNewTabSearch()
+                }
+                "select" -> {
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    tabs.firstOrNull { it.id == tabId }?.let { switchToTab(it.id) }
+                }
+                "close" -> {
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    tabs.firstOrNull { it.id == tabId }?.let { closeTab(it.id) }
+                }
+                "toggle_split" -> setSplitMode(!splitMode)
+                "assign_group" -> {
+                    val groupId = data.getStringExtra("group_id").orEmpty()
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    if (groupId.isNotBlank() && tabId > 0) {
+                        TabGroupManager(this).assignTab(groupId, tabId, tabs.find { it.id == tabId }?.webView?.url.orEmpty())
+                    }
+                }
+                "reassign_env" -> {
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    val profile = data.getStringExtra("profile").orEmpty()
+                    if (tabId > 0 && profile.isNotBlank()) reassignTabEnvironment(tabId, profile)
+                }
+            }
+    }
+
     fun openAiFromBottom(view: View) {
-        startActivity(Intent(this, AiActivity::class.java).putExtra("auto_voice", true))
+        startActivity(Intent(this, AiActivity::class.java).putExtra("target_tab_id", activeTabId))
     }
 
     fun openDownloadsFromBottom(view: View) {
@@ -3340,7 +3603,7 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh.visibility = View.VISIBLE
         if (!isInPictureInPictureMode && !splitChromeLocked) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
-            findViewById<View>(R.id.bottom_toolbar)?.visibility = View.VISIBLE
+            updateHomeChromeVisibility()
         }
     }
 
@@ -3367,53 +3630,12 @@ class MainActivity : AppCompatActivity() {
         }
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_POINTER_DOWN -> {
-                if (ev.pointerCount == 2 && !twoFingerHoldActive && customView == null) {
-                    // Reload is a deliberate two-finger hold. Pinch/zoom changes the
-                    // distance between the fingers, so a changing span cancels reload.
-                    twoFingerHoldActive = true
-                    twoFingerStartX = (ev.getX(0) + ev.getX(1)) / 2f
-                    twoFingerStartY = (ev.getY(0) + ev.getY(1)) / 2f
-                    twoFingerStartSpan = kotlin.math.hypot(
-                        ev.getX(1) - ev.getX(0),
-                        ev.getY(1) - ev.getY(0)
-                    )
-                    val r = Runnable {
-                        if (twoFingerHoldActive) {
-                            activeWebView()?.reload()
-                            Toast.makeText(this, "Reloading…", Toast.LENGTH_SHORT).show()
-                            twoFingerHoldActive = false
-                        }
-                    }
-                    reloadRunnable = r
-                    reloadHandler.postDelayed(r, 1000)
-                }
-                if (ev.pointerCount == 3) {
+                if (ev.pointerCount == 3 && customView == null) {
                     threeFingerTracking = true
                     threeFingerStartX = ev.getX(0)
-                    reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
-                    reloadRunnable = null
-                    twoFingerHoldActive = false
                 }
             }
             android.view.MotionEvent.ACTION_MOVE -> {
-                if (twoFingerHoldActive && ev.pointerCount >= 2) {
-                    val cx = (ev.getX(0) + ev.getX(1)) / 2f
-                    val cy = (ev.getY(0) + ev.getY(1)) / 2f
-                    val span = kotlin.math.hypot(
-                        ev.getX(1) - ev.getX(0),
-                        ev.getY(1) - ev.getY(0)
-                    )
-                    val centerMoved = kotlin.math.hypot(cx - twoFingerStartX, cy - twoFingerStartY)
-                    val spanChanged = kotlin.math.abs(span - twoFingerStartSpan)
-                    // A real pinch should cancel the reload gesture almost immediately. On phones with
-                    // small/touch-dense displays, an 18px span threshold is too forgiving and can
-                    // let a pinch sit in the one-second hold window before WebView receives the zoom.
-                    if (centerMoved > 10f || spanChanged > 8f) {
-                        twoFingerHoldActive = false
-                        reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
-                        reloadRunnable = null
-                    }
-                }
                 if (threeFingerTracking && ev.pointerCount >= 3) {
                     val dx = ev.getX(0) - threeFingerStartX
                     if (kotlin.math.abs(dx) >= 120f && customView == null) {
@@ -3436,17 +3658,7 @@ class MainActivity : AppCompatActivity() {
             }
             android.view.MotionEvent.ACTION_POINTER_UP,
             android.view.MotionEvent.ACTION_UP,
-            android.view.MotionEvent.ACTION_CANCEL -> {
-                if (ev.pointerCount <= 2) {
-                    threeFingerTracking = false
-                }
-                if (ev.pointerCount != 2) {
-                    twoFingerHoldActive = false
-                    reloadRunnable?.let { reloadHandler.removeCallbacks(it) }
-                    reloadRunnable = null
-                    twoFingerStartSpan = 0f
-                }
-            }
+            android.view.MotionEvent.ACTION_CANCEL -> threeFingerTracking = false
         }
         return super.dispatchTouchEvent(ev)
     }
@@ -3692,7 +3904,7 @@ class MainActivity : AppCompatActivity() {
         settings.userAgentString = desktopUserAgent(enabled)
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
-        settings.textZoom = 100
+        settings.textZoom = PhormiBrowserPreferences.textZoom(this)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING

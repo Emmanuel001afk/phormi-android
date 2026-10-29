@@ -20,7 +20,7 @@ class AccountsActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_OPEN_URL = "open_url"
         val PROVIDERS = listOf(
-            AccountProvider("google", "Google", "https://accounts.google.com/", "https://accounts.google.com/AccountChooser", "Secure browser sign-in. Google authentication is handled by Google's own browser surface."),
+            AccountProvider("google", "Google", "https://accounts.google.com/", "https://accounts.google.com/AccountChooser", "Some Google sign-ins restrict embedded browsers; open externally if blocked."),
             AccountProvider("microsoft", "Microsoft", "https://account.microsoft.com/", "https://account.microsoft.com/", "Use Microsoft's own account switcher after signing in."),
             AccountProvider("apple", "Apple", "https://appleid.apple.com/sign-in", "https://appleid.apple.com/", "Apple web session."),
             AccountProvider("github", "GitHub", "https://github.com/login", "https://github.com/login", "Developer account."),
@@ -35,7 +35,7 @@ class AccountsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_accounts)
         findViewById<TextView>(R.id.accounts_back).setOnClickListener { finish() }
         findViewById<TextView>(R.id.accounts_help).text =
-            "Sign-ins open in a normal Phormi tab so website cookies and sessions stay in Phormi. Previously used providers remain listed so you can switch back without re-entering the provider address."
+            "Open a website account in a normal tab to keep its cookies in that browsing environment. Some providers block WebView sign-in; long-press a provider for an external browser fallback. External sign-ins cannot be imported into Phormi, and this list does not prove you are signed in."
         render()
     }
 
@@ -45,7 +45,7 @@ class AccountsActivity : AppCompatActivity() {
         val sessions = AccountSessionStore.list(this)
         if (sessions.isNotEmpty()) {
             container.addView(TextView(this).apply {
-                text = "Previously used providers"
+                text = "Recently opened providers"
                 setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(12, 16, 12, 8)
             })
             sessions.forEach { session ->
@@ -56,11 +56,12 @@ class AccountsActivity : AppCompatActivity() {
                 row.setOnLongClickListener {
                     androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("${session.label} provider")
-                        .setItems(arrayOf("Switch account", "Forget trusted provider")) { _, which ->
+                        .setItems(arrayOf("Open account switcher in Phormi", "Open externally", "Forget from this list")) { _, which ->
                             val provider = PROVIDERS.firstOrNull { it.id == session.providerId } ?: return@setItems
-                            if (which == 0) openProvider(provider, true) else {
-                                AccountSessionStore.remove(this, provider.id)
-                                render()
+                            when (which) {
+                                0 -> openProvider(provider, true)
+                                1 -> openExternal(provider)
+                                else -> { AccountSessionStore.remove(this, provider.id); render() }
                             }
                         }.show()
                     true
@@ -77,32 +78,27 @@ class AccountsActivity : AppCompatActivity() {
             row.findViewById<TextView>(R.id.account_label).text = provider.label
             row.findViewById<TextView>(R.id.account_note).text = provider.note
             row.setOnClickListener { openProvider(provider, false) }
+            row.setOnLongClickListener {
+                androidx.appcompat.app.AlertDialog.Builder(this).setTitle(provider.label)
+                    .setItems(arrayOf("Open in Phormi", "Open in external browser")) { _, which ->
+                        if (which == 0) openProvider(provider, false) else openExternal(provider)
+                    }.show()
+                true
+            }
             container.addView(row)
         }
     }
 
-    private fun clearProviderSession(provider: AccountProvider) {
-        val hosts = when (provider.id) {
-            "google" -> listOf("accounts.google.com", "google.com")
-            "microsoft" -> listOf("account.microsoft.com", "login.live.com", "microsoft.com")
-            "apple" -> listOf("appleid.apple.com", "apple.com")
-            "github" -> listOf("github.com")
-            "yahoo" -> listOf("login.yahoo.com", "yahoo.com")
-            "amazon" -> listOf("amazon.com", "amazon.co.uk", "amazon.ca")
-            "facebook" -> listOf("facebook.com")
-            else -> emptyList()
+    private fun openExternal(provider: AccountProvider) {
+        val url = Uri.parse(provider.loginUrl)
+        runCatching {
+            androidx.browser.customtabs.CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, url)
+        }.onFailure {
+            runCatching {
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE), "Open account website"))
+            }.onFailure { Toast.makeText(this, "No external browser is available", Toast.LENGTH_LONG).show() }
         }
-        val cookies = android.webkit.CookieManager.getInstance()
-        hosts.forEach { host ->
-            val raw = cookies.getCookie("https://$host").orEmpty()
-            raw.split(';').map { it.substringBefore('=').trim() }.filter { it.isNotBlank() }.forEach { name ->
-                cookies.setCookie("https://$host", "$name=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/")
-            }
-        }
-        cookies.flush()
-        AccountSessionStore.remove(this, provider.id)
-        Toast.makeText(this, "${provider.label} session cleared. Provider sign-out may also require its own account page.", Toast.LENGTH_LONG).show()
-        render()
+        Toast.makeText(this, "External browser sessions are separate from Phormi tabs", Toast.LENGTH_LONG).show()
     }
 
     private fun openProvider(provider: AccountProvider, switch: Boolean) {

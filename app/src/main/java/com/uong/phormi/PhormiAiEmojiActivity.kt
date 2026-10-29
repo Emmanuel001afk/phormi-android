@@ -10,7 +10,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 
-/** Pollinations AI Emoji Studio. Automatic mode uses the current typed context. */
+/** Optional image sticker studio. The emoji keyboard itself inserts Unicode characters. */
 class PhormiAiEmojiActivity : Activity() {
     companion object {
         const val EXTRA_CONTEXT = "ai_emoji_context"
@@ -43,9 +43,9 @@ class PhormiAiEmojiActivity : Activity() {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(20, 20, 20, 20)
         }
-        root.addView(TextView(this).apply { text = "Phormi AI Emoji"; textSize = 22f })
+        root.addView(TextView(this).apply { text = "AI Sticker Studio"; textSize = 22f })
         root.addView(TextView(this).apply {
-            text = "Automatic mode uses what you are typing as the context. The result is one original fused emoji-style reaction, not a normal Unicode emoji."
+            text = "This optional studio makes image stickers, not text emoji. For emoji characters in any text field, use Contextual AI emoji on the keyboard."
             setPadding(0, 8, 0, 12)
         })
         prompt = EditText(this).apply { hint = "Optional manual context"; minLines = 2 }
@@ -59,7 +59,7 @@ class PhormiAiEmojiActivity : Activity() {
             }
         }
         root.addView(android.widget.Button(this).apply {
-            text = "Generate 4"
+            text = "Generate 4 stickers"
             setOnClickListener { generate(false) }
         })
         root.addView(android.widget.Button(this).apply {
@@ -101,7 +101,7 @@ class PhormiAiEmojiActivity : Activity() {
         grid.removeAllViews()
         val count = if (automatic) 1 else 4
         pending = count
-        Toast.makeText(this, if (automatic) "Creating your contextual emoji…" else "Generating contextual emojis…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, if (automatic) "Creating a contextual sticker…" else "Generating stickers…", Toast.LENGTH_SHORT).show()
         repeat(count) { index ->
             PhormiPollinationsAiEmojiEngine.generateAsync(this, text, index) { file ->
                 pending--
@@ -116,7 +116,7 @@ class PhormiAiEmojiActivity : Activity() {
         generated.forEach { file ->
             val image = ImageView(this).apply {
                 setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
-                contentDescription = "Phormi generated custom emoji"
+                contentDescription = "Generated image sticker"
                 adjustViewBounds = true
                 setPadding(8, 8, 8, 8)
                 setOnClickListener { insert(file) }
@@ -128,7 +128,7 @@ class PhormiAiEmojiActivity : Activity() {
                 rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
             })
         }
-        Toast.makeText(this, "Tap an emoji to insert; long-press to save", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Tap a sticker to insert it where images are supported; long-press to save", Toast.LENGTH_LONG).show()
     }
 
     private fun insert(file: java.io.File) {
@@ -137,7 +137,7 @@ class PhormiAiEmojiActivity : Activity() {
     }
 
     private fun saveToPack(file: java.io.File) {
-        val input = EditText(this).apply { hint = "Sticker pack name"; setSingleLine(true); setText("My AI Emojis") }
+        val input = EditText(this).apply { hint = "Sticker pack name"; setSingleLine(true); setText("My Stickers") }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Save to keyboard")
             .setView(input)
