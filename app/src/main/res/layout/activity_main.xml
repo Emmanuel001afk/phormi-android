@@ -260,6 +260,27 @@
 
         <include layout="@layout/activity_start_page" />
 
+        <!-- A small overlay rather than an extra toolbar: progress stays visible while browsing. -->
+        <TextView
+            android:id="@+id/download_status_chip"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="8dp"
+            android:maxWidth="240dp"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="#F1F5F9"
+            android:textSize="12sp"
+            android:background="@drawable/bg_download_progress_chip"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone"
+            android:contentDescription="Download progress; open downloads" />
+
         <FrameLayout
             android:id="@+id/browser_lock_overlay_host"
             android:layout_width="match_parent"

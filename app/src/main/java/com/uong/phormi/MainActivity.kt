@@ -615,6 +615,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btn_top_ai).setOnClickListener { openAiFromBottom(it) }
         findViewById<TextView>(R.id.btn_top_downloads).setOnClickListener { openDownloadsFromBottom(it) }
+        findViewById<TextView>(R.id.download_status_chip).setOnClickListener { openDownloadsFromBottom(it) }
         updateNavButtons()
 
         startPageSearch.setOnEditorActionListener { _, actionId, event ->
@@ -1707,9 +1708,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDownloadBadge() {
         if (!::prefs.isInitialized) return
-        val count = PhormiDownloadEngine.items(this).count {
+        val active = PhormiDownloadEngine.items(this).filter {
             it.state == PhormiDownloadEngine.State.RUNNING || it.state == PhormiDownloadEngine.State.QUEUED
         }
+        val count = active.size
         findViewById<TextView>(R.id.btn_bottom_downloads)?.apply {
             text = if (count == 0) "↓" else "↓ $count"
             contentDescription = if (count == 0) "Downloads" else "$count downloads in progress"
@@ -1720,6 +1722,20 @@ class MainActivity : AppCompatActivity() {
                 !PhormiBrowserPreferences.showBottomToolbar(this@MainActivity)) &&
                 customView == null && !isInPictureInPictureMode) View.VISIBLE else View.GONE
             contentDescription = "$count downloads in progress"
+        }
+        findViewById<TextView>(R.id.download_status_chip)?.apply {
+            visibility = if (count > 0 && customView == null && !isInPictureInPictureMode &&
+                !splitChromeLocked) View.VISIBLE else View.GONE
+            active.firstOrNull()?.let { item ->
+                val progress = when {
+                    item.total > 0L -> "${(item.downloaded * 100.0 / item.total).toInt().coerceIn(0, 100)}%"
+                    item.downloaded > 0L -> "${item.downloaded / 1024} KB"
+                    else -> "starting"
+                }
+                text = "↓ ${item.title.ifBlank { "Download" }.take(22)} · $progress" +
+                    if (count > 1) "  +${count - 1}" else ""
+                contentDescription = "${item.title}, $progress; $count downloads in progress. Open downloads"
+            }
         }
     }
 
@@ -1975,6 +1991,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             splitLockButton.visibility = View.GONE
         }
+        updateDownloadBadge()
     }
 
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
@@ -2898,6 +2915,7 @@ class MainActivity : AppCompatActivity() {
         if (isInPictureInPictureMode) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
             findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
+            updateDownloadBadge()
         } else if (customView == null && !splitChromeLocked) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
             updateHomeChromeVisibility()
