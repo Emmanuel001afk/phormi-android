@@ -1687,6 +1687,24 @@ class MainActivity : AppCompatActivity() {
         tabCountView.text = tabs.size.toString()
     }
 
+    private fun saveCurrentPageAsPdf() {
+        val page = activeWebView()
+        if (page == null || startPageContainer.visibility == View.VISIBLE || page.url.isNullOrBlank()) {
+            Toast.makeText(this, "Open a page to save it as PDF", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // Android's native print UI offers Save as PDF without copying the page or
+        // granting Phormi storage access. The active tab remains where it is.
+        val title = page.title.orEmpty().ifBlank { "Phormi page" }.take(60)
+        runCatching {
+            val printManager = getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
+            val adapter = page.createPrintDocumentAdapter(title)
+            printManager.print(title, adapter, android.print.PrintAttributes.Builder().build())
+        }.onFailure {
+            Toast.makeText(this, "PDF export is unavailable on this device", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun updateDownloadBadge() {
         if (!::prefs.isInitialized) return
         val count = PhormiDownloadEngine.items(this).count {

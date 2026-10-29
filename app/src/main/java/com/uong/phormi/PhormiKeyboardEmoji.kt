@@ -26,7 +26,7 @@ object PhormiKeyboardEmoji {
         🚗 🚕 🚙 🚌 🚎 🏎 🚓 🚑 🚒 🚐 🚚 🚛 🚜 🚲 🛵 🏍 🚂 🚆 🚇 🚉 🚊 🚝 🚞 🚋 ✈️ 🛫 🛬 🚁 🚀 🛸 🚢 ⛵ 🚤 🏠 🏡 🏢 🏦 🏫 🏥 🏨 🏰 🗼 🗽 🌋 ⛰ 🏔 🏖 🏝 🌍 🌎 🌏 🗺
         ⌚ 📱 💻 🖥 🖨 ⌨️ 🖱 💽 💾 💿 📷 📸 📹 📺 📻 ⏰ ⏳ 🔋 🔌 💡 🔦 🕯 📖 📚 📔 📰 📄 📅 📌 📎 ✂️ 🔒 🔑 🔨 🔧 ⚙️ 🛠 📦 ✉️ 📬 💰 💳 💵 💎 🔔 🎀 🛒
         ❤️ 🧡 💛 💚 💙 💜 🖤 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ ☸️ ✡️ ☯️ ♻️ ⚠️ ⛔ ✅ ❌ ❓ ❗ 💯 ✨ ⭐ 🌟 🔥 ➡️ ⬅️ ⬆️ ⬇️ 🔄 🔀 ▶️ ⏸ ⏹
-    """).trimIndent().split(Regex("\s+")).filter(String::isNotBlank)
+    """).trimIndent().split(Regex("\\s+")).filter(String::isNotBlank)
 
     private val specialSequences = listOf(
         "❤️", "❤️‍🔥", "❤️‍🩹", "☺️", "☹️", "☠️", "❣️", "👁️‍🗨️",

@@ -31,7 +31,7 @@
         <TextView android:id="@+id/menu_find" style="@style/PhormiMenuItem" android:text="⌕  Find in page" />
         <TextView android:id="@+id/menu_share" style="@style/PhormiMenuItem" android:text="↗  Share page" />
         <TextView android:id="@+id/menu_favorite" style="@style/PhormiMenuItem" android:text="★  Favorite current page" />
-        <TextView android:id="@+id/menu_save_pdf" style="@style/PhormiMenuItem" android:text="▤  Save page as PDF" />
+        <TextView android:id="@+id/menu_save_pdf" style="@style/PhormiMenuItem" android:text="▤  Print / save PDF" />
         <TextView android:id="@+id/menu_desktop_mode" style="@style/PhormiMenuItem" android:text="▣  Desktop site" />
         <TextView android:id="@+id/menu_install_site" style="@style/PhormiMenuItem" android:text="⌂  Add to home screen" />
         <TextView style="@style/PhormiMenuSection" android:text="YOUR LIBRARY" />

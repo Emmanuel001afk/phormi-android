@@ -520,7 +520,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         glyphs.chunked(10).forEach{line->
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
             line.forEach{ch->row.addView(keyButton(ch){commitTextToEditor(ch);refreshAfterTextKey()},LinearLayout.LayoutParams(0,scaled(42),1f).apply{setMargins(dp(2),dp(2),dp(2),dp(2))})}
-            repeat(10-line.length){row.addView(View(this),LinearLayout.LayoutParams(0,scaled(42),1f).apply{setMargins(dp(2),dp(2),dp(2),dp(2))})}
+            repeat(10-line.size){row.addView(View(this),LinearLayout.LayoutParams(0,scaled(42),1f).apply{setMargins(dp(2),dp(2),dp(2),dp(2))})}
             grid.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))
         }
     }
