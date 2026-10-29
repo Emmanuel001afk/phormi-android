@@ -1,6 +1,8 @@
 package com.uong.phormi
 
 import android.graphics.Color
+import android.content.Intent
+import android.provider.Settings
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
@@ -25,7 +27,7 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(11, 18, 32))
         }
         val header = TextView(this).apply {
-            text = "‹    Browser settings"
+            text = "‹    Settings"
             textSize = 21f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
@@ -42,6 +44,15 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+
+        section(content, "Appearance & keyboard")
+        button(content, "Appearance, colors & wallpaper") {
+            setResult(RESULT_OK, Intent().putExtra("browser_settings_action", "appearance"))
+            finish() // The existing tab stays alive while MainActivity opens the chooser.
+        }
+        button(content, "Keyboard settings & dictionary") {
+            startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java))
+        }
 
         section(content, "Reading")
         val zoomLabel = description(content, "Website text size · ${PhormiBrowserPreferences.textZoom(this)}%")
@@ -91,8 +102,30 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, TabEnvironmentActivity::class.java))
         }
         button(content, "Accounts and sign-in") {
-            startActivity(android.content.Intent(this, AccountsActivity::class.java))
+            startActivity(Intent(this, AccountsActivity::class.java))
         }
+
+        section(content, "Privacy & system")
+        button(content, "Privacy & security center") {
+            startActivity(Intent(this, PhormiSecurityCenterActivity::class.java))
+        }
+        val tabPrefs = getSharedPreferences("phormi_tabs", MODE_PRIVATE)
+        content.addView(CheckBox(this).apply {
+            text = "Keep screen on while browsing"
+            textSize = 16f; minHeight = dp(50); setTextColor(Color.WHITE)
+            isChecked = tabPrefs.getBoolean("keep_screen_on", false)
+            setOnCheckedChangeListener { _, enabled ->
+                tabPrefs.edit().putBoolean("keep_screen_on", enabled).apply()
+            }
+        })
+        button(content, "Default browser") { PhormiDefaultBrowserController.request(this) }
+        button(content, "App notifications") {
+            runCatching {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            }.onFailure { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+        button(content, "Help") { startActivity(Intent(this, HelpActivity::class.java)) }
     }
 
     private fun section(root: LinearLayout, title: String) {

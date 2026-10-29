@@ -7,6 +7,7 @@ object PhormiKeyboardPreferences {
     private const val PREFS = "phormi_keyboard"
     private const val SUGGESTIONS = "suggestions"
     private const val AUTOCORRECT = "autocorrect"
+    private const val ONLINE_DICTIONARY = "online_dictionary_opt_in"
     private const val AUTO_CAPS = "auto_caps"
     private const val HAPTIC = "haptic"
     private const val SOUND = "sound"
@@ -24,6 +25,8 @@ object PhormiKeyboardPreferences {
 
     fun suggestions(context: Context) = prefs(context).getBoolean(SUGGESTIONS, true)
     fun autocorrect(context: Context) = prefs(context).getBoolean(AUTOCORRECT, true)
+    // Off until the user opts in: ordinary typing must not silently go to a third party.
+    fun onlineDictionary(context: Context) = prefs(context).getBoolean(ONLINE_DICTIONARY, false)
     fun autoCaps(context: Context) = prefs(context).getBoolean(AUTO_CAPS, true)
     fun haptic(context: Context) = prefs(context).getBoolean(HAPTIC, true)
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
@@ -47,7 +50,10 @@ object PhormiKeyboardPreferences {
     fun setWallpaperUri(context: Context, value: String?) = prefs(context).edit().apply {
         if (value.isNullOrBlank()) remove(WALLPAPER_URI) else putString(WALLPAPER_URI, value)
     }.apply()
-    fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
+    fun set(context: Context, key: String, value: Boolean) {
+        prefs(context).edit().putBoolean(key, value).apply()
+        if (key == ONLINE_DICTIONARY && !value) PhormiKeyboardOnlineDictionary.cancelPending()
+    }
     fun setHeightScale(context: Context, value: Float) = prefs(context).edit().putFloat(HEIGHT_SCALE, value.coerceIn(0.60f, 1.40f)).apply()
     fun setWidthScale(context: Context, value: Float) = prefs(context).edit().putFloat(WIDTH_SCALE, value.coerceIn(0.55f, 1.00f)).apply()
     fun setOffsetX(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_X, value.coerceIn(-0.9f, 0.9f)).apply()
@@ -62,6 +68,7 @@ object PhormiKeyboardPreferences {
 
     const val KEY_SUGGESTIONS = SUGGESTIONS
     const val KEY_AUTOCORRECT = AUTOCORRECT
+    const val KEY_ONLINE_DICTIONARY = ONLINE_DICTIONARY
     const val KEY_AUTO_CAPS = AUTO_CAPS
     const val KEY_HAPTIC = HAPTIC
     const val KEY_SOUND = SOUND

@@ -12,12 +12,13 @@ MANIFEST = ROOT / "app/src/main/AndroidManifest.xml"
 errors: list[str] = []
 
 sources = [
-    "MainActivity.kt", "MenuActivity.kt", "AccountsActivity.kt", "AiActivity.kt",
+    "MainActivity.kt", "BrowserMenuPopup.kt", "BrowserMenuActions.kt", "AccountsActivity.kt", "AiActivity.kt",
     "AiController.kt", "PhormiAiPendingTask.kt", "PhormiAiReminderReceiver.kt", "PhormiAiBootReceiver.kt",
     "PhormiBrowserAiSafety.kt", "PhormiBrowserSettingsActivity.kt",
     "PhormiBrowserPreferences.kt", "PhormiRepairApplication.kt",
     "DownloadsActivity.kt", "PhormiDownloadEngine.kt",
     "PhormiKeyboardServiceV2.kt", "PhormiKeyboardTextEngine.kt",
+    "PhormiKeyboardOnlineDictionary.kt", "PhormiKeyboardCorrectionPolicy.kt",
     "PhormiKeyboardDictionary.kt", "PhormiKeyboardEmoji.kt", "PhormiKeyboardAiContext.kt",
     "PhormiKeyboardSystemSpellChecker.kt", "TabsOverviewActivity.kt",
     "TabGroupsActivity.kt", "GhostActivity.kt", "BookmarksActivity.kt", "HistoryActivity.kt",
@@ -34,7 +35,7 @@ try:
         for kind in ("activity", "service", "receiver")
         for element in manifest.iter(kind)
     }
-    for name in (".MainActivity", ".MenuActivity", ".AiActivity", ".PhormiAiReminderReceiver", ".PhormiAiBootReceiver",
+    for name in (".MainActivity", ".AiActivity", ".PhormiAiReminderReceiver", ".PhormiAiBootReceiver",
                  ".PhormiBrowserSettingsActivity", ".PhormiKeyboardServiceV2",
                  ".PhormiDownloadService", ".DownloadsActivity", ".AccountsActivity"):
         if name not in registered:
@@ -57,7 +58,7 @@ for path in (*layouts, *(RES / "xml").glob("*.xml"), *(RES / "values").glob("*.x
     except ET.ParseError as exc:
         errors.append(f"invalid XML: {path.relative_to(ROOT)}: {exc}")
 
-for name in ("MainActivity.kt", "MenuActivity.kt", "AiActivity.kt", "DownloadsActivity.kt",
+for name in ("MainActivity.kt", "BrowserMenuPopup.kt", "AiActivity.kt", "DownloadsActivity.kt",
              "AccountsActivity.kt", "PhormiBrowserSettingsActivity.kt"):
     path = SRC / name
     if not path.exists():
@@ -66,19 +67,27 @@ for name in ("MainActivity.kt", "MenuActivity.kt", "AiActivity.kt", "DownloadsAc
     for missing in sorted(set(references) - ids):
         errors.append(f"{name} references unknown R.id.{missing}")
 
-menu = SRC / "MenuActivity.kt"
-menu_xml = RES / "layout/activity_menu.xml"
-if menu.is_file() and menu_xml.is_file():
-    wired = set(re.findall(r"wire\(R\.id\.(menu_\w+)\)", menu.read_text()))
-    menu_ids = {
-        e.get(android_ns + "id", "").removeprefix("@+id/")
-        for e in ET.parse(menu_xml).iter()
-        if e.get(android_ns + "id", "").startswith("@+id/menu_")
-    }
-    page_ids = {"menu_browse_page", "menu_features_page", "menu_settings_page",
-                "menu_tab_browse", "menu_tab_features", "menu_tab_settings"}
-    for missing in sorted(menu_ids - wired - page_ids):
-        errors.append(f"menu item has no click handler: {missing}")
+popup_path = SRC / "BrowserMenuPopup.kt"
+router_path = SRC / "BrowserMenuActions.kt"
+main_path = SRC / "MainActivity.kt"
+if popup_path.is_file() and router_path.is_file() and main_path.is_file():
+    popup = popup_path.read_text()
+    router = router_path.read_text()
+    main = main_path.read_text()
+    actions = set(re.findall(r"BrowserMenuActions\.([A-Z_]+)", popup))
+    defined = set(re.findall(r"const val ([A-Z_]+) =", router))
+    routed = set(re.findall(r"BrowserMenuActions\.([A-Z_]+)\s*->", main))
+    for name in sorted(actions - defined):
+        errors.append(f"menu action has no constant: {name}")
+    for name in sorted(actions - routed):
+        errors.append(f"menu action has no browser handler: {name}")
+    browsing = popup.split('group(sections, "Browsing"', 1)[-1].split('group(sections, "Library & tabs"', 1)[0]
+    if "BrowserMenuActions.GHOST" not in browsing:
+        errors.append("Ghost mode must live under Browsing")
+    if "dispatch(BrowserMenuActions.SETTINGS)" not in popup or "showBrowserMenu(it)" not in main:
+        errors.append("the browser menu must open over the tab with Settings inside it")
+    if "MenuActivity" in main or ".MenuActivity" in MANIFEST.read_text():
+        errors.append("obsolete three-page menu must not be launched")
 
 for language in ("en", "fr", "es", "pt", "de", "it", "id", "tr"):
     asset = ROOT / f"app/src/main/assets/keyboard/words_{language}.txt"

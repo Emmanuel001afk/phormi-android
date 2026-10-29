@@ -43,7 +43,6 @@
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
         <activity android:name=".DownloadsActivity" android:exported="false" android:label="@string/downloads_title" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".MenuActivity" android:exported="false" android:theme="@style/Theme.Phormi.Translucent" android:windowSoftInputMode="adjustNothing" />
         <activity android:name=".PhormiBrowserSettingsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".TabsOverviewActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
         <activity android:name=".VpnActivity" android:exported="false" android:theme="@style/Theme.Phormi" />

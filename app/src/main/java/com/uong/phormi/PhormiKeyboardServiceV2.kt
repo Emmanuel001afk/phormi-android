@@ -91,6 +91,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var predictionRefreshRunnable: Runnable? = null
     private var lastPredictionWord = ""
     private var lastPredictionPrevious = ""
+    private var reuseViewOnRestart = false
 
     override fun onCreate() {
         super.onCreate(); instance = this
@@ -107,24 +108,40 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (instance === this) instance = null; super.onDestroy()
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
-        super.onStartInput(attribute, restarting); editorInfo = attribute
-        if (!restarting) { page = KeyboardPage.LETTERS; capsLock = false; shift = false; panel = Panel.KEYBOARD }
-        lastAutoCorrection = null; lastPredictionWord = ""; lastPredictionPrevious = ""
-        confirmClearClipboard = false
-        autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute)
-        if (!restarting) panel = Panel.KEYBOARD
+        PhormiKeyboardOnlineDictionary.cancelPending()
+        val previous = editorInfo
+        reuseViewOnRestart = restarting && previous != null && attribute != null &&
+            previous.packageName == attribute.packageName && previous.fieldId == attribute.fieldId &&
+            previous.fieldName == attribute.fieldName && previous.inputType == attribute.inputType &&
+            previous.hintText?.toString() == attribute.hintText?.toString()
+        super.onStartInput(attribute, restarting)
+        editorInfo = attribute
+        if (!reuseViewOnRestart) {
+            page = KeyboardPage.LETTERS
+            capsLock = false; shift = false
+            lastAutoCorrection = null; lastPredictionWord = ""; lastPredictionPrevious = ""
+            confirmClearClipboard = false
+            autoShift = PhormiKeyboardPreferences.autoCaps(this) &&
+                PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute)
+            panel = Panel.KEYBOARD
+        }
+        if (attribute != null && PhormiKeyboardTextEngine.shouldUsePredictions(attribute)) {
+            PhormiKeyboardDictionary.warmUp(applicationContext, PhormiKeyboardTextEngine.localeFor(attribute))
+        }
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         editorInfo = info ?: editorInfo
-        if (!restarting) panel = Panel.KEYBOARD
-        // Keep the IME window transition-free from the moment Android starts
-        // showing it. This prevents a stale/miniature copy from appearing
-        // during the show/hide handoff.
-        runCatching {
-            getWindow().window?.setWindowAnimations(0)
-            getWindow().window?.decorView?.animate()?.cancel()
+        if (reuseViewOnRestart && restarting && predictionRow?.isAttachedToWindow == true &&
+            panel == Panel.KEYBOARD) {
+            // WebView can restart its input connection as a site updates its form.
+            // Replacing the entire IME view on each restart makes it look as if the
+            // keyboard closes after every character.
+            schedulePredictionRefresh()
+            return
         }
+        panel = Panel.KEYBOARD
+        runCatching { getWindow().window?.setWindowAnimations(0) }
         setInputView(render())
         applyKeyboardWindowSize()
         applyPendingInput()
@@ -143,6 +160,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     override fun onFinishInput() { stopRepeat(); shiftKeyView = null; editorInfo = null; super.onFinishInput() }
     override fun onUnbindInput() { stopRepeat(); shiftKeyView = null; editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) {
+        PhormiKeyboardOnlineDictionary.cancelPending()
         stopRepeat()
         // Do not rebuild/reposition the input view during dismissal. Rebuilding
         // here can produce a brief duplicate/miniature keyboard flash.
@@ -188,19 +206,20 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val floating = PhormiKeyboardPreferences.floating(this)
         val resizeMode = keyboardResizeMode
         val attrs = window.attributes
+        val oldGravity = attrs.gravity
+        val oldX = attrs.x
+        val oldY = attrs.y
+        val oldWidth = attrs.width
+        val oldHeight = attrs.height
         // A floating/resizeable keyboard must not participate in the app's IME inset.
         // Otherwise Android moves/resizes the page underneath it, which is unlike a
         // floating Gboard window and makes dragging/resizing feel attached to the page.
-        window.setSoftInputMode(
-            if (floating || resizeMode) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        val adjust = if (floating || resizeMode) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
             else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-        )
-        // Disable the IME window transition animation so dismissing it does not briefly
-        // flash a miniature/preview copy before the window disappears.
-        runCatching {
-            window.setWindowAnimations(0)
-            window.decorView.animate().cancel()
+        if (attrs.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST != adjust) {
+            window.setSoftInputMode(adjust)
         }
+        if (attrs.windowAnimations != 0) window.setWindowAnimations(0)
         if (floating) {
             // Floating IME: keep the initial keyboard near the bottom while
             // preserving independent X/Y movement after the user drags it.
@@ -225,8 +244,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             attrs.x = 0
             attrs.y = 0
         }
-        window.attributes = attrs
-        window.setLayout(width, height)
+        // Avoid re-laying out the whole browser/IME on every input-connection restart.
+        if (oldGravity != attrs.gravity || oldX != attrs.x || oldY != attrs.y) window.attributes = attrs
+        if (oldWidth != width || oldHeight != height) window.setLayout(width, height)
     }
 
     private fun density(): Float = resources.displayMetrics.density
@@ -388,65 +408,96 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
     }
 
-    private fun refreshPredictionStrip(){
-        val row=predictionRow ?: return
-        val ic=currentInputConnection
-        val word=PhormiKeyboardTextEngine.currentWord(ic)
-        val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo))
+    fun onDictionaryReady(language: String) {
+        if (panel == Panel.KEYBOARD && page == KeyboardPage.LETTERS &&
+            PhormiKeyboardTextEngine.localeFor(editorInfo).language == language) {
+            lastPredictionWord = ""
+            schedulePredictionRefresh()
+        }
+    }
+
+    fun onOnlineDictionarySuggestions(word: String) = onSpellCheckerSuggestions(word)
+
+    private fun refreshPredictionStrip() {
+        val row = predictionRow ?: return
+        val ic = currentInputConnection
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+        val word = PhormiKeyboardTextEngine.currentWord(ic)
+        val previous = PhormiKeyboardTextEngine.previousWord(ic, locale)
         if (word == lastPredictionWord && previous == lastPredictionPrevious && row.childCount > 0) return
         lastPredictionWord = word
         lastPredictionPrevious = previous
         row.removeAllViews()
-        val enabled = PhormiKeyboardPreferences.suggestions(this) && PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
-        val suggestions = if (!enabled) emptyList() else if (word.isNotBlank())
-            PhormiKeyboardTextEngine.suggestions(this, word, PhormiKeyboardTextEngine.localeFor(editorInfo))
-        else PhormiKeyboardTextEngine.nextWordSuggestions(this, previous, PhormiKeyboardTextEngine.localeFor(editorInfo))
-        if(PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo)&&PhormiKeyboardPreferences.aiEmoji(this)){row.addView(pill("✨ AI expression"){insertAiEmojiExpression()},LinearLayout.LayoutParams(dp(94),scaled(32)).apply{setMargins(dp(2),0,dp(2),0)})};suggestions.take(4).forEach{value->
-            val button=pill(value,{})
+        val enabled = PhormiKeyboardPreferences.suggestions(this) &&
+            PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
+        val options = LinkedHashSet<String>()
+        var correction: String? = null
+        if (enabled && word.isNotBlank()) {
+            correction = PhormiKeyboardTextEngine.correctionFor(this, word, locale)
+            correction?.let(options::add)
+            if (word.length >= 2) options.add(word) // The user's spelling is always an option.
+            PhormiKeyboardTextEngine.suggestions(this, word, locale, editorInfo).forEach(options::add)
+        } else if (enabled) {
+            options.addAll(PhormiKeyboardTextEngine.nextWordSuggestions(this, previous, locale))
+        }
+        if (PhormiKeyboardTextEngine.allowsAiEmoji(editorInfo) &&
+            PhormiKeyboardPreferences.aiEmoji(this)) {
+            row.addView(pill("✨ Emoji") { insertAiEmojiExpression() },
+                LinearLayout.LayoutParams(dp(72), scaled(32)).apply { setMargins(dp(2), 0, dp(2), 0) })
+        }
+        options.take(3).forEach { value ->
+            val button = pill(value, {})
+            if (value == correction) button.setTextColor(accent())
+            else if (word.isNotBlank() && value.equals(word, true)) button.setTextColor(themeText())
             button.setOnClickListener {
                 feedback(button)
-                val ic = currentInputConnection
-                if (ic != null) {
-                    val liveWord = PhormiKeyboardTextEngine.currentWord(ic)
-                    if (liveWord.isNotBlank()) {
-                        ic.beginBatchEdit()
-                        try {
-                            ic.finishComposingText()
-                            ic.deleteSurroundingText(liveWord.length, 0)
-                            ic.commitText(value, 1)
-                            commitSpace()
-                        } finally {
-                            ic.endBatchEdit()
-                        }
-                    } else {
-                        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
-                        if (before.isNotEmpty() && !before.last().isWhitespace()) ic.commitText(" ", 1)
-                        ic.commitText(value, 1)
-                        commitSpace()
-                    }
+                val connection = currentInputConnection ?: return@setOnClickListener
+                val liveWord = PhormiKeyboardTextEngine.currentWord(connection)
+                val liveLocale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+                if (liveWord.isNotBlank() && value.equals(liveWord, true) &&
+                    PhormiKeyboardTextEngine.correctionFor(this, liveWord, liveLocale) != null) {
+                    PhormiKeyboardTextEngine.ignoreCorrection(this, liveWord, liveLocale)
                 }
+                PhormiKeyboardTextEngine.acceptWord(this, value, editorInfo)
+                connection.beginBatchEdit()
+                try {
+                    if (liveWord.isNotBlank()) {
+                        connection.finishComposingText()
+                        connection.deleteSurroundingText(liveWord.length, 0)
+                    } else if (connection.getTextBeforeCursor(1, 0)?.lastOrNull()?.isWhitespace() == false) {
+                        connection.commitText(" ", 1)
+                    }
+                    connection.commitText(value, 1)
+                } finally { connection.endBatchEdit() }
+                commitSpace(applyCorrection = false)
                 schedulePredictionRefresh()
             }
-            button.setOnLongClickListener{
-                val removed=PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this,value,previous,PhormiKeyboardTextEngine.localeFor(editorInfo))
-                if(removed) {
-                    android.widget.Toast.makeText(this,"Removed \"$value\" from learned suggestions",android.widget.Toast.LENGTH_SHORT).show()
-                    schedulePredictionRefresh()
-                } else {
-                    android.widget.Toast.makeText(this,"Built-in suggestion — nothing learned to remove",android.widget.Toast.LENGTH_SHORT).show()
-                }
+            button.setOnLongClickListener {
+                val removed = PhormiKeyboardTextEngine.forgetPersonalizedSuggestion(this, value, previous, locale)
+                android.widget.Toast.makeText(this,
+                    if (removed) "Removed \"$value\" from learned words" else "Built-in word — nothing to remove",
+                    android.widget.Toast.LENGTH_SHORT).show()
+                if (removed) { lastPredictionWord = ""; schedulePredictionRefresh() }
                 true
             }
-            button.contentDescription="$value. Tap to insert. Long press to remove it from learned suggestions."
-            row.addView(button,LinearLayout.LayoutParams(0,scaled(32),1f).apply{setMargins(dp(2),0,dp(2),0)})
+            button.contentDescription = when {
+                value == correction -> "Correct to $value"
+                word.isNotBlank() && value.equals(word, true) -> "Keep $value"
+                else -> "Insert $value"
+            }
+            row.addView(button, LinearLayout.LayoutParams(0, scaled(32), 1f).apply {
+                setMargins(dp(2), 0, dp(2), 0)
+            })
         }
-        if (row.childCount == 0) row.addView(TextView(this).apply {
-            text = if (enabled) "Type to see suggestions" else "Suggestions are off for this field"
-            textSize = 12f
-            setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148, 163, 184))
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(-1, scaled(30)))
-        // Never collapse the strip: the letter keys must not move while typing.
+        if (options.isEmpty()) {
+            row.addView(TextView(this).apply {
+                text = if (enabled) "Type to see suggestions" else "Suggestions off for this field"
+                textSize = 12f
+                setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148, 163, 184))
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(0, scaled(30), 1f))
+        }
+        // Never collapse the strip: the letter keys stay at the same vertical position.
         row.visibility = View.VISIBLE
     }
     private fun buildKeyboard():View{val root=root();if(page==KeyboardPage.LETTERS)predictionStrip(root);toolbar(root);val type=editorInfo?.inputType?:InputType.TYPE_CLASS_TEXT;val clazz=type and InputType.TYPE_MASK_CLASS;val variation=type and InputType.TYPE_MASK_VARIATION;val number=clazz==InputType.TYPE_CLASS_NUMBER;val phone=clazz==InputType.TYPE_CLASS_PHONE;val dateTime=clazz==InputType.TYPE_CLASS_DATETIME;val email=variation==InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS||variation==InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS;val uri=variation==InputType.TYPE_TEXT_VARIATION_URI;if((number||phone||dateTime)&&page==KeyboardPage.LETTERS)page=KeyboardPage.NUMBERS;when{phone->responsiveRows(root,listOf("1234567890","*#+","()-"));dateTime->responsiveRows(root,listOf("1234567890","4567890",":/-"));number&&page==KeyboardPage.SYMBOLS->buildSymbolPage(root);number->buildNumberPage(root);page==KeyboardPage.LETTERS->buildLetterPage(root,email,uri);page==KeyboardPage.NUMBERS->buildNumberPage(root);else->buildSymbolPage(root)};return root}
@@ -784,7 +835,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         },LinearLayout.LayoutParams(-1,scaled(46)));list.addView(TextView(this).apply{text="Images/GIFs are inserted only when the focused field accepts the requested MIME type.";setTextColor(themeText());textSize=13f;setPadding(dp(8),dp(12),dp(8),dp(12))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildTools():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Settings"){panel=Panel.SETTINGS;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));addResizeControls(list);list.addView(pill("GIFs & stickers"){panel=Panel.MEDIA;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Voice typing"){launchVoice()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Select all"){currentInputConnection?.performContextMenuAction(android.R.id.selectAll)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Copy"){currentInputConnection?.performContextMenuAction(android.R.id.copy)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Paste"){currentInputConnection?.performContextMenuAction(android.R.id.paste)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Share text"){shareSelectedText()},LinearLayout.LayoutParams(-1,scaled(46)));scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Cabinet. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
+    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Cabinet. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};list.addView(pill("Dictionary: offline + optional online") {
+            startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }, LinearLayout.LayoutParams(-1,scaled(36)).apply { setMargins(0,dp(3),0,dp(3)) });toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
             PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardServiceV2, (theme() + 1) % 8)
             setInputView(render())
         },LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
@@ -932,9 +986,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         lastAutoCorrection = AutoCorrection(current, correction, System.currentTimeMillis())
     }
 
-    private fun commitSpace() {
+    private fun commitSpace(applyCorrection: Boolean = true) {
         val ic = currentInputConnection ?: return
-        autoCorrectCurrentWord(ic)
+        if (applyCorrection) autoCorrectCurrentWord(ic)
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
         val previous = PhormiKeyboardTextEngine.previousWord(ic, locale)
         val word = PhormiKeyboardTextEngine.currentWord(ic)

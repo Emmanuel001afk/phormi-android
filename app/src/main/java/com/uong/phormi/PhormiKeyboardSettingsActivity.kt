@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 /** Full keyboard settings. All size controls are global percentages of the base keyboard viewport. */
 class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var dictionaryStatus: TextView
     private val wallpaperPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -30,7 +31,11 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); render() }
-    override fun onResume() { super.onResume(); if (::status.isInitialized) updateStatus() }
+    override fun onResume() {
+        super.onResume()
+        if (::status.isInitialized) updateStatus()
+        if (::dictionaryStatus.isInitialized) updateDictionaryStatus()
+    }
 
     private fun render() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(11,18,32)) }
@@ -76,17 +81,34 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Keyboard behavior"))
         option(content,"Suggestions","Show word suggestions when the editor does not provide its own completions.",PhormiKeyboardPreferences.suggestions(this),PhormiKeyboardPreferences.KEY_SUGGESTIONS)
-        option(content,"Autocorrect","Apply conservative local corrections for common typing mistakes.",PhormiKeyboardPreferences.autocorrect(this),PhormiKeyboardPreferences.KEY_AUTOCORRECT)
+        option(content,"Autocorrect","Correct common misspellings on Space and punctuation. Undo with Backspace or retype a word to keep your spelling.",PhormiKeyboardPreferences.autocorrect(this),PhormiKeyboardPreferences.KEY_AUTOCORRECT)
         option(content,"Auto-capitalization","Capitalize sentence starts and the first word in a text field.",PhormiKeyboardPreferences.autoCaps(this),PhormiKeyboardPreferences.KEY_AUTO_CAPS)
         option(content,"Contextual emoji","Suggest Unicode emoji from typed context, on-device (not image stickers).",PhormiKeyboardPreferences.aiEmoji(this),PhormiKeyboardPreferences.KEY_AI_EMOJI)
         option(content,"Key vibration","Use device haptic feedback for key presses.",PhormiKeyboardPreferences.haptic(this),PhormiKeyboardPreferences.KEY_HAPTIC)
         option(content,"Key sounds","Play a short key sound where the device allows it.",PhormiKeyboardPreferences.sound(this),PhormiKeyboardPreferences.KEY_SOUND)
 
+        content.addView(sectionTitle("Dictionary assistance"))
+        content.addView(TextView(this).apply {
+            text = "Offline word lists and the installed Android spell checker work without internet. English has 20,000 bundled words; other supported lists vary by language."
+            textSize = 13f; setTextColor(Color.rgb(203,213,225)); setPadding(0,0,0,dp(8))
+        })
+        option(content,"Online English suggestions · Datamuse",
+            "Optional: sends the current 3–24 letter English word prefix to api.datamuse.com while typing ordinary text. Never used for passwords, email/URL fields or recognizable sign-in fields. Off by default; turn it off any time. Offline suggestions still work if the service is unavailable.",
+            PhormiKeyboardPreferences.onlineDictionary(this), PhormiKeyboardPreferences.KEY_ONLINE_DICTIONARY)
+        dictionaryStatus = TextView(this).apply { textSize = 12f; setTextColor(Color.rgb(148,163,184)); setPadding(dp(48),0,0,dp(8)) }
+        content.addView(dictionaryStatus)
+        updateDictionaryStatus()
+
         scroll.addView(content);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));setContentView(root);updateStatus()
+    }
+
+    private fun updateDictionaryStatus() {
+        dictionaryStatus.text = "Connection: " + if (PhormiKeyboardPreferences.onlineDictionary(this))
+            PhormiKeyboardOnlineDictionary.status() else "Off · offline words only"
     }
 
     private fun sectionTitle(value:String)=TextView(this).apply{text=value;textSize=18f;setTextColor(Color.rgb(56,189,248));setPadding(0,dp(20),0,dp(7))}
     private fun updateStatus(){val imm=getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager;val serviceId="$packageName/.PhormiKeyboardServiceV2";val enabled=imm.enabledInputMethodList.any{it.id==serviceId};val selected=Settings.Secure.getString(contentResolver,Settings.Secure.DEFAULT_INPUT_METHOD)==serviceId;status.text=when{selected->"Status: enabled and currently selected as the active keyboard.";enabled->"Status: enabled, but another keyboard is currently selected.";else->"Status: not enabled yet. Enable it in Android settings, then choose Phormi as the active keyboard."};status.setTextColor(if(enabled)Color.rgb(134,239,172)else Color.rgb(248,196,113))}
-    private fun option(root:LinearLayout,title:String,summary:String,checked:Boolean,key:String){val row=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(0,dp(7),0,dp(7))};row.addView(CheckBox(this).apply{text=title;isChecked=checked;setTextColor(Color.WHITE);textSize=16f;setOnCheckedChangeListener{_,value->PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity,key,value)}});row.addView(TextView(this).apply{text=summary;setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(dp(48),0,dp(48),dp(6))});root.addView(row)}
+    private fun option(root:LinearLayout,title:String,summary:String,checked:Boolean,key:String){val row=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(0,dp(7),0,dp(7))};row.addView(CheckBox(this).apply{text=title;isChecked=checked;setTextColor(Color.WHITE);textSize=16f;setOnCheckedChangeListener{_,value->PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity,key,value);if(key==PhormiKeyboardPreferences.KEY_ONLINE_DICTIONARY&&::dictionaryStatus.isInitialized)updateDictionaryStatus()}});row.addView(TextView(this).apply{text=summary;setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(dp(48),0,dp(48),dp(6))});root.addView(row)}
 }
 private object ToastCompat{fun show(context:android.content.Context,message:String)=android.widget.Toast.makeText(context,message,android.widget.Toast.LENGTH_SHORT).show()}
