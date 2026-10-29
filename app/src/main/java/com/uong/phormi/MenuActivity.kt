@@ -4,6 +4,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.TextView
+import android.view.View
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import androidx.appcompat.app.AppCompatActivity
 
 /** Browser menu. Returns one explicit action to MainActivity; no duplicate command-bus dispatch. */
@@ -38,6 +41,11 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_KEYBOARD = "keyboard"
         const val ACTION_DEFAULT_BROWSER = "default_browser"
         const val ACTION_TAB_GROUPS = "tab_groups"
+        const val ACTION_TABS_RESULT = "tabs_result"
+        const val ACTION_BACK = "back"
+        const val ACTION_FORWARD = "forward"
+        const val ACTION_REFRESH = "refresh"
+        const val ACTION_SAVE_PDF = "save_pdf"
         private const val REQ_NESTED = 2100
         private const val REQ_TABS = 2101
     }
@@ -45,17 +53,31 @@ class MenuActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_menu)
+        val tabs = intArrayOf(R.id.menu_tab_browse, R.id.menu_tab_features, R.id.menu_tab_settings)
+        tabs.forEachIndexed { index, id -> findViewById<TextView>(id).setOnClickListener { showPage(index) } }
+        showPage(savedInstanceState?.getInt("menu_page", 0) ?: 0)
+        wire(R.id.menu_browser_settings) { startActivity(Intent(this, PhormiBrowserSettingsActivity::class.java)) }
+        wire(R.id.menu_back) { finishWith(ACTION_BACK) }
+        wire(R.id.menu_forward) { finishWith(ACTION_FORWARD) }
+        wire(R.id.menu_refresh) { finishWith(ACTION_REFRESH) }
+        wire(R.id.menu_save_pdf) { finishWith(ACTION_SAVE_PDF) }
         wire(R.id.menu_new_tab) { finishWith(ACTION_NEW_TAB) }
         wire(R.id.menu_ghost) { finishWith(ACTION_GHOST) }
         wire(R.id.menu_tabs) { startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS) }
-        wire(R.id.menu_groups) { startActivity(Intent(this, TabGroupsActivity::class.java)) }
+        wire(R.id.menu_groups) { startActivityForResult(Intent(this, TabGroupsActivity::class.java), REQ_TABS) }
         wire(R.id.menu_tab_environment) { startActivity(Intent(this, TabEnvironmentActivity::class.java)) }
         wire(R.id.menu_downloads) { startActivity(Intent(this, DownloadsActivity::class.java)) }
         wire(R.id.menu_bookmarks) { startActivityForResult(Intent(this, BookmarksActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_favorites) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
-        wire(R.id.menu_ai) { startActivity(Intent(this, AiActivity::class.java)) }
+        wire(R.id.menu_ai) {
+            val prefs = getSharedPreferences("phormi_tabs", MODE_PRIVATE)
+            val ids = runCatching { org.json.JSONArray(prefs.getString("tab_ids", "[]")) }.getOrNull()
+            val activeId = ids?.optInt(prefs.getInt("active_index", 0), -1) ?: -1
+            startActivity(Intent(this, AiActivity::class.java).putExtra("target_tab_id", activeId))
+            finish() // Return to the browser when the queued AI command is submitted.
+        }
         wire(R.id.menu_disposable_email) { startActivity(Intent(this, PhormiDisposableEmailActivity::class.java)) }
         wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
         wire(R.id.menu_capsule) { startActivity(Intent(this, PhormiCapsuleActivity::class.java)) }
@@ -89,31 +111,44 @@ class MenuActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK || data == null) return
         if (requestCode == REQ_TABS) {
-            setResult(RESULT_OK, data)
+            setResult(RESULT_OK, Intent(data).putExtra(EXTRA_ACTION, ACTION_TABS_RESULT))
             finish()
             return
         }
         val openUrl = data.getStringExtra("open_url") ?: data.getStringExtra(AccountsActivity.EXTRA_OPEN_URL)
         if (!openUrl.isNullOrBlank()) {
-            PhormiCommandBus.enqueue(this, "open_url", mapOf("open_url" to openUrl))
             setResult(RESULT_OK, Intent().putExtra("open_url", openUrl))
             finish()
         }
     }
 
+    private var activePage = 0
+
+    private fun showPage(index: Int) {
+        activePage = index.coerceIn(0, 2)
+        val buttons = intArrayOf(R.id.menu_tab_browse, R.id.menu_tab_features, R.id.menu_tab_settings)
+        val pages = intArrayOf(R.id.menu_browse_page, R.id.menu_features_page, R.id.menu_settings_page)
+        pages.forEachIndexed { i, id -> findViewById<View>(id).visibility = if (i == activePage) View.VISIBLE else View.GONE }
+        buttons.forEachIndexed { i, id ->
+            findViewById<TextView>(id).apply {
+                setTextColor(if (i == activePage) Color.WHITE else Color.rgb(148, 163, 184))
+                background = GradientDrawable().apply {
+                    setColor(if (i == activePage) Color.rgb(29, 78, 105) else Color.TRANSPARENT)
+                    cornerRadius = 18f * resources.displayMetrics.density
+                }
+                isSelected = i == activePage
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("menu_page", activePage)
+        super.onSaveInstanceState(outState)
+    }
+
     private fun finishWith(action: String) {
         setResult(RESULT_OK, Intent().putExtra(EXTRA_ACTION, action))
         finish()
-    }
-
-    private fun enqueueIntent(data: Intent) {
-        val action = data.getStringExtra("action") ?: data.getStringExtra(EXTRA_ACTION) ?: return
-        val extras = buildMap {
-            data.extras?.keySet()?.forEach { key ->
-                if (key != "action" && key != EXTRA_ACTION) data.getStringExtra(key)?.let { put(key, it) }
-            }
-        }
-        PhormiCommandBus.enqueue(this, action, extras)
     }
 
     private fun wire(id: Int, action: () -> Unit) {

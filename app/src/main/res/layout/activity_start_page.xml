@@ -7,20 +7,28 @@
 
     <ImageView android:id="@+id/start_page_wallpaper_image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:visibility="gone" android:contentDescription="Start page wallpaper" />
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingTop="10dp" android:paddingBottom="8dp">
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true" android:scrollbars="none">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingTop="24dp" android:paddingBottom="24dp">
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
             <ImageView android:id="@+id/start_page_logo" android:layout_width="30dp" android:layout_height="30dp" android:src="@drawable/ic_phormi_logo" android:contentDescription="Phormi logo" />
-            <TextView android:id="@+id/start_page_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="Phormi" android:textColor="#F8FAFC" android:textSize="22sp" android:textStyle="bold" />
+            <TextView android:id="@+id/start_page_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="Phormi" android:textColor="#F8FAFC" android:textSize="26sp" android:textStyle="bold" />
         </LinearLayout>
-        <TextView android:id="@+id/start_page_subtitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="BAS · Browse • Ask • Search" android:textColor="#94A3B8" android:textSize="11sp" />
+        <TextView android:id="@+id/start_page_subtitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="A little more room to explore." android:textColor="#94A3B8" android:textSize="11sp" />
 
-        <LinearLayout android:id="@+id/start_page_search_box" android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginTop="9dp" android:gravity="center_vertical" android:paddingStart="10dp" android:paddingEnd="4dp" android:background="@drawable/bg_start_search">
-            <TextView android:id="@+id/start_page_engine" android:layout_width="wrap_content" android:layout_height="34dp" android:gravity="center" android:paddingStart="2dp" android:paddingEnd="6dp" android:text="Phormi Search  ▾" android:textColor="#CBD5E1" android:textSize="10sp" />
-            <EditText android:id="@+id/start_page_search" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:hint="Search or type a URL" android:textColor="#F8FAFC" android:textColorHint="#94A3B8" android:textSize="13sp" android:singleLine="true" android:imeOptions="actionGo" android:inputType="textUri" android:background="@android:color/transparent" />
+        <LinearLayout android:id="@+id/start_page_search_box" android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="24dp" android:gravity="center_vertical" android:paddingStart="10dp" android:paddingEnd="4dp" android:background="@drawable/bg_start_search">
+            <TextView android:id="@+id/start_page_engine" android:layout_width="wrap_content" android:layout_height="40dp" android:gravity="center" android:paddingStart="2dp" android:paddingEnd="8dp" android:text="Search ▾" android:textColor="#CBD5E1" android:textSize="12sp" android:contentDescription="Choose search provider" />
+            <EditText android:id="@+id/start_page_search" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:hint="Search or enter a web address" android:textColor="#F8FAFC" android:textColorHint="#94A3B8" android:textSize="15sp" android:singleLine="true" android:imeOptions="actionGo" android:inputType="textUri" android:background="@android:color/transparent" />
             <TextView android:id="@+id/start_page_go" android:layout_width="36dp" android:layout_height="36dp" android:gravity="center" android:clickable="true" android:focusable="true" android:contentDescription="Search or open" android:text="→" android:textColor="#38BDF8" android:textSize="18sp" />
         </LinearLayout>
 
-        <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:layout_marginTop="9dp" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginTop="16dp" android:orientation="horizontal" android:gravity="center_vertical">
+            <TextView android:id="@+id/start_page_action_tabs" style="@style/PhormiStartAction" android:text="▣  Tabs" android:contentDescription="Open tabs" />
+            <TextView android:id="@+id/start_page_action_bookmarks" style="@style/PhormiStartAction" android:text="☆  Saved" android:contentDescription="Open bookmarks" />
+            <TextView android:id="@+id/start_page_action_downloads" style="@style/PhormiStartAction" android:text="↓  Files" android:contentDescription="Open downloads" />
+            <TextView android:id="@+id/start_page_action_ai" style="@style/PhormiStartAction" android:text="✦  Ask" android:contentDescription="Open browser AI" />
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:layout_marginTop="18dp" android:gravity="center_vertical">
             <TextView android:id="@+id/start_page_quick_access" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Quick access" android:textColor="#CBD5E1" android:textSize="13sp" android:textStyle="bold" />
             <TextView android:id="@+id/start_page_news" android:layout_width="wrap_content" android:layout_height="28dp" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="News · On" android:textColor="#38BDF8" android:textSize="10sp" android:background="@drawable/bg_start_action" android:clickable="true" android:focusable="true" />
             <TextView android:id="@+id/start_page_ai" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginStart="6dp" android:gravity="center" android:drawableTop="@drawable/ic_phormi_ai" android:contentDescription="Phormi AI mode" android:clickable="true" android:focusable="true" android:background="@drawable/bg_start_action" android:padding="5dp" />
@@ -65,4 +73,5 @@
         <Space android:layout_width="match_parent" android:layout_height="4dp" />
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Quick Access contains pinned services and shortcuts you add yourself." android:textColor="#64748B" android:textSize="10sp" android:gravity="center" />
     </LinearLayout>
+    </ScrollView>
 </FrameLayout>

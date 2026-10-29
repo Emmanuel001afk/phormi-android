@@ -37,6 +37,10 @@ jobs:
         with:
           languages: java-kotlin
           build-mode: manual
+      - name: Audit source and resources
+        run: python3 tools/audit_project.py
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
       - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Android lint

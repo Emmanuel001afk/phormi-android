@@ -39,6 +39,10 @@ jobs:
           version_code="$(date +%s)"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "version_name=1.0.$version_code" >> "$GITHUB_OUTPUT"
+      - name: Audit source and resources
+        run: python3 tools/audit_project.py
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
       - name: Build debug and release APKs
         env:
           PHORMI_VERSION_CODE: ${{ steps.version.outputs.version_code }}
@@ -79,6 +83,7 @@ jobs:
           name: phormi-debug-apk
           path: ${{ env.DEBUG_APK }}
       - name: Publish latest release to AEM Store
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           APK: ${{ env.RELEASE_APK }}
           SUPABASE_KEY: sb_publishable_Imgtr_W_Z868cBsNEcWpeg_89FE2Mvb

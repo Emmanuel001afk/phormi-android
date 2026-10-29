@@ -15,6 +15,7 @@ object PhormiKeyboardTextEngine {
     private const val KEY_LEARNED = "learned_words"
     private const val KEY_BIGRAMS = "next_words"
     private const val KEY_CORRECTIONS = "learned_corrections"
+    private const val KEY_IGNORED = "ignored_corrections"
     private const val MAX_LEARNED = 2000
     private const val MAX_BIGRAMS = 4000
     private const val MAX_CORRECTIONS = 800
@@ -55,13 +56,21 @@ object PhormiKeyboardTextEngine {
         "ru" to mapOf("привет" to listOf("всем", "как"), "спасибо" to listOf("вам", "большое"))
     )
 
-    fun isPassword(info: EditorInfo?): Boolean = variation(info) in setOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
+    fun isPassword(info: EditorInfo?): Boolean {
+        val input = info?.inputType ?: return false
+        val kind = input and InputType.TYPE_MASK_CLASS
+        return if (kind == InputType.TYPE_CLASS_NUMBER)
+            variation(info) == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        else kind == InputType.TYPE_CLASS_TEXT && variation(info) in setOf(
+            InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
+    }
     fun isUriLike(info: EditorInfo?): Boolean { val v = variation(info); return v == InputType.TYPE_TEXT_VARIATION_URI || v == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || v == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS }
-    fun isNoPersonalizedLearning(info: EditorInfo?): Boolean = info?.imeOptions?.and(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+    fun isNoPersonalizedLearning(info: EditorInfo?): Boolean = ((info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
     fun isPrivateEditor(info: EditorInfo?): Boolean = isPassword(info) || isNoPersonalizedLearning(info)
     fun allowsPersonalizedLearning(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isUriLike(info) && !isNoPersonalizedLearning(info)
     fun allowsAiEmoji(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isUriLike(info) && !isNoPersonalizedLearning(info)
-    fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPassword(info) && !isNoPersonalizedLearning(info) && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0 && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
+    fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPrivateEditor(info) && !isUriLike(info) && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0 && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
 
     fun localeFor(info: EditorInfo?): Locale {
         val subtype = currentSubtype()
@@ -82,16 +91,27 @@ object PhormiKeyboardTextEngine {
         field?.get(companion) as? PhormiKeyboardServiceV2
     }.getOrNull()
 
-    fun currentWord(ic: InputConnection?): String = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty().trimEnd().split(Regex("[\\s\\n\\r\\t]+"), limit = 0).lastOrNull().orEmpty().takeLastWhile { it.isLetter() || it == '\'' || it == '’' }.take(48)
-    fun previousWord(ic: InputConnection?, locale: Locale = Locale.getDefault()): String { val before = ic?.getTextBeforeCursor(180, 0)?.toString().orEmpty().trimEnd(); return before.split(Regex("[\\s\\n\\r\\t]+" )).dropLast(1).lastOrNull().orEmpty().trim(' ', '\'', '"', '.', ',', '!', '?', ':', ';').lowercase(locale) }
+    fun currentWord(ic: InputConnection?): String {
+        val before = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
+        if (before.isEmpty() || (before.last().isLetter().not() && before.last() != '\'' && before.last() != '’')) return ""
+        return before.takeLastWhile { it.isLetter() || it == '\'' || it == '’' }.takeLast(48)
+    }
+
+    fun previousWord(ic: InputConnection?, locale: Locale = Locale.getDefault()): String {
+        val before = ic?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
+        val words = before.split(Regex("[^\\p{L}'’]+" )).filter(String::isNotBlank)
+        val currentIsWord = before.lastOrNull()?.let { it.isLetter() || it == '\'' || it == '’' } == true
+        return (if (currentIsWord) words.dropLast(1).lastOrNull() else words.lastOrNull())
+            .orEmpty().lowercase(locale)
+    }
     fun supportedLanguageLabels(): List<String> = PhormiKeyboardLanguageData.supportedLanguages().map { Locale(it).getDisplayLanguage(Locale.getDefault()).ifBlank { it } }
     fun languageName(locale: Locale): String = Locale(locale.language).getDisplayLanguage(Locale.getDefault()).ifBlank { locale.language }
 
     fun suggestions(context: Context, prefix: String, locale: Locale = activeLocale(context)): List<String> {
         val p = prefix.trim().lowercase(locale); if (p.isBlank()) return emptyList()
         val result = LinkedHashSet<String>()
-        loadLearned(context).filter { it.startsWith(p, true) && !it.equals(p, true) }.forEach(result::add)
-        PhormiKeyboardLanguageData.words(locale).filter { it.startsWith(p, true) && !it.equals(p, true) }.forEach(result::add)
+        loadLearned(context).asSequence().filter { it.startsWith(p, true) && !it.equals(p, true) }.take(3).forEach(result::add)
+        PhormiKeyboardDictionary.completions(context, locale, p).forEach(result::add)
         correctionsByLanguage[locale.language]?.get(p)?.takeIf { it.isNotBlank() && !it.equals(p, true) }?.let(result::add)
         PhormiKeyboardSystemSpellChecker.cached(p, locale).filter { it.isNotBlank() && !it.equals(p, true) }.forEach(result::add)
         PhormiKeyboardSystemSpellChecker.request(context, p, locale)
@@ -106,8 +126,53 @@ object PhormiKeyboardTextEngine {
         return result.take(4)
     }
 
-    fun correctionFor(context: Context, word: String, locale: Locale = activeLocale(context)): String? = correctionsByLanguage[locale.language]?.get(word.lowercase(locale)) ?: loadLearnedCorrections(context)[word.lowercase(locale)]
-    fun correctionFor(word: String): String? = correctionsByLanguage[Locale.getDefault().language]?.get(word.lowercase(Locale.getDefault()))
+    fun correctionFor(context: Context, word: String, locale: Locale = activeLocale(context)): String? {
+        val original = word.trim()
+        val lower = original.lowercase(locale)
+        if (lower.length < 2 || lower.any { !it.isLetter() && it != '\'' && it != '’' }) return null
+        // Retyped/undone corrections and personalized words take precedence over the dictionary.
+        if ("${locale.language}|$lower" in ignoredCorrections(context) ||
+            loadLearned(context).any { it.equals(original, true) }) return null
+        if (original.drop(1).any(Char::isUpperCase)) return null // don't rewrite acronyms/names
+        val candidate = correctionsByLanguage[locale.language]?.get(lower)
+            ?: loadLearnedCorrections(context)[lower]
+            ?: PhormiKeyboardSystemSpellChecker.cached(lower, locale).firstOrNull {
+                oneEditApart(lower, it.lowercase(locale)) && PhormiKeyboardDictionary.contains(context, locale, it)
+            }
+            ?: PhormiKeyboardDictionary.closestWord(context, locale, lower)
+        if (candidate.isNullOrBlank() || candidate.equals(original, true)) return null
+        return when {
+            original == original.uppercase(locale) -> candidate.uppercase(locale)
+            original.first().isUpperCase() -> candidate.replaceFirstChar { it.titlecase(locale) }
+            else -> candidate
+        }
+    }
+
+    /** When a correction is undone or the same spelling is re-entered, respect it permanently. */
+    fun ignoreCorrection(context: Context, word: String, locale: Locale = activeLocale(context)) {
+        val key = "${locale.language}|${word.lowercase(locale)}"
+        val ignored = ignoredCorrections(context).filterNot { it == key }.toMutableList()
+        ignored.add(key)
+        val array = JSONArray()
+        ignored.takeLast(500).forEach(array::put)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_IGNORED, array.toString()).apply()
+    }
+
+    private fun ignoredCorrections(context: Context): List<String> = runCatching {
+        val arr = JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_IGNORED, "[]"))
+        (0 until arr.length()).map { arr.optString(it) }
+    }.getOrDefault(emptyList())
+
+    private fun oneEditApart(a: String, b: String): Boolean {
+        if (a == b || kotlin.math.abs(a.length - b.length) > 1) return false
+        if (a.length == b.length) {
+            val differing = a.indices.filter { a[it] != b[it] }
+            return differing.size == 1 || (differing.size == 2 && differing[1] == differing[0] + 1 &&
+                a[differing[0]] == b[differing[1]] && a[differing[1]] == b[differing[0]])
+        }
+        val (short, long) = if (a.length < b.length) a to b else b to a
+        return long.indices.any { i -> long.removeRange(i, i + 1) == short }
+    }
 
     fun learn(context: Context, word: String, info: EditorInfo?) {
         if (!allowsPersonalizedLearning(info)) return
