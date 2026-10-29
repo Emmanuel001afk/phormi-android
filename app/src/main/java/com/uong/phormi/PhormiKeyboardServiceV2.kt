@@ -132,7 +132,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         editorInfo = info ?: editorInfo
-        if (reuseViewOnRestart && restarting && currentInputView != null && panel == Panel.KEYBOARD) {
+        if (reuseViewOnRestart && restarting && predictionRow?.isAttachedToWindow == true &&
+            panel == Panel.KEYBOARD) {
             // WebView can restart its input connection as a site updates its form.
             // Replacing the entire IME view on each restart makes it look as if the
             // keyboard closes after every character.
