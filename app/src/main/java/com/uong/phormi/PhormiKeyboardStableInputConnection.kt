@@ -1,7 +1,6 @@
 package com.uong.phormi
 
-import android.view.inputmethod.InputConnection
-import android.view.inputmethod.InputMethodService
+
 
 /**
  * Helper to keep the IME stable during general sign-in.
