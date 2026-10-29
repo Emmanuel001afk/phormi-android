@@ -40,7 +40,19 @@ jobs:
       - name: Audit source and resources
         run: python3 tools/audit_project.py
       - name: Run unit tests
-        run: gradle testDebugUnitTest --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle testDebugUnitTest --no-daemon --stacktrace > /tmp/phormi-gradle-test.log 2>&1
+          result=$?
+          cat /tmp/phormi-gradle-test.log
+          if [ "$result" -ne 0 ]; then
+            # GitHub's downloadable logs may be unavailable to reviewers; expose
+            # compiler/dependency/test failures as check annotations as well.
+            grep -E '^e: |^> Task .*FAILED|^FAILURE:|^\* What went wrong:|^Could not|^    > |^Caused by:' /tmp/phormi-gradle-test.log | head -60 | while IFS= read -r line; do
+              echo "::error title=Gradle test output::$line"
+            done
+          fi
+          exit "$result"
       - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Android lint

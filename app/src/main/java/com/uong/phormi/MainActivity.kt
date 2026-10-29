@@ -274,6 +274,7 @@ class MainActivity : AppCompatActivity() {
     private fun runAiTask(task: PhormiAiPendingTask.Task) {
         if (aiTaskRunning) return
         aiTaskRunning = true
+        updateAiStatusBadge()
         PhormiNotificationManager.post(this, PhormiNotificationManager.CHANNEL_AI, 7101,
             "Phormi AI working", task.instruction.take(75), Intent(this, MainActivity::class.java),
             ongoing = true, autoCancel = false)
@@ -287,12 +288,16 @@ class MainActivity : AppCompatActivity() {
                 aiBackgroundTabIds.clear()
                 updateAiBackgroundTabVisibility()
                 aiTaskRunning = false
+                updateAiStatusBadge()
                 PhormiNotificationManager.cancel(this@MainActivity, 7101)
                 val result = PhormiAiPendingTask.lastStatus(this@MainActivity)
                 PhormiNotificationManager.post(this@MainActivity, PhormiNotificationManager.CHANNEL_AI,
                     task.id.hashCode(), "Phormi AI task update", result.take(150),
                     Intent(this@MainActivity, AiActivity::class.java))
-                if (browserAiForeground) runPendingAiTask()
+                if (browserAiForeground) {
+                    Toast.makeText(this@MainActivity, "AI update: ${result.take(100)}", Toast.LENGTH_LONG).show()
+                    runPendingAiTask()
+                }
             }
         }
     }
@@ -501,6 +506,18 @@ class MainActivity : AppCompatActivity() {
             view.evaluateJavascript(script) { raw ->
                 if (continuation.isActive) continuation.resume(raw == "true" || raw == "1") {}
             }
+        }
+    }
+
+    private fun updateAiStatusBadge() {
+        if (!::prefs.isInitialized) return
+        findViewById<TextView>(R.id.btn_bottom_ai)?.apply {
+            text = if (aiTaskRunning) "✦•" else "✦"
+            contentDescription = if (aiTaskRunning) "Browser AI working · tap for task status" else "Ask Phormi AI"
+        }
+        findViewById<TextView>(R.id.btn_top_ai)?.apply {
+            text = if (aiTaskRunning) "✦•" else "✦"
+            contentDescription = if (aiTaskRunning) "Browser AI working · tap for task status" else "Ask Phormi AI"
         }
     }
 
@@ -2053,6 +2070,7 @@ class MainActivity : AppCompatActivity() {
             }
             tab.chipView.alpha = if (isActive) 1f else 0.55f
         }
+        if (!splitMode) activeWebView()?.let { webViewContainer.bringChildToFront(it) }
         updateStartPageVisibility()
         updateTabCount()
         updateNavButtons()
@@ -3054,7 +3072,8 @@ class MainActivity : AppCompatActivity() {
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
                 val target = url.orEmpty()
-                if (view != null && !target.startsWith("https://phormi.local/")) {
+                if (view != null && target.startsWith("http", true) &&
+                    !target.startsWith("https://phormi.local/")) {
                     tabs.firstOrNull { it.webView === view }?.searchQuery = null
                 }
                 if (view != null && target.startsWith("http", true)) {
