@@ -1784,6 +1784,9 @@ class MainActivity : AppCompatActivity() {
         val webView = activeWebView()
         tabs.firstOrNull { it.id == activeTabId }?.searchQuery = null
         if (webView != null) {
+            // Desktop/normal mode resolved before load to prevent flicker/reload loop
+            val desktopBefore = isDesktopModeFor(url)
+            if (webView.settings.userAgentString != desktopUserAgent(desktopBefore)) applyDesktopMode(webView, desktopBefore)
             startPageContainer.visibility = View.GONE
             startPageContainer.isClickable = false
             webView.visibility = View.VISIBLE
@@ -2053,6 +2056,15 @@ class MainActivity : AppCompatActivity() {
             saveTabs()
         }
 
+        // Apply desktop mode deterministically *before* navigation to avoid onPageStarted flicker
+        if (!restoredStateBase64.isNullOrBlank() || url == NEW_TAB_URL) {
+            // restored or blank — configure already has UA for about:blank
+        } else {
+            val desktopBefore = isDesktopModeFor(url)
+            if (webView.settings.userAgentString != desktopUserAgent(desktopBefore)) {
+                applyDesktopMode(webView, desktopBefore)
+            }
+        }
         var restored = false
         if (!restoredStateBase64.isNullOrBlank() && WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
             restored = runCatching {
@@ -3113,16 +3125,8 @@ class MainActivity : AppCompatActivity() {
                     !target.startsWith("https://phormi.local/")) {
                     tabs.firstOrNull { it.webView === view }?.searchQuery = null
                 }
-                if (view != null && target.startsWith("http", true)) {
-                    val desktop = isDesktopModeFor(target)
-                    val desiredUa = desktopUserAgent(desktop)
-                    if (view.settings.userAgentString != desiredUa) {
-                        // Chromium applies Request Desktop Site to the navigation/user-agent and
-                        // keeps UA client hints consistent with it. WebView reloads once when the
-                        // UA changes; the equality guard prevents a reload loop.
-                        applyDesktopMode(view, desktop)
-                    }
-                }
+                // Flicker fix: desktop mode now applied *before* loadUrl (navigate/createNewTab),
+                // not mid-navigation. Changing UA/textZoom here caused a re-layout flash on every URL.
             }
 
             override fun onReceivedSslError(

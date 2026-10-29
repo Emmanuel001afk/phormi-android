@@ -107,15 +107,17 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (instance === this) instance = null; super.onDestroy()
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
-        super.onStartInput(attribute, restarting); editorInfo = attribute; page = KeyboardPage.LETTERS; capsLock = false; shift = false
+        super.onStartInput(attribute, restarting); editorInfo = attribute
+        if (!restarting) { page = KeyboardPage.LETTERS; capsLock = false; shift = false; panel = Panel.KEYBOARD }
         lastAutoCorrection = null; lastPredictionWord = ""; lastPredictionPrevious = ""
         confirmClearClipboard = false
-        autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute); panel = Panel.KEYBOARD
+        autoShift = PhormiKeyboardPreferences.autoCaps(this) && PhormiKeyboardTextEngine.autoCapitalize(currentInputConnection, attribute)
+        if (!restarting) panel = Panel.KEYBOARD
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         editorInfo = info ?: editorInfo
-        panel = Panel.KEYBOARD
+        if (!restarting) panel = Panel.KEYBOARD
         // Keep the IME window transition-free from the moment Android starts
         // showing it. This prevents a stale/miniature copy from appearing
         // during the show/hide handoff.

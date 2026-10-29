@@ -112,9 +112,13 @@ object PhormiKeyboardTextEngine {
         val result = LinkedHashSet<String>()
         loadLearned(context).asSequence().filter { it.startsWith(p, true) && !it.equals(p, true) }.take(3).forEach(result::add)
         PhormiKeyboardDictionary.completions(context, locale, p).forEach(result::add)
+        // fruit/common dictionary API boost (offline + remote cache)
+        PhormiKeyboardDictionaryApi.suggestionsFor(p, locale).filter { !it.equals(p, true) }.forEach(result::add)
+        PhormiKeyboardDictionaryApi.loadDisk(context, p, locale).filter { !it.equals(p, true) }.forEach(result::add)
         correctionsByLanguage[locale.language]?.get(p)?.takeIf { it.isNotBlank() && !it.equals(p, true) }?.let(result::add)
         PhormiKeyboardSystemSpellChecker.cached(p, locale).filter { it.isNotBlank() && !it.equals(p, true) }.forEach(result::add)
         PhormiKeyboardSystemSpellChecker.request(context, p, locale)
+        PhormiKeyboardDictionaryApi.request(context, p, locale)
         return result.take(5)
     }
 
