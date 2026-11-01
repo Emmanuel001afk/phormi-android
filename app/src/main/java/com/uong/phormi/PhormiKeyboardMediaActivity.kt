@@ -99,12 +99,12 @@ class PhormiKeyboardMediaActivity : Activity() {
                         } else {
                             PhormiKeyboardStickerPackStore.add(this, "GIF & Images", file)
                             val delivered = PhormiKeyboardExternalBridge.commitContent(this, PhormiKeyboardStickerStore.contentUri(this, file))
-                            if (!delivered) Toast.makeText(this, "GIF saved — return to the keyboard to insert it", Toast.LENGTH_SHORT).show()
+                            if (!delivered) Toast.makeText(this, "GIF saved — return to the keyboard and tap Insert picked", Toast.LENGTH_SHORT).show()
                         }
                     }
                     else -> {
                         if (!PhormiKeyboardExternalBridge.commitContent(this, uri)) {
-                            Toast.makeText(this, "Media queued — return to the keyboard to insert it", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this, "Media queued — return to the keyboard and tap Insert picked", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }

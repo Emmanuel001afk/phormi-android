@@ -52,6 +52,16 @@ jobs:
           grep -E '^e: |^> Task .*FAILED|^FAILURE:|^Caused by:|^.* > .*FAILED' /tmp/phormi-tests.log | head -60 | while IFS= read -r line; do
             echo "::error title=Validation::$line"
           done
+          python3 - <<'PYTEST'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for report in Path('app/build/test-results').rglob('TEST-*.xml'):
+              for case in ET.parse(report).iter('testcase'):
+                  failure = case.find('failure')
+                  if failure is not None:
+                      message = (failure.get('message', '') + ' ' + (failure.text or '')[:1200]).replace('\n', '%0A')
+                      print(f"::error title={case.get('classname')}.{case.get('name')}::{message}")
+          PYTEST
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4

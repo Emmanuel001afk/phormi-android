@@ -39,7 +39,11 @@ object PhormiKeyboardDictionaryApi {
         synchronized(cache) {
             if (cache.containsKey(key) || key in pending || pending.size >= 8 || (failedUntil[key] ?: 0) > System.currentTimeMillis()) return
             val disk = loadDisk(app, p, locale)
-            if (disk.isNotEmpty()) { cache[key] = disk; return }
+            if (disk.isNotEmpty()) {
+                cache[key] = disk
+                main.post { PhormiKeyboardServiceV2.activeInstance()?.onSpellCheckerSuggestions(p) }
+                return
+            }
             pending.add(key)
         }
         workers.execute {
@@ -69,7 +73,16 @@ object PhormiKeyboardDictionaryApi {
             connection.connectTimeout = 2500; connection.readTimeout = 2500
             connection.setRequestProperty("User-Agent", "PhormiKeyboard/1.0")
             if (connection.responseCode != 200) emptyList() else {
-                val text = connection.inputStream.bufferedReader().use { it.readText().take(32_768) }
+                val text = connection.inputStream.bufferedReader().use { reader ->
+                    val output = StringBuilder()
+                    val buffer = CharArray(2048)
+                    while (output.length < 32_768) {
+                        val count = reader.read(buffer, 0, minOf(buffer.size, 32_768 - output.length))
+                        if (count < 0) break
+                        output.append(buffer, 0, count)
+                    }
+                    output.toString()
+                }
                 val array = JSONArray(text)
                 (0 until array.length()).mapNotNull { array.optJSONObject(it)?.optString("word") }
                     .filter { it.length in 2..40 && !it.equals(prefix, true) }.take(7)

@@ -49,7 +49,7 @@ class PhormiSitePermissions(private val activity: Activity, private val isActive
         // A result from an earlier OS permission dialog must never approve a new request.
         if (awaitingAndroid) { p.complete(false); return }
         cancel()
-        if (!valid(p)) { p.complete(false); return }
+        if (!valid(p) || !activity.hasWindowFocus()) { p.complete(false); return }
         pending = p
         dialog = AlertDialog.Builder(activity)
             .setTitle("Allow website access?")
@@ -97,7 +97,7 @@ class PhormiSitePermissions(private val activity: Activity, private val isActive
         val p = pending
         pending = null
         dialog?.dismiss(); dialog = null
-        p?.complete?.invoke(approved && valid(p))
+        if (p != null) p.complete(approved && valid(p))
     }
 
     companion object {

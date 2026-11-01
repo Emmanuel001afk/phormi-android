@@ -45,17 +45,19 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         private var instance: PhormiKeyboardServiceV2? = null
         fun activeInstance(): PhormiKeyboardServiceV2? = instance
         fun commitPickedContent(context: Context, uri: Uri): Boolean {
-            val service = instance
-            if (service?.currentInputConnection != null) return service.commitContentToEditor(uri)
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_URI, uri.toString()).apply()
-            return false
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_PENDING_URI, uri.toString()).remove(KEY_PENDING_TEXT)
+                .putLong("picked_at", System.currentTimeMillis()).apply()
+            instance?.showPendingInput()
+            return false // Explicit insertion is required after returning to an editor.
         }
         fun startIntegratedVoiceRecognitionFromContext(context: Context, localeTag: String) { instance?.startIntegratedVoiceRecognition(localeTag) }
         fun commitExternalText(context: Context, text: String): Boolean {
             if (text.isBlank()) return false
-            val service = instance
-            if (service?.currentInputConnection != null) { service.commitTextToEditor(text); return true }
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PENDING_TEXT, text.take(4000)).apply()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_PENDING_TEXT, text.take(4000)).remove(KEY_PENDING_URI)
+                .putLong("picked_at", System.currentTimeMillis()).apply()
+            instance?.showPendingInput()
             return false
         }
     }
@@ -133,9 +135,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             getWindow().window?.setWindowAnimations(0)
             getWindow().window?.decorView?.animate()?.cancel()
         }
+        applyPendingInput()
         setInputView(render())
         applyKeyboardWindowSize()
-        applyPendingInput()
     }
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
@@ -369,6 +371,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                     setMargins(dp(2), 0, dp(2), 0)
                 }
             )
+        }
+        val picked = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (picked.contains(KEY_PENDING_URI) || picked.contains(KEY_PENDING_TEXT)) {
+            add("Insert picked", 110) { insertPendingInput() }
         }
         add("😀") { panel = Panel.EMOJI; setInputView(render()) }
         add("📋") {
@@ -1017,7 +1023,24 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }) }.onFailure { stopVoice(true, "Unable to start voice typing") }
     }
     private fun shareSelectedText(){val text=currentInputConnection?.getSelectedText(0)?.toString().orEmpty();if(text.isBlank()){android.widget.Toast.makeText(this,"Select text first",android.widget.Toast.LENGTH_SHORT).show();return};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},"Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
-    private fun applyPendingInput(){val prefs=getSharedPreferences(PREFS,MODE_PRIVATE);prefs.getString(KEY_PENDING_TEXT,null)?.takeIf{it.isNotBlank()}?.let{commitTextToEditor(it)};prefs.edit().remove(KEY_PENDING_TEXT).apply();prefs.getString(KEY_PENDING_URI,null)?.let{runCatching{commitContentToEditor(Uri.parse(it))}};prefs.edit().remove(KEY_PENDING_URI).apply()}
+    private fun showPendingInput() {
+        if (isInputViewShown) setInputView(render())
+    }
+    private fun applyPendingInput() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (System.currentTimeMillis() - prefs.getLong("picked_at", 0L) > 10 * 60_000L) prefs.edit().clear().apply()
+    }
+    private fun insertPendingInput() {
+        applyPendingInput()
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val uri = prefs.getString(KEY_PENDING_URI, null)
+        val text = prefs.getString(KEY_PENDING_TEXT, null)
+        val success = if (uri != null) commitContentToEditor(Uri.parse(uri))
+            else if (text != null) currentInputConnection?.commitText(text, 1) == true else false
+        if (success) prefs.edit().clear().apply()
+        else android.widget.Toast.makeText(this, "This field could not receive the picked item", android.widget.Toast.LENGTH_SHORT).show()
+        setInputView(render())
+    }
     private fun commitTextToEditor(text: String) {
         val ic = currentInputConnection ?: return
         if (text in setOf(".", ",", "!", "?", ";", ":")) autoCorrectCurrentWord(ic)

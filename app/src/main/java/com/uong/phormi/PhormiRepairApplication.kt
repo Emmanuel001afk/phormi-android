@@ -5,6 +5,7 @@ import android.webkit.WebView
 
 /** Process initialization only. Browser tabs and downloads are owned by their respective surfaces. */
 class PhormiRepairApplication : Application() {
+    companion object { var ghostStorageReady = false; private set }
     private val themeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "theme_mode") android.os.Handler(android.os.Looper.getMainLooper()).post { PhormiUiColors.applyTheme(this) }
     }
@@ -12,7 +13,7 @@ class PhormiRepairApplication : Application() {
         // Ghost mode uses its own process and must have a separate Chromium data directory.
         if (android.os.Build.VERSION.SDK_INT >= 28 &&
             android.app.Application.getProcessName().endsWith(":ghost")) {
-            runCatching { WebView.setDataDirectorySuffix("ghost") }
+            ghostStorageReady = runCatching { WebView.setDataDirectorySuffix("ghost") }.isSuccess
         }
         super.onCreate()
         PhormiUiColors.applyTheme(this)

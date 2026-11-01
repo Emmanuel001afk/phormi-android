@@ -21,12 +21,12 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 18, 18, 24)
-            setBackgroundColor(0xFF08101C.toInt())
+            setBackgroundColor(PhormiUiColors.surface(this@PhormiSecurityCenterActivity))
         }
         root.addView(TextView(this).apply {
             text = "Phormi Security & Privacy"
             textSize = 22f
-            setTextColor(0xFFF8FAFC.toInt())
+            setTextColor(PhormiUiColors.text(this@PhormiSecurityCenterActivity))
             setPadding(0, 0, 0, 16)
         })
 
@@ -62,7 +62,7 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
         }
         root.addView(TextView(this).apply {
             text = "Security controls apply to Phormi’s browser engine. JavaScript and third-party cookies can be disabled for stricter privacy, while mixed HTTP content stays blocked by default. Site locks and Browser Lock are managed separately."
-            setTextColor(0xFF94A3B8.toInt())
+            setTextColor(PhormiUiColors.secondary(this@PhormiSecurityCenterActivity))
             textSize = 13f
             setPadding(0, 18, 0, 0)
         })
@@ -73,7 +73,7 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
     private fun addSwitch(root: LinearLayout, label: String, checked: Boolean, action: (Boolean) -> Unit) {
         root.addView(Switch(this).apply {
             text = label
-            setTextColor(0xFFE2E8F0.toInt())
+            setTextColor(PhormiUiColors.text(this@PhormiSecurityCenterActivity))
             isChecked = checked
             setOnCheckedChangeListener { _, value -> action(value) }
         })

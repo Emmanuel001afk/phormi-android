@@ -46,7 +46,7 @@ class AccountsActivity : AppCompatActivity() {
         if (sessions.isNotEmpty()) {
             container.addView(TextView(this).apply {
                 text = "Recently opened providers"
-                setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(12, 16, 12, 8)
+                setTextColor(PhormiUiColors.accent(this@AccountsActivity)); textSize = 14f; setPadding(12, 16, 12, 8)
             })
             sessions.forEach { session ->
                 val row = layoutInflater.inflate(R.layout.item_account, container, false)
@@ -71,7 +71,7 @@ class AccountsActivity : AppCompatActivity() {
         }
         container.addView(TextView(this).apply {
             text = "Sign in / switch account"
-            setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(12, 18, 12, 8)
+            setTextColor(PhormiUiColors.accent(this@AccountsActivity)); textSize = 14f; setPadding(12, 18, 12, 8)
         })
         PROVIDERS.forEach { provider ->
             val row = layoutInflater.inflate(R.layout.item_account, container, false)

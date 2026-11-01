@@ -41,7 +41,7 @@ class GhostActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        if (android.os.Build.VERSION.SDK_INT < 28) {
+        if (android.os.Build.VERSION.SDK_INT < 28 || !PhormiRepairApplication.ghostStorageReady) {
             android.app.AlertDialog.Builder(this).setTitle("Ghost mode unavailable")
                 .setMessage("This Android version cannot provide the separate private WebView storage required by Phormi. Normal browsing is unchanged.")
                 .setPositiveButton("Close") { _, _ -> finish() }.setOnCancelListener { finish() }.show()

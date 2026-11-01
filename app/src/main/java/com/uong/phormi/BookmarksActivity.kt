@@ -23,16 +23,9 @@ open class BookmarksActivity : AppCompatActivity() {
     private lateinit var search: EditText
 
     companion object {
-        /**
-         * Returns the canonical favorites. Quick Access gets a filtered view so a
-         * Quick Access hide never makes the Favorite disappear from the Favorites UI.
-         */
-        fun getAll(context: android.content.Context): List<Bookmark> {
-            val all = PhormiFavorites.getAll(context).map { Bookmark(it.title, it.url, it.addedAt) }
-            return if (calledFromQuickAccessRenderer()) {
-                all.filterNot { PhormiQuickAccessState.isFavoriteHidden(context, it.url) }
-            } else all
-        }
+        /** The saved-page library is never filtered by who called it. */
+        fun getAll(context: android.content.Context): List<Bookmark> =
+            PhormiFavorites.getAll(context).map { Bookmark(it.title, it.url, it.addedAt) }
 
         fun add(context: android.content.Context, title: String, url: String) {
             PhormiFavorites.add(context, title, url)
@@ -100,8 +93,6 @@ open class BookmarksActivity : AppCompatActivity() {
     private fun promptAdd() {
         val input = EditText(this).apply {
             hint = "https://example.com"
-            setTextColor(0xFFF1F5F9.toInt())
-            setHintTextColor(0xFF64748B.toInt())
             setSingleLine()
         }
         AlertDialog.Builder(this)
