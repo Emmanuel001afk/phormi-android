@@ -45,11 +45,22 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Languages"))
         content.addView(TextView(this).apply{
-            text="Character layouts: " + PhormiKeyboardLayouts.supported.joinToString(", ") { java.util.Locale(it).displayLanguage } + ". CJK and Indic composition and glide typing are not available yet."
+            text="Character layouts: " + PhormiKeyboardLayouts.supported.joinToString(", ") { java.util.Locale(it).displayLanguage } + ". Korean supports two-set Hangul composition. Offline glide: English, French, Spanish, Portuguese, German, Italian, Indonesian and Turkish. Chinese, Japanese and Indic composition are not yet available."
             textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
         })
-        content.addView(Button(this).apply{text="Choose Phormi language";isAllCaps=false;setOnClickListener{runCatching{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS))}.onFailure{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))}}})
-        content.addView(TextView(this).apply{text="Android controls active IME subtypes. Prediction, correction and character long-presses follow the selected locale; installed system spell-check dictionaries are also used when available.";textSize=12f;setTextColor(Color.rgb(148,163,184));setPadding(0,dp(5),0,dp(8))})
+        content.addView(Button(this).apply {
+            text = "Choose Phormi language"; isAllCaps = false
+            setOnClickListener {
+                val languages = listOf("") + PhormiKeyboardLayouts.supported.toList()
+                val labels = languages.map { if (it.isBlank()) "Follow Android keyboard language" else java.util.Locale(it).getDisplayLanguage(java.util.Locale(it)) }
+                androidx.appcompat.app.AlertDialog.Builder(this@PhormiKeyboardSettingsActivity).setTitle("Keyboard language")
+                    .setSingleChoiceItems(labels.toTypedArray(), languages.indexOf(PhormiKeyboardPreferences.language(this@PhormiKeyboardSettingsActivity))) { dialog, index ->
+                        PhormiKeyboardPreferences.setLanguage(this@PhormiKeyboardSettingsActivity, languages[index])
+                        dialog.dismiss()
+                    }.show()
+            }
+        })
+        content.addView(TextView(this).apply { text = "Select a language here, or follow Android's active keyboard subtype. Korean uses two-set Hangul: vowels and final consonants combine while typing; Backspace reverses one key. Glide is disabled in passwords, addresses and private fields."; textSize=12f; setTextColor(Color.rgb(148,163,184)); setPadding(0,dp(5),0,dp(8)) })
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{

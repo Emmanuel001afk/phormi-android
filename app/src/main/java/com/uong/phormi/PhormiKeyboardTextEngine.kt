@@ -73,6 +73,9 @@ object PhormiKeyboardTextEngine {
     fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPrivateEditor(info) && !isUriLike(info) && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0 && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
 
     fun localeFor(info: EditorInfo?): Locale {
+        currentService()?.let { service ->
+            PhormiKeyboardPreferences.language(service).takeIf { it.isNotBlank() }?.let { return Locale.forLanguageTag(it) }
+        }
         val subtype = currentSubtype()
         val tag = subtype?.locale?.replace('_', '-')?.takeIf { it.isNotBlank() }
         return if (tag != null) Locale.forLanguageTag(tag) else info?.hintLocales?.get(0) ?: Locale.getDefault()

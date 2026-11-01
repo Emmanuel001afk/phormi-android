@@ -83,6 +83,28 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var spaceMoved = false
     private var spaceSteps = 0
     private val letterButtons = mutableListOf<Pair<Button, String>>()
+    private var hangulKeys = ""
+    private fun finishHangul() {
+        if (hangulKeys.isNotEmpty()) currentInputConnection?.finishComposingText()
+        hangulKeys = ""
+    }
+    private fun insertHangul(base: String): Boolean {
+        if (PhormiKeyboardTextEngine.localeFor(editorInfo).language != "ko" || !PhormiHangulComposer.accepts(base)) return false
+        val connection = currentInputConnection ?: return true
+        if (hangulKeys.length >= 64) finishHangul()
+        hangulKeys += if (shift || capsLock) PhormiHangulComposer.shifted(base) else base
+        if (!connection.setComposingText(PhormiHangulComposer.compose(hangulKeys), 1)) hangulKeys = ""
+        if (!capsLock) shift = false
+        autoShift = false
+        refreshAfterTextKey()
+        return true
+    }
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: android.view.inputmethod.InputMethodSubtype?) {
+        finishGlide(); finishHangul()
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        page = KeyboardPage.LETTERS
+        if (isInputViewShown) setInputView(render())
+    }
     private var inputSession = 0L
     private val glideWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var glideFuture: java.util.concurrent.Future<*>? = null
@@ -181,7 +203,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
     }
     override fun onDestroy() {
-        finishGlide()
+        finishGlide(); finishHangul()
         glideWorker.shutdownNow()
         wallpaperWorker.shutdownNow()
         wallpaperBitmap = null
@@ -193,7 +215,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (instance === this) instance = null; super.onDestroy()
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
-        finishGlide()
+        finishGlide(); finishHangul()
         stopVoice(false)
         inputSession++
         super.onStartInput(attribute, restarting); editorInfo = attribute
@@ -220,6 +242,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
+        if (hangulKeys.isNotEmpty() && (candidatesStart < 0 || newSelStart != newSelEnd || newSelEnd != candidatesEnd)) finishHangul()
         if ((glidePending && (oldSelStart != newSelStart || oldSelEnd != newSelEnd)) ||
             (glideComposing && (candidatesStart < 0 || newSelStart != newSelEnd || newSelEnd != candidatesEnd))) finishGlide()
         if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
@@ -231,10 +254,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
     }
 
-    override fun onFinishInput() { finishGlide(); inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onFinishInput() }
-    override fun onUnbindInput() { finishGlide(); inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onUnbindInput() }
+    override fun onFinishInput() { finishGlide(); finishHangul(); inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onFinishInput() }
+    override fun onUnbindInput() { finishGlide(); finishHangul(); inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) {
-        finishGlide()
+        finishGlide(); finishHangul()
         stopVoice(false)
         accentPopup?.dismiss()
         stopRepeat()
@@ -524,6 +547,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun refreshPredictionStrip(){
         val row=predictionRow ?: return
         if (showGlideCandidates(row)) return
+        if (hangulKeys.isNotEmpty()) {
+            row.removeAllViews()
+            row.addView(pill(PhormiHangulComposer.compose(hangulKeys) + "  ✓") { finishHangul(); refreshPredictionStrip() }, LinearLayout.LayoutParams(-1, -1))
+            return
+        }
         val ic=currentInputConnection
         val eligible = PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
         val word=if (eligible) PhormiKeyboardTextEngine.currentWord(ic) else ""
@@ -643,6 +671,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun insertLetter(base: String) {
         finishGlide(space = true)
+        if (insertHangul(base)) return
+        finishHangul()
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
         commitTextToEditor(if (shift || capsLock || autoShift) base.uppercase(locale) else base)
         if (!capsLock) shift = false
@@ -652,7 +682,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun updateLetterLabels() {
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
         letterButtons.forEach { (button, base) ->
-            button.text = if (shift || capsLock || autoShift) base.uppercase(locale) else base
+            button.text = if (locale.language == "ko") {
+                if (shift || capsLock) PhormiHangulComposer.shifted(base) else base
+            } else if (shift || capsLock || autoShift) base.uppercase(locale) else base
             button.contentDescription = button.text
         }
     }
@@ -1016,7 +1048,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Rose","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
     private fun render():View{
-        if (panel != Panel.KEYBOARD || page != KeyboardPage.LETTERS) finishGlide()
+        if (panel != Panel.KEYBOARD || page != KeyboardPage.LETTERS) { finishGlide(); finishHangul() }
         shiftKeyView = null
         letterButtons.clear()
         predictionRow = null
@@ -1073,6 +1105,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     private fun launchMedia(mode:String){startActivity(Intent(this,PhormiKeyboardMediaActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiKeyboardMediaActivity.EXTRA_MODE,mode)})}
     private fun launchVoice() {
+        finishGlide(); finishHangul()
         if (currentInputConnection == null) {
             android.widget.Toast.makeText(this, "No text field is active", android.widget.Toast.LENGTH_SHORT).show()
             return
@@ -1163,7 +1196,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         setInputView(render())
     }
     private fun commitTextToEditor(text: String) {
-        finishGlide()
+        finishGlide(); finishHangul()
         val ic = currentInputConnection ?: return
         if (text in setOf(".", ",", "!", "?", ";", ":")) autoCorrectCurrentWord(ic)
         ic.commitText(text, 1)
@@ -1197,7 +1230,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     private fun commitSpace() {
-        finishGlide()
+        finishGlide(); finishHangul()
         val ic = currentInputConnection ?: return
         autoCorrectCurrentWord(ic)
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
@@ -1214,6 +1247,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun deleteBackward() {
         val ic = currentInputConnection ?: return
+        if (hangulKeys.isNotEmpty()) {
+            hangulKeys = hangulKeys.dropLast(1)
+            if (hangulKeys.isEmpty()) { ic.commitText("", 1); ic.finishComposingText() }
+            else ic.setComposingText(PhormiHangulComposer.compose(hangulKeys), 1)
+            return
+        }
         val deletingGlide = glideComposing
         if (deletingGlide) ic.commitText("", 1)
         finishGlide()
@@ -1243,7 +1282,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL)) }
         }
     }
-    private fun moveCursor(delta:Int){finishGlide();val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
+    private fun moveCursor(delta:Int){finishGlide();finishHangul();val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
     private fun toggleShift() {
         when {
             capsLock -> { capsLock = false; shift = false; autoShift = false }
@@ -1265,7 +1304,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         EditorInfo.IME_ACTION_DONE -> "Done"; EditorInfo.IME_ACTION_PREVIOUS -> "Previous"; else -> "↵"
     }
     private fun sendEditorAction() {
-        finishGlide()
+        finishGlide(); finishHangul()
         val ic = currentInputConnection ?: return
         autoCorrectCurrentWord(ic)
         val info = editorInfo
@@ -1284,5 +1323,5 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     private fun installRepeat(view:View,action:()->Unit){view.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->{stopRepeat();feedback(view);action();repeatRunnable=object:Runnable{override fun run(){action();repeatHandler.postDelayed(this,55)}};repeatHandler.postDelayed(repeatRunnable!!,320);true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{stopRepeat();true};else->true}}}
     private fun stopRepeat(){repeatRunnable?.let{repeatHandler.removeCallbacks(it)};repeatRunnable=null}
-    private fun commitContentToEditor(uri:Uri):Boolean{if(Build.VERSION.SDK_INT<25)return false;val ic=currentInputConnection?:return false;val info=editorInfo?:return false;val mimeTypes=info.contentMimeTypes?:emptyArray();if(mimeTypes.isEmpty()){android.widget.Toast.makeText(this,"This field does not accept images",android.widget.Toast.LENGTH_SHORT).show();return false};val wanted=contentResolver.getType(uri).orEmpty();val accepted=wanted.isNotBlank()&&mimeTypes.any{it==wanted||(it.endsWith("/*")&&wanted.startsWith(it.removeSuffix("*")))};if(!accepted){android.widget.Toast.makeText(this,"This field does not accept that media type",android.widget.Toast.LENGTH_SHORT).show();return false};return runCatching{val description=android.content.ClipDescription("Phormi media",arrayOf(wanted));val contentInfo=InputContentInfo(uri,description,null);ic.commitContent(contentInfo,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)}.getOrDefault(false)}
+    private fun commitContentToEditor(uri:Uri):Boolean{finishGlide();finishHangul();if(Build.VERSION.SDK_INT<25)return false;val ic=currentInputConnection?:return false;val info=editorInfo?:return false;val mimeTypes=info.contentMimeTypes?:emptyArray();if(mimeTypes.isEmpty()){android.widget.Toast.makeText(this,"This field does not accept images",android.widget.Toast.LENGTH_SHORT).show();return false};val wanted=contentResolver.getType(uri).orEmpty();val accepted=wanted.isNotBlank()&&mimeTypes.any{it==wanted||(it.endsWith("/*")&&wanted.startsWith(it.removeSuffix("*")))};if(!accepted){android.widget.Toast.makeText(this,"This field does not accept that media type",android.widget.Toast.LENGTH_SHORT).show();return false};return runCatching{val description=android.content.ClipDescription("Phormi media",arrayOf(wanted));val contentInfo=InputContentInfo(uri,description,null);ic.commitContent(contentInfo,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)}.getOrDefault(false)}
 }

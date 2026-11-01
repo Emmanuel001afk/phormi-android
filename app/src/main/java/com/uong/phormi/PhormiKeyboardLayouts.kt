@@ -1,10 +1,11 @@
 package com.uong.phormi
 
 /** Actual character layouts, not language labels masquerading as input implementations.
- * CJK and Indic composition are intentionally not advertised until a composing engine exists. */
+ * Korean uses a two-set syllable composer; other unimplemented composing methods stay unadvertised. */
 object PhormiKeyboardLayouts {
-    val supported = setOf("en", "fr", "es", "pt", "de", "it", "id", "tr", "yo", "ig", "ha", "sw", "vi", "ru", "uk", "pl", "nl", "sv", "no", "da", "fi", "cs", "ro", "hu", "el", "he", "ar")
+    val supported = setOf("en", "fr", "es", "pt", "de", "it", "id", "tr", "yo", "ig", "ha", "sw", "vi", "ru", "uk", "pl", "nl", "sv", "no", "da", "fi", "cs", "ro", "hu", "el", "he", "ar", "ko")
     fun rows(language: String): List<String> = when (language) {
+        "ko" -> listOf("ㅂㅈㄷㄱㅅㅛㅕㅑㅐㅔ", "ㅁㄴㅇㄹㅎㅗㅓㅏㅣ", "ㅋㅌㅊㅍㅠㅜㅡ")
         "fr" -> listOf("azertyuiop", "qsdfghjklm", "wxcvbn")
         "de", "cs" -> listOf("qwertzuiop", "asdfghjkl", "yxcvbnm")
         "tr" -> listOf("qwertyuıopğü", "asdfghjklşi", "zxcvbnmöç")

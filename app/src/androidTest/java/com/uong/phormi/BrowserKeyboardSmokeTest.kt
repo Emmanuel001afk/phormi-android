@@ -83,6 +83,23 @@ class BrowserKeyboardSmokeTest {
             scenario.onActivity { assertEquals("", it.editor.text.toString()) }
         }
     }
+    @Test fun koreanKeysComposeSyllablesAndBackspaceReversesOneJamo() {
+        PhormiKeyboardPreferences.setLanguage(context, "ko")
+        editor(InputType.TYPE_CLASS_TEXT).use { scenario ->
+            assertTrue(device.wait(Until.hasObject(By.desc("ㅎ")), 7000))
+            for (letter in "ㅎㅏㄴㄱㅡㄹ") device.findObject(By.desc(letter.toString())).click()
+            scenario.onActivity { assertEquals("한글", it.editor.text.toString()) }
+            device.findObject(By.desc("Backspace")).click()
+            scenario.onActivity { assertEquals("한그", it.editor.text.toString()) }
+            device.findObject(By.desc("Backspace")).click()
+            scenario.onActivity { assertEquals("한ㄱ", it.editor.text.toString()) }
+            // Moving the cursor ends composition: typing must not replace the previous word.
+            scenario.onActivity { it.editor.setSelection(0) }
+            device.waitForIdle()
+            device.findObject(By.desc("ㅁ")).click()
+            scenario.onActivity { assertEquals("ㅁ한ㄱ", it.editor.text.toString()) }
+        }
+    }
     @Test fun keyboardSettingsOpensWithCompatibleTheme() {
         ActivityScenario.launch(PhormiKeyboardSettingsActivity::class.java).use {
             assertTrue(device.wait(Until.hasObject(By.text("Phormi Keyboard")), 7000))

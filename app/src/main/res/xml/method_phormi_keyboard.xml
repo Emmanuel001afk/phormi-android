@@ -31,4 +31,5 @@
     <subtype android:label="Phormi Keyboard - Magyar" android:imeSubtypeLocale="hu_HU" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - Ελληνικά" android:imeSubtypeLocale="el_GR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - עברית" android:imeSubtypeLocale="he_IL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
+    <subtype android:label="Phormi Keyboard - 한국어 (두벌식)" android:imeSubtypeLocale="ko_KR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
 </input-method>
