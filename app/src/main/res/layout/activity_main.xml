@@ -125,6 +125,7 @@
             android:focusable="true"
             android:contentDescription="Add or remove favorite" />
 
+        <Space android:id="@+id/home_toolbar_spacer" android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:visibility="gone" />
         <TextView
             android:id="@+id/tab_count"
             android:layout_width="48dp"
@@ -133,7 +134,7 @@
             android:gravity="center"
             android:text="0"
             android:textColor="@color/phormi_accent"
-            android:textSize="10sp"
+            android:textSize="16sp"
             android:textStyle="bold"
             android:background="@drawable/bg_tab_count"
             android:clickable="true"

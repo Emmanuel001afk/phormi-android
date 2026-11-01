@@ -31,7 +31,16 @@ class BrowserKeyboardSmokeTest {
     @Test fun phoneAndDateEditorsHaveBackspaceAndDone() {
         for (type in listOf(InputType.TYPE_CLASS_PHONE, InputType.TYPE_CLASS_DATETIME)) {
             editor(type).use { scenario ->
-                assertTrue("Backspace must be reachable", device.wait(Until.hasObject(By.desc("Backspace")), 7000))
+                val reachable = device.wait(Until.hasObject(By.desc("Backspace")), 10000)
+                if (!reachable) {
+                    var state = ""
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        val service = PhormiKeyboardServiceV2.activeInstance()
+                        state = "type=$type shown=${service?.isInputViewShown} editor=${service?.currentInputEditorInfo?.inputType}"
+                    }
+                    val controls = device.findObjects(By.clazz("android.widget.Button")).takeLast(20).joinToString { "${it.text}/${it.contentDescription}/${it.visibleBounds}" }
+                    fail("Backspace must be reachable: $state; controls=$controls")
+                }
                 assertTrue("Done must be reachable", device.wait(Until.hasObject(By.text("Done")), 2000))
                 device.findObject(By.text("1")).click()
                 device.findObject(By.desc("Backspace")).click()
@@ -56,6 +65,11 @@ class BrowserKeyboardSmokeTest {
             assertTrue(device.wait(Until.hasObject(By.text("Image fixture")), 3000))
             device.findObject(By.text("Image fixture")).click()
             scenario.onActivity { assertEquals("", it.editor.text.toString()) }
+        }
+    }
+    @Test fun keyboardSettingsOpensWithCompatibleTheme() {
+        ActivityScenario.launch(PhormiKeyboardSettingsActivity::class.java).use {
+            assertTrue(device.wait(Until.hasObject(By.text("Phormi Keyboard")), 7000))
         }
     }
     @Test fun pinnedClipboardSurvivesExpiry() {

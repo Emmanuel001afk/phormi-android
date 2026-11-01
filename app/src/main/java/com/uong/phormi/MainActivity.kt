@@ -1649,6 +1649,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateHomeChromeVisibility() {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
         val wide = resources.configuration.screenWidthDp >= 900
+        findViewById<View>(R.id.home_toolbar_spacer)?.visibility = if (onHome) View.VISIBLE else View.GONE
         findViewById<View>(R.id.btn_new_tab)?.visibility = if (wide || onHome) View.VISIBLE else View.GONE
         val fullscreen = customView != null || isInPictureInPictureMode
         findViewById<View>(R.id.top_toolbar)?.visibility = if (fullscreen || splitChromeLocked) View.GONE else View.VISIBLE
@@ -3237,7 +3238,7 @@ class MainActivity : AppCompatActivity() {
                 handler?.cancel()
                 if (view == activeWebView()) AlertDialog.Builder(this@MainActivity)
                     .setTitle("Connection blocked")
-                    .setMessage("The certificate for ${view?.url.orEmpty()} could not be verified. No insecure exception was allowed. Check the address and your device clock, or contact the website owner.")
+                    .setMessage("The certificate for ${error?.url ?: view?.url.orEmpty()} could not be verified. No insecure exception was allowed. Check the address and your device clock, or contact the website owner.")
                     .setPositiveButton("Close", null).show()
             }
 

@@ -10,7 +10,7 @@
         <TextView android:id="@+id/btn_groups_overview" style="@style/PhormiMenuTab" android:text="Groups" />
         <TextView android:id="@+id/btn_split_overview" style="@style/PhormiMenuTab" android:text="Split" />
     </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginStart="10dp" android:layout_marginEnd="10dp" android:layout_marginBottom="8dp" android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="14dp" android:background="@drawable/bg_tab_search">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginStart="10dp" android:layout_marginEnd="10dp" android:layout_marginBottom="8dp" android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="14dp" android:background="@drawable/bg_tab_search">
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⌕" android:textColor="@color/phormi_secondary" android:textSize="20sp" />
         <EditText android:id="@+id/search_tabs" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="8dp" android:background="@android:color/transparent" android:hint="Search your tabs" android:textColor="@color/phormi_text" android:textColorHint="@color/phormi_secondary" android:textSize="14sp" android:singleLine="true" android:inputType="text" />
     </LinearLayout>

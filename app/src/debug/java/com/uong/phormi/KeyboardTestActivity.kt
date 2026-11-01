@@ -19,6 +19,12 @@ class KeyboardTestActivity : Activity() {
         }
         setContentView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(editor) })
         editor.requestFocus()
-        editor.postDelayed({ (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT) }, 300)
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) editor.post {
+            editor.requestFocus()
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 }

@@ -8,9 +8,10 @@ import java.util.Locale
 object PhormiNavigationInput {
     fun webUrl(input: String): String? {
         val value = input.trim()
-        if (value.isEmpty() || value.any(Char::isWhitespace)) return null
+        if (value.isEmpty() || value.any { it == '\n' || it == '\r' || it == '\t' }) return null
         val explicit = value.startsWith("https://", true) || value.startsWith("http://", true)
-        val candidate = if (explicit) value else {
+        if (!explicit && value.any(Char::isWhitespace)) return null
+        val candidate = if (explicit) value.replace(" ", "%20") else {
             val host = value.substringBefore('/').substringBefore('?').substringBefore('#')
             if (!(host.contains('.') || host.startsWith("[") || host.substringBefore(':').equals("localhost", true))) return null
             // Bare addresses containing @ or an unrelated scheme are searches, not credentials/URLs.

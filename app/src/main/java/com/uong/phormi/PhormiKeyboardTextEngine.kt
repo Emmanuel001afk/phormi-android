@@ -127,6 +127,7 @@ object PhormiKeyboardTextEngine {
         if ("${locale.language}|$lower" in ignoredCorrections(context) ||
             loadLearned(context).any { it.equals(original, true) }) return null
         if (original.drop(1).any(Char::isUpperCase)) return null // don't rewrite acronyms/names
+        if (PhormiKeyboardDictionary.contains(context, locale, lower)) return null
         val candidate = correctionsByLanguage[locale.language]?.get(lower)
             ?: loadLearnedCorrections(context)[lower]
             ?: PhormiKeyboardSystemSpellChecker.cached(lower, locale).firstOrNull {

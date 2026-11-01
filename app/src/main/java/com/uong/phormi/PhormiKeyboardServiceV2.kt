@@ -87,6 +87,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var voiceStatus = ""
     private var voiceActive = false
     private var accentPopup: android.widget.PopupWindow? = null
+    private val wallpaperWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private var wallpaperUriLoaded: String? = null
+    private var wallpaperUriLoading: String? = null
+    private var wallpaperBitmap: android.graphics.Bitmap? = null
+    private val wallpaperTargets = mutableMapOf<String, MutableList<java.lang.ref.WeakReference<View>>>()
     private var aiEmojiContext = ""
     private var confirmClearClipboard = false
     private var keyboardResizeMode = false
@@ -107,6 +112,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
     }
     override fun onDestroy() {
+        wallpaperWorker.shutdownNow()
+        wallpaperBitmap = null
         stopVoice(false)
         stopRepeat()
         predictionRefreshRunnable?.let { repeatHandler.removeCallbacks(it) }; predictionRefreshRunnable = null
@@ -276,12 +283,33 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     private fun applyWallpaper(root: View) {
         val value = PhormiKeyboardPreferences.wallpaperUri(this) ?: return
-        Thread {
-            val bitmap = runCatching { contentResolver.openInputStream(Uri.parse(value))?.use { BitmapFactory.decodeStream(it) } }.getOrNull() ?: return@Thread
-            Handler(Looper.getMainLooper()).post {
-                if (instance === this) root.background = BitmapDrawable(resources, bitmap).apply { alpha = 72 }
+        fun paint(target: View, bitmap: android.graphics.Bitmap) {
+            target.background = android.graphics.drawable.LayerDrawable(arrayOf(
+                android.graphics.drawable.ColorDrawable(themeBackground()),
+                BitmapDrawable(resources, bitmap).apply { alpha = 72 }
+            ))
+        }
+        if (wallpaperUriLoaded == value) { wallpaperBitmap?.let { paint(root, it) }; return }
+        wallpaperTargets.getOrPut(value) { mutableListOf() }.add(java.lang.ref.WeakReference(root))
+        if (wallpaperUriLoading == value) return
+        wallpaperUriLoading = value
+        wallpaperWorker.execute {
+            val bitmap = runCatching {
+                val uri = Uri.parse(value)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                val options = BitmapFactory.Options()
+                while (bounds.outWidth / options.inSampleSize > 1600 || bounds.outHeight / options.inSampleSize > 1200) options.inSampleSize *= 2
+                contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            }.getOrNull()
+            repeatHandler.post {
+                wallpaperUriLoading = null
+                if (instance === this && bitmap != null && PhormiKeyboardPreferences.wallpaperUri(this) == value) {
+                    wallpaperUriLoaded = value; wallpaperBitmap = bitmap
+                    wallpaperTargets.remove(value)?.forEach { ref -> ref.get()?.let { paint(it, bitmap) } }
+                } else wallpaperTargets.remove(value)
             }
-        }.start()
+        }
     }
     private fun feedback(view: View) {
         if (PhormiKeyboardPreferences.haptic(this)) {
@@ -421,8 +449,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun refreshPredictionStrip(){
         val row=predictionRow ?: return
         val ic=currentInputConnection
-        val word=PhormiKeyboardTextEngine.currentWord(ic)
-        val previous=PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo))
+        val eligible = PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
+        val word=if (eligible) PhormiKeyboardTextEngine.currentWord(ic) else ""
+        val previous=if (eligible) PhormiKeyboardTextEngine.previousWord(ic,PhormiKeyboardTextEngine.localeFor(editorInfo)) else ""
         if (word == lastPredictionWord && previous == lastPredictionPrevious && row.childCount > 0) return
         lastPredictionWord = word
         lastPredictionPrevious = previous
@@ -1109,7 +1138,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             lastAutoCorrection = null
         } else {
             val before = ic.getTextBeforeCursor(256, 0)?.toString().orEmpty()
-            val length = PhormiKeyboardInputRules.deletionLength(before)
+            val platformLength = if (before.isEmpty()) 0 else android.icu.text.BreakIterator.getCharacterInstance().let {
+                it.setText(before)
+                before.length - it.preceding(before.length).coerceAtLeast(0)
+            }
+            val length = maxOf(platformLength, PhormiKeyboardInputRules.deletionLength(before))
             if (length > 0) ic.deleteSurroundingText(length, 0)
             else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL)) }
         }

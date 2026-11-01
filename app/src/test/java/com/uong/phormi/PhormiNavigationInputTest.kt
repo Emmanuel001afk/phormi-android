@@ -7,6 +7,7 @@ class PhormiNavigationInputTest {
     @Test fun acceptsWebAddressesAndLocalDevelopment() {
         assertEquals("https://example.com/path?q=one", PhormiNavigationInput.webUrl("example.com/path?q=one"))
         assertEquals("http://localhost:8080", PhormiNavigationInput.webUrl("localhost:8080"))
+        assertEquals("https://example.com/a%20b", PhormiNavigationInput.webUrl("https://example.com/a b"))
         assertEquals("https://192.168.1.1", PhormiNavigationInput.webUrl("192.168.1.1"))
         assertEquals("https://example.com", PhormiNavigationInput.webUrl("HTTPS://EXAMPLE.COM"))
     }

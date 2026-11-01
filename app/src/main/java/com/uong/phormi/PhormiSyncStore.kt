@@ -93,11 +93,16 @@ class PhormiSyncStore(context: Context) {
         }
 
         val active = snapshot.optInt("activeTabIndex", 0).coerceIn(0, urls.length() - 1)
+        val oldIds = readArray("tab_ids")
+        val highestId = (0 until oldIds.length()).maxOfOrNull { oldIds.optInt(it, 0) } ?: 0
+        if (highestId > Int.MAX_VALUE - urls.length()) return false
+        val freshIds = JSONArray()
+        repeat(urls.length()) { freshIds.put(highestId + it + 1) }
         val editor = prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
             .putString(KEY_TAB_TITLES, titles.toString())
             // Never attach old profile/history/lock IDs by array position to imported URLs.
-            .remove("tab_ids").remove("tab_profiles").remove("tab_webview_states")
+            .putString("tab_ids", freshIds.toString()).remove("tab_profiles").remove("tab_webview_states")
             .remove("tab_search_queries").remove("tab_created_at").remove("tab_last_used")
             .putInt(KEY_ACTIVE_INDEX, active)
             .putString(KEY_SEARCH_PROVIDER, snapshot.optString("searchProvider", "Google"))

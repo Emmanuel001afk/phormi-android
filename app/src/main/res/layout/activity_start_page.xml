@@ -13,25 +13,25 @@
             <ImageView android:id="@+id/start_page_logo" android:layout_width="30dp" android:layout_height="30dp" android:src="@drawable/ic_phormi_logo" android:contentDescription="Phormi logo" />
             <TextView android:id="@+id/start_page_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="Phormi" android:textColor="@color/phormi_text" android:textSize="26sp" android:textStyle="bold" />
         </LinearLayout>
-        <TextView android:id="@+id/start_page_subtitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="A little more room to explore." android:textColor="@color/phormi_secondary" android:textSize="11sp" />
+        <TextView android:id="@+id/start_page_subtitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="A little more room to explore." android:textColor="@color/phormi_secondary" android:textSize="13sp" />
 
         <LinearLayout android:id="@+id/start_page_search_box" android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="24dp" android:gravity="center_vertical" android:paddingStart="10dp" android:paddingEnd="4dp" android:background="@drawable/bg_start_search">
             <TextView android:id="@+id/start_page_engine" android:layout_width="wrap_content" android:layout_height="40dp" android:gravity="center" android:paddingStart="2dp" android:paddingEnd="8dp" android:text="Search ▾" android:textColor="@color/phormi_text" android:textSize="12sp" android:contentDescription="Choose search provider" />
             <EditText android:id="@+id/start_page_search" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:hint="Search or enter a web address" android:textColor="@color/phormi_text" android:textColorHint="@color/phormi_secondary" android:textSize="15sp" android:singleLine="true" android:imeOptions="actionGo" android:inputType="textUri" android:background="@android:color/transparent" />
-            <TextView android:id="@+id/start_page_go" android:layout_width="36dp" android:layout_height="36dp" android:gravity="center" android:clickable="true" android:focusable="true" android:contentDescription="Search or open" android:text="→" android:textColor="@color/phormi_accent" android:textSize="18sp" />
+            <TextView android:id="@+id/start_page_go" android:layout_width="48dp" android:layout_height="48dp" android:gravity="center" android:clickable="true" android:focusable="true" android:contentDescription="Search or open" android:text="→" android:textColor="@color/phormi_accent" android:textSize="18sp" />
         </LinearLayout>
 
-        <LinearLayout android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginTop="16dp" android:orientation="horizontal" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:layout_marginTop="16dp" android:orientation="horizontal" android:gravity="center_vertical">
             <TextView android:id="@+id/start_page_action_tabs" style="@style/PhormiStartAction" android:text="▣  Tabs" android:contentDescription="Open tabs" />
-            <TextView android:id="@+id/start_page_action_bookmarks" style="@style/PhormiStartAction" android:text="☆  Saved" android:contentDescription="Open bookmarks" />
+            <TextView android:id="@+id/start_page_action_bookmarks" style="@style/PhormiStartAction" android:text="☆  Saved" android:contentDescription="Open saved pages" />
             <TextView android:id="@+id/start_page_action_downloads" style="@style/PhormiStartAction" android:text="↓  Files" android:contentDescription="Open downloads" />
             <TextView android:id="@+id/start_page_action_ai" style="@style/PhormiStartAction" android:text="✦  Ask" android:contentDescription="Open browser AI" />
         </LinearLayout>
 
-        <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:layout_marginTop="18dp" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="18dp" android:gravity="center_vertical">
             <TextView android:id="@+id/start_page_quick_access" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Quick access" android:textColor="@color/phormi_text" android:textSize="13sp" android:textStyle="bold" />
-            <TextView android:id="@+id/start_page_news" android:layout_width="wrap_content" android:layout_height="28dp" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="News · On" android:textColor="@color/phormi_accent" android:textSize="10sp" android:background="@drawable/bg_start_action" android:clickable="true" android:focusable="true" />
-            <TextView android:id="@+id/start_page_ai" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginStart="6dp" android:gravity="center" android:drawableTop="@drawable/ic_phormi_ai" android:contentDescription="Phormi AI mode" android:clickable="true" android:focusable="true" android:background="@drawable/bg_start_action" android:padding="5dp" />
+            <TextView android:id="@+id/start_page_news" android:layout_width="wrap_content" android:layout_height="48dp" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="News · On" android:textColor="@color/phormi_accent" android:textSize="10sp" android:background="@drawable/bg_start_action" android:clickable="true" android:focusable="true" />
+            <TextView android:id="@+id/start_page_ai" android:layout_width="48dp" android:layout_height="48dp" android:layout_marginStart="6dp" android:gravity="center" android:drawableTop="@drawable/ic_phormi_ai" android:contentDescription="Phormi AI mode" android:clickable="true" android:focusable="true" android:background="@drawable/bg_start_action" android:padding="5dp" />
         </LinearLayout>
 
         <!-- Dynamic quick access rows (MainActivity.loadQuickAccessRows) -->

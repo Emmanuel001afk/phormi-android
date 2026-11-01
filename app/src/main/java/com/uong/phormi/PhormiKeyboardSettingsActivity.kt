@@ -19,7 +19,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private val wallpaperPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(uri, flags)
             }
             PhormiKeyboardPreferences.setWallpaperUri(this, uri.toString())
@@ -73,8 +73,9 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
                 row.addView(Button(this).apply {
                     text = (if (PhormiKeyboardPreferences.theme(this@PhormiKeyboardSettingsActivity) == index) "✓ " else "") + name
                     isAllCaps = false
+                    minimumHeight = dp(52)
                     setOnClickListener { PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity, index); render() }
-                }, LinearLayout.LayoutParams(0, dp(52), 1f))
+                }, LinearLayout.LayoutParams(0, -2, 1f))
             }
             content.addView(row)
         }

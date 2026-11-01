@@ -41,7 +41,9 @@ jobs:
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "version_name=1.0.$version_code" >> "$GITHUB_OUTPUT"
       - name: Audit source and resources
-        run: python3 tools/audit_project.py
+        run: |
+          python3 tools/audit_project.py
+          python3 tools/audit_repairs.py
       - name: Run unit tests
         run: |
           set -o pipefail
