@@ -41,7 +41,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         modeButton = findViewById(R.id.btn_view_mode)
         modeButton.setOnClickListener {
             mode = when (mode) { "vertical" -> "horizontal"; "horizontal" -> "grid"; else -> "vertical" }
-            prefs.edit().putString(KEY_MODE, mode).apply(); renderTabs(allTabs)
+            prefs.edit().putString(KEY_MODE, mode).apply(); filterTabs()
         }
         tabsVerticalScroll = findViewById(R.id.tabs_vertical_scroll)
         tabsHorizontalScroll = findViewById(R.id.tabs_horizontal_scroll)
@@ -58,95 +58,73 @@ class TabsOverviewActivity : AppCompatActivity() {
         })
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::tabsVertical.isInitialized) { loadTabs(); filterTabs() }
+    }
+    private fun filterTabs() {
+        val query = findViewById<EditText>(R.id.search_tabs).text.toString().trim().lowercase()
+        renderTabs(allTabs.filter { it.title.lowercase().contains(query) || it.url.lowercase().contains(query) })
+    }
+
     private fun renderTabs(items: List<TabInfo>) {
         listOf(tabsVertical, tabsHorizontal, tabsGrid).forEach { it.removeAllViews() }
         tabCount.text = allTabs.size.toString()
-        modeButton.text = when (mode) { "vertical" -> "▥ Vertical"; "horizontal" -> "⇆ Horizontal"; else -> "▦ Grid" }
+        modeButton.text = when (mode) { "vertical" -> "List"; "horizontal" -> "Carousel"; else -> "Grid" }
         tabsVerticalScroll.visibility = if (mode == "vertical") View.VISIBLE else View.GONE
         tabsHorizontalScroll.visibility = if (mode == "horizontal") View.VISIBLE else View.GONE
         tabsGridScroll.visibility = if (mode == "grid") View.VISIBLE else View.GONE
+        val target = when(mode) { "horizontal" -> tabsHorizontal; "grid" -> tabsGrid; else -> tabsVertical }
         if (items.isEmpty()) {
-            val empty = TextView(this).apply { text = "No matching tabs"; setTextColor(0xFF94A3B8.toInt()); textSize = 14f; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
-            when (mode) { "vertical" -> tabsVertical; "horizontal" -> tabsHorizontal; else -> tabsGrid }.addView(empty, LinearLayout.LayoutParams(-1, -1)); return
+            target.addView(TextView(this).apply { text = "No matching tabs"; setTextColor(PhormiUiColors.secondary(this@TabsOverviewActivity)); textSize = 16f; setPadding(16.dp(), 24.dp(), 16.dp(), 24.dp()) })
+            return
         }
-        if (mode == "grid") {
-            val sections = items.groupBy { it.groupName.ifBlank { "Ungrouped" } }
-            sections.forEach { (group, groupItems) ->
-                tabsGrid.addView(groupHeader(group), LinearLayout.LayoutParams(-1, -2))
-                groupItems.chunked(2).forEach { pair ->
-                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, 160) }
-                    pair.forEach { item -> row.addView(makeTab(item, "grid"), LinearLayout.LayoutParams(0, -1, 1f)) }
-                    if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
-                    tabsGrid.addView(row)
-                }
-            }
-        } else if (mode == "vertical") {
-            var lastGroup = ""
-            items.forEach { item ->
-                val group = item.groupName.ifBlank { "Ungrouped" }
-                if (group != lastGroup) {
-                    tabsVertical.addView(TextView(this).apply {
-                        text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
-                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp())
-                    }, LinearLayout.LayoutParams(-1, -2))
-                    lastGroup = group
-                }
-                tabsVertical.addView(makeTab(item, "vertical"), LinearLayout.LayoutParams(-1, 154).apply { topMargin = 6 })
-            }
+        if (mode == "horizontal") {
+            tabsHorizontal.orientation = LinearLayout.HORIZONTAL
+            items.forEach { target.addView(makeTab(it), LinearLayout.LayoutParams(260.dp(), -2).apply { setMargins(6.dp(), 8.dp(), 6.dp(), 8.dp()) }) }
         } else {
-            tabsHorizontal.orientation = LinearLayout.VERTICAL
-            items.groupBy { it.groupName.ifBlank { "Ungrouped" } }.forEach { (group, groupItems) ->
-                tabsHorizontal.addView(groupHeader(group), LinearLayout.LayoutParams(-1, -2))
-                groupItems.chunked(2).forEach { pair ->
-                    val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-                    val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-                    pair.forEachIndexed { index, item ->
-                        val view = makeTab(item, "horizontal")
-                        val lp = LinearLayout.LayoutParams(174.dp(), 174.dp()).apply { leftMargin = 6; rightMargin = 6 }
-                        if (index == 0) topRow.addView(view, lp) else bottomRow.addView(view, lp)
-                    }
-                    tabsHorizontal.addView(topRow, LinearLayout.LayoutParams(-2, 182.dp()))
-                    if (bottomRow.childCount > 0) tabsHorizontal.addView(bottomRow, LinearLayout.LayoutParams(-2, 182.dp()))
+            val columns = if (mode == "grid" && resources.configuration.screenWidthDp >= 380 && resources.configuration.fontScale <= 1.3f) 2 else 1
+            items.groupBy { it.groupName.ifBlank { "Ungrouped" } }.forEach { (group, members) ->
+                target.addView(TextView(this).apply { text = group; textSize = 14f; setTextColor(PhormiUiColors.secondary(this@TabsOverviewActivity)); setPadding(8.dp(), 16.dp(), 8.dp(), 8.dp()) })
+                members.chunked(columns).forEach { pair ->
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    pair.forEach { row.addView(makeTab(it), LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(4.dp(), 4.dp(), 4.dp(), 4.dp()) }) }
+                    if (columns == 2 && pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+                    target.addView(row, LinearLayout.LayoutParams(-1, -2))
                 }
             }
         }
     }
 
-    private fun groupHeader(group: String): TextView = TextView(this).apply {
-        text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
-        textSize = 12f
-        setTextColor(0xFF38BDF8.toInt())
-        setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp())
-    }
-
-    private fun makeTab(item: TabInfo, style: String): View {
-        val v = LayoutInflater.from(this).inflate(R.layout.item_tab_circle, null, false)
-        val body = v.findViewById<View>(R.id.tab_circle_body)
-        val title = v.findViewById<TextView>(R.id.tab_circle_title)
-        val url = v.findViewById<TextView>(R.id.tab_circle_url)
-        title.text = item.title
-        url.text = buildString {
-            append(if (item.url == "about:blank") "New tab" else item.url)
-            if (item.groupName.isNotBlank()) append("\nGroup: ${item.groupName}")
-            if (item.profile.isNotBlank() && !item.profile.equals("Default", true)) append("\nEnvironment: ${item.profile}")
+    private fun makeTab(item: TabInfo): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(12.dp(), 12.dp(), 12.dp(), 8.dp())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(PhormiUiColors.surface(this@TabsOverviewActivity)); cornerRadius = 16.dp().toFloat() }
         }
-        if (style != "horizontal") {
-            val lp = body.layoutParams as android.widget.FrameLayout.LayoutParams
-            lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT; lp.height = if (style == "vertical") 142.dp() else 148.dp(); lp.gravity = Gravity.CENTER; body.layoutParams = lp
-            body.background = android.graphics.drawable.GradientDrawable().apply { setColor(0xFFFFE9E2.toInt()); setStroke(2.dp(), 0xFFF6CFC5.toInt()); cornerRadius = 18.dp().toFloat() }
-            body.setPadding(if (style == "vertical") 18.dp() else 12.dp(), 14.dp(), 92.dp(), 14.dp())
-            title.gravity = Gravity.CENTER_VERTICAL; title.setTextColor(0xFF111827.toInt()); url.gravity = Gravity.CENTER_VERTICAL; url.setTextColor(0xFF334155.toInt()); title.textSize = if (style == "vertical") 15f else 13f; url.textSize = if (style == "vertical") 10f else 9f
+        val open = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; minimumHeight = 88.dp(); isClickable = true; isFocusable = true
+            contentDescription = "Open ${item.title}"
+            setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id)); finish() }
+            setOnLongClickListener { showEnvironmentChooser(item); true }
         }
-        body.setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id)); finish() }
-        body.setOnLongClickListener { AlertDialog.Builder(this).setTitle(item.title).setItems(arrayOf("Environment", "Assign to group")) { _, which -> if (which == 0) showEnvironmentChooser(item) else showGroupChooser(item) }.show(); true }
-        val groupButton = TextView(this).apply {
-            text = "Group"; contentDescription = "Assign ${item.title} to a tab group"; gravity = Gravity.CENTER; setTextColor(0xFF0F172A.toInt()); textSize = 11f; setPadding(10.dp(), 5.dp(), 10.dp(), 5.dp())
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xFFBAE6FD.toInt()); cornerRadius = 14.dp().toFloat() }
-            setOnClickListener { showGroupChooser(item) }
+        open.addView(TextView(this).apply { text = item.title; textSize = 16f; setTextColor(PhormiUiColors.text(this@TabsOverviewActivity)); maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END })
+        open.addView(TextView(this).apply {
+            text = (if (item.url == "about:blank") "New tab" else item.url) +
+                (if (item.profile != "Default") "\nEnvironment: ${item.profile}" else "")
+            textSize = 12f; setTextColor(PhormiUiColors.secondary(this@TabsOverviewActivity)); maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, 6.dp(), 0, 6.dp())
+        })
+        card.addView(open, LinearLayout.LayoutParams(-1, -2))
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun action(label: String, description: String, click: () -> Unit) {
+            actions.addView(TextView(this).apply { text = label; contentDescription = description; gravity = Gravity.CENTER; textSize = 14f
+                setTextColor(PhormiUiColors.accent(this@TabsOverviewActivity)); isClickable = true; isFocusable = true; setOnClickListener { click() }
+            }, LinearLayout.LayoutParams(0, 48.dp(), 1f))
         }
-        if (body is android.widget.FrameLayout) body.addView(groupButton, android.widget.FrameLayout.LayoutParams(-2, 34.dp(), Gravity.BOTTOM or Gravity.END).apply { rightMargin = 44.dp(); bottomMargin = 8.dp() })
-        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("tab_id", item.id)); finish() }
-        return v
+        action("Group", "Group ${item.title}") { showGroupChooser(item) }
+        action("Close", "Close ${item.title}") { setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("tab_id", item.id)); finish() }
+        card.addView(actions)
+        return card
     }
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()

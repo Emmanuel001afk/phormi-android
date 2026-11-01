@@ -1,9 +1,9 @@
 <resources>
     <style name="Theme.Phormi" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#0F172A</item>
-        <item name="colorPrimaryDark">#0F172A</item>
-        <item name="colorAccent">#38BDF8</item>
-        <item name="android:windowBackground">#0F172A</item>
+        <item name="colorPrimary">@color/phormi_surface</item>
+        <item name="colorPrimaryDark">@color/phormi_surface</item>
+        <item name="colorAccent">@color/phormi_accent</item>
+        <item name="android:windowBackground">@color/phormi_surface</item>
     </style>
     <style name="PhormiStartAction">
         <item name="android:layout_width">0dp</item>
@@ -13,7 +13,7 @@
         <item name="android:layout_marginEnd">3dp</item>
         <item name="android:gravity">center</item>
         <item name="android:background">@drawable/bg_start_action</item>
-        <item name="android:textColor">#E2E8F0</item>
+        <item name="android:textColor">@color/phormi_text</item>
         <item name="android:textSize">12sp</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
@@ -23,7 +23,7 @@
         <item name="android:layout_height">match_parent</item>
         <item name="android:layout_weight">1</item>
         <item name="android:gravity">center</item>
-        <item name="android:textColor">#E2E8F0</item>
+        <item name="android:textColor">@color/phormi_text</item>
         <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:clickable">true</item>
@@ -34,7 +34,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">16dp</item>
         <item name="android:padding">7dp</item>
-        <item name="android:textColor">#38BDF8</item>
+        <item name="android:textColor">@color/phormi_accent</item>
         <item name="android:textSize">12sp</item>
         <item name="android:textStyle">bold</item>
     </style>
@@ -52,7 +52,7 @@
         <item name="android:layout_height">48dp</item>
         <item name="android:layout_marginTop">5dp</item>
         <item name="android:gravity">center_vertical</item>
-        <item name="android:textColor">#E2E8F0</item>
+        <item name="android:textColor">@color/phormi_text</item>
         <item name="android:textSize">15sp</item>
         <item name="android:paddingStart">14dp</item>
         <item name="android:paddingEnd">14dp</item>

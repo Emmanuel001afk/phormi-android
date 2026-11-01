@@ -19,7 +19,7 @@
             android:layout_height="48dp"
             android:gravity="center"
             android:text="‹"
-            android:textColor="#E2E8F0"
+            android:textColor="@color/phormi_text"
             android:textSize="32sp"
             android:contentDescription="Back" />
 
@@ -28,7 +28,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Downloads"
-            android:textColor="#F8FAFC"
+            android:textColor="@color/phormi_text"
             android:textSize="20sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -43,7 +43,7 @@
         android:paddingEnd="16dp"
         android:background="#152338"
         android:text="Checking downloads…"
-        android:textColor="#38BDF8"
+        android:textColor="@color/phormi_accent"
         android:textSize="13sp" />
 
     <TextView
@@ -54,7 +54,7 @@
         android:gravity="center"
         android:padding="32dp"
         android:text="No Phormi downloads yet."
-        android:textColor="#94A3B8"
+        android:textColor="@color/phormi_secondary"
         android:textSize="15sp" />
 
     <ListView
@@ -62,6 +62,6 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:divider="#1E293B"
+        android:divider="@color/phormi_surface"
         android:dividerHeight="1dp" />
 </LinearLayout>

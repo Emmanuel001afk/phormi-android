@@ -13,7 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 /** Local Favorites/Bookmarks screen backed by the canonical PhormiFavorites store. */
-class BookmarksActivity : AppCompatActivity() {
+open class BookmarksActivity : AppCompatActivity() {
 
     data class Bookmark(val title: String, val url: String, val addedAt: Long)
 
@@ -38,21 +38,8 @@ class BookmarksActivity : AppCompatActivity() {
             PhormiFavorites.add(context, title, url)
         }
 
-        /**
-         * Existing MainActivity uses this for both real unfavorite and Quick Access
-         * removal. Distinguish the Quick Access action at the boundary so the latter
-         * only hides the tile; the actual Favorite remains intact.
-         */
-        fun remove(context: android.content.Context, url: String) {
-            if (calledFromQuickAccessRenderer()) {
-                PhormiQuickAccessState.hideFavorite(context, url)
-            } else {
-                PhormiFavorites.remove(context, url)
-            }
-        }
+        fun remove(context: android.content.Context, url: String) = PhormiFavorites.remove(context, url)
 
-        private fun calledFromQuickAccessRenderer(): Boolean =
-            Throwable().stackTrace.any { it.className == MainActivity::class.java.name && it.methodName == "confirmQuickSiteRemoval" }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

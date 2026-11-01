@@ -42,6 +42,7 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_DEFAULT_BROWSER = "default_browser"
         const val ACTION_TAB_GROUPS = "tab_groups"
         const val ACTION_TABS_RESULT = "tabs_result"
+        const val ACTION_HOME = "home"
         const val ACTION_BACK = "back"
         const val ACTION_FORWARD = "forward"
         const val ACTION_REFRESH = "refresh"
@@ -57,6 +58,7 @@ class MenuActivity : AppCompatActivity() {
         tabs.forEachIndexed { index, id -> findViewById<TextView>(id).setOnClickListener { showPage(index) } }
         showPage(savedInstanceState?.getInt("menu_page", 0) ?: 0)
         wire(R.id.menu_browser_settings) { startActivity(Intent(this, PhormiBrowserSettingsActivity::class.java)) }
+        wire(R.id.menu_home) { finishWith(ACTION_HOME) }
         wire(R.id.menu_back) { finishWith(ACTION_BACK) }
         wire(R.id.menu_forward) { finishWith(ACTION_FORWARD) }
         wire(R.id.menu_refresh) { finishWith(ACTION_REFRESH) }
@@ -131,7 +133,7 @@ class MenuActivity : AppCompatActivity() {
         pages.forEachIndexed { i, id -> findViewById<View>(id).visibility = if (i == activePage) View.VISIBLE else View.GONE }
         buttons.forEachIndexed { i, id ->
             findViewById<TextView>(id).apply {
-                setTextColor(if (i == activePage) Color.WHITE else Color.rgb(148, 163, 184))
+                setTextColor(if (i == activePage) Color.WHITE else PhormiUiColors.secondary(this@MenuActivity))
                 background = GradientDrawable().apply {
                     setColor(if (i == activePage) Color.rgb(29, 78, 105) else Color.TRANSPARENT)
                     cornerRadius = 18f * resources.displayMetrics.density

@@ -4,25 +4,25 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0B1220">
+    android:background="@color/phormi_background">
 
     <!-- ONE compact horizontal chrome layer only. -->
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="26dp"
+        android:layout_height="56dp"
         android:gravity="center_vertical"
         android:paddingStart="2dp"
         android:paddingEnd="2dp"
-        android:background="#0F172A">
+        android:background="@color/phormi_surface">
 
         <TextView
             android:id="@+id/btn_home"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:text="⌂"
-            android:textColor="#E2E8F0"
+            android:textColor="@color/phormi_text"
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"
@@ -31,31 +31,35 @@
         <LinearLayout
             android:id="@+id/url_toolbar"
             android:layout_width="0dp"
-            android:layout_height="24dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingStart="6dp"
             android:paddingEnd="2dp"
-            android:background="#111827">
+            android:background="@color/phormi_surface">
 
             <TextView
-                android:layout_width="20dp"
-                android:layout_height="24dp"
+                android:id="@+id/btn_site_info"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Site information and permissions"
+                android:layout_width="40dp"
+                android:layout_height="48dp"
                 android:gravity="center"
-                android:text="⌕"
-                android:textColor="#94A3B8"
+                android:text="ⓘ"
+                android:textColor="@color/phormi_secondary"
                 android:textSize="16sp" />
 
-            <EditText
+            <AutoCompleteTextView
                 android:id="@+id/url_bar"
                 android:layout_width="0dp"
-                android:layout_height="24dp"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:hint="Search or type a URL"
-                android:textColorHint="#94A3B8"
-                android:textColor="#F1F5F9"
-                android:textSize="12sp"
+                android:textColorHint="@color/phormi_secondary"
+                android:textColor="@color/phormi_text"
+                android:textSize="16sp"
                 android:singleLine="true"
                 android:imeOptions="actionGo"
                 android:inputType="textUri"
@@ -66,10 +70,10 @@
             <TextView
                 android:id="@+id/btn_go"
                 android:layout_width="0dp"
-                android:layout_height="24dp"
+                android:layout_height="48dp"
                 android:gravity="center"
                 android:text=""
-                android:textColor="#38BDF8"
+                android:textColor="@color/phormi_accent"
                 android:textSize="16sp"
                 android:clickable="true"
                 android:focusable="true" />
@@ -77,14 +81,14 @@
 
         <HorizontalScrollView
             android:id="@+id/tab_strip"
-            android:layout_width="150dp"
-            android:layout_height="26dp"
+            android:layout_width="220dp"
+            android:layout_height="56dp"
             android:layout_marginStart="2dp"
             android:visibility="gone"
             android:fillViewport="false"
             android:scrollbars="none"
             android:overScrollMode="never"
-            android:background="#0B1220">
+            android:background="@color/phormi_background">
 
             <LinearLayout
                 android:id="@+id/tab_strip_container"
@@ -98,12 +102,12 @@
 
         <TextView
             android:id="@+id/btn_refresh"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="↻"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="16sp"
             android:clickable="true"
             android:focusable="true"
@@ -111,8 +115,8 @@
 
         <TextView
             android:id="@+id/btn_favorite"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:drawableTop="@drawable/ic_favorite_decagon"
@@ -123,12 +127,12 @@
 
         <TextView
             android:id="@+id/tab_count"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:gravity="center"
             android:text="0"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="10sp"
             android:textStyle="bold"
             android:background="@drawable/bg_tab_count"
@@ -138,11 +142,11 @@
 
         <TextView
             android:id="@+id/btn_new_tab"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:text="+"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="20sp"
             android:clickable="true"
             android:focusable="true"
@@ -150,12 +154,12 @@
 
         <TextView
             android:id="@+id/btn_top_back"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:visibility="gone"
             android:text="‹"
-            android:textColor="#E2E8F0"
+            android:textColor="@color/phormi_text"
             android:textSize="20sp"
             android:clickable="true"
             android:focusable="true"
@@ -163,12 +167,12 @@
 
         <TextView
             android:id="@+id/btn_top_forward"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:visibility="gone"
             android:text="›"
-            android:textColor="#E2E8F0"
+            android:textColor="@color/phormi_text"
             android:textSize="20sp"
             android:clickable="true"
             android:focusable="true"
@@ -176,12 +180,12 @@
 
         <TextView
             android:id="@+id/btn_top_downloads"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:visibility="gone"
             android:text="↓"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"
@@ -189,8 +193,8 @@
 
         <TextView
             android:id="@+id/btn_top_ai"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:visibility="gone"
             android:text="✦"
@@ -202,17 +206,19 @@
 
         <TextView
             android:id="@+id/btn_menu"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:gravity="center"
             android:text="⋮"
-            android:textColor="#E2E8F0"
+            android:textColor="@color/phormi_text"
             android:textSize="20sp"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Menu" />
     </LinearLayout>
 
+    <ProgressBar android:id="@+id/page_progress" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:visibility="gone" />
     <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -234,13 +240,13 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone"
-            android:background="#0B1220">
+            android:background="@color/phormi_background">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical">
                 <FrameLayout android:id="@+id/split_top_host" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
-                <View android:id="@+id/split_divider" android:layout_width="match_parent" android:layout_height="10dp" android:background="#1E293B" android:clickable="true" android:focusable="true" />
+                <View android:id="@+id/split_divider" android:layout_width="match_parent" android:layout_height="10dp" android:background="@color/phormi_surface" android:clickable="true" android:focusable="true" />
                 <FrameLayout android:id="@+id/split_bottom_host" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
             </LinearLayout>
             <TextView
@@ -273,7 +279,7 @@
             android:paddingEnd="12dp"
             android:singleLine="true"
             android:ellipsize="end"
-            android:textColor="#F1F5F9"
+            android:textColor="@color/phormi_text"
             android:textSize="12sp"
             android:background="@drawable/bg_download_progress_chip"
             android:clickable="true"
@@ -293,21 +299,21 @@
     <LinearLayout
         android:id="@+id/bottom_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="26dp"
+        android:layout_height="48dp"
         android:gravity="center"
         android:orientation="horizontal"
-        android:background="#0F172A">
+        android:background="@color/phormi_surface">
 
         <TextView
             android:id="@+id/btn_back"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="‹"
-            android:textColor="#CBD5E1"
+            android:textColor="@color/phormi_text"
             android:textSize="24sp"
             android:background="@drawable/bg_nav_ring"
             android:clickable="true"
@@ -317,13 +323,13 @@
         <TextView
             android:id="@+id/btn_forward"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="›"
-            android:textColor="#CBD5E1"
+            android:textColor="@color/phormi_text"
             android:textSize="24sp"
             android:background="@drawable/bg_nav_ring"
             android:clickable="true"
@@ -333,13 +339,13 @@
         <TextView
             android:id="@+id/btn_bottom_ai"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="✦"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"
@@ -349,13 +355,13 @@
         <TextView
             android:id="@+id/btn_bottom_downloads"
             android:layout_width="0dp"
-            android:layout_height="26dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="10dp"
             android:gravity="center"
             android:text="↓"
-            android:textColor="#CBD5E1"
+            android:textColor="@color/phormi_text"
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"

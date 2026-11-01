@@ -113,8 +113,7 @@ class MainActivity : AppCompatActivity() {
     private var splitChromeLocked = false
     private var splitRatio = 0.5f
 
-    private var pendingPermissionRequest: PermissionRequest? = null
-    private var pendingPermissionPermissions: Array<out String> = emptyArray()
+    private val sitePermissions by lazy { PhormiSitePermissions(this) { it === activeWebView() } }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
@@ -196,8 +195,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var pendingGeoOrigin: String? = null
-    private var pendingGeoCallback: android.webkit.GeolocationPermissions.Callback? = null
     private val downloadBadgeHandler = Handler(Looper.getMainLooper())
     private val downloadBadgePoll = object : Runnable {
         override fun run() {
@@ -233,7 +230,7 @@ class MainActivity : AppCompatActivity() {
         if (::prefs.isInitialized) {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
-            tabs.forEach { it.webView.settings.textZoom = PhormiBrowserPreferences.textZoom(this) }
+            tabs.forEach { applyLiveWebSettings(it.webView) }
             updateHomeChromeVisibility()
             downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
             downloadBadgeHandler.post(downloadBadgePoll)
@@ -567,6 +564,8 @@ class MainActivity : AppCompatActivity() {
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
         urlBar = findViewById(R.id.url_bar)
+        configureOmnibox()
+        findViewById<View>(R.id.btn_site_info).setOnClickListener { showSiteInformation() }
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
         tabCountView = findViewById(R.id.tab_count)
@@ -587,7 +586,7 @@ class MainActivity : AppCompatActivity() {
         applyStartPageAppearance()
         applyBrowserChromeAppearance()
 
-        val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
+        val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, "Google") ?: "Google"
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
 
@@ -669,7 +668,10 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
 
-        findViewById<TextView>(R.id.btn_refresh).setOnClickListener { refreshActivePage() }
+        findViewById<TextView>(R.id.btn_refresh).setOnClickListener {
+            val page = activeWebView()
+            if (page != null && page.progress < 100) { page.stopLoading(); updatePageProgress(page, 100) } else refreshActivePage()
+        }
         findViewById<TextView>(R.id.btn_favorite).setOnClickListener { addCurrentPageToBookmarks() }
         splitLockButton.setOnClickListener { setSplitChromeLocked(!splitChromeLocked) }
         installSplitDividerResize()
@@ -924,7 +926,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun searchUrlForProvider(query: String): String {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        return when (prefs.getString(KEY_SEARCH_PROVIDER, "Phormi Search")) {
+        return when (prefs.getString(KEY_SEARCH_PROVIDER, "Google")) {
             PHORMI_SEARCH -> "phormi-unified://search?q=$encoded"
             "Bing" -> "https://www.bing.com/search?q=$encoded"
             "DuckDuckGo" -> "https://duckduckgo.com/?q=$encoded"
@@ -1026,7 +1028,7 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this).setTitle("Remove from Quick access?").setMessage(site.name)
             .setNegativeButton("Cancel", null).setPositiveButton("Remove") { _, _ ->
                 when (site.tag) {
-                    "◇" -> BookmarksActivity.remove(this, site.url)
+                    "◇" -> PhormiQuickAccessState.hideFavorite(this, site.url)
                     "•" -> HistoryActivity.removeUrl(this, site.url)
                     else -> {
                         val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
@@ -1131,7 +1133,7 @@ class MainActivity : AppCompatActivity() {
             "Swisscows",
             "YouTube"
         )
-        val current = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
+        val current = prefs.getString(KEY_SEARCH_PROVIDER, "Google") ?: "Google"
         val checked = options.indexOf(current).coerceAtLeast(0)
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Search")
@@ -1157,6 +1159,17 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun runUnifiedSearch(query: String) {
+        if (!prefs.getBoolean("multi_engine_consent_v1", false)) {
+            AlertDialog.Builder(this).setTitle("Use multi-engine search?")
+                .setMessage("Phormi Search sends your query to 11 providers, including Google, Bing and DuckDuckGo. This uses more data and providers may block automated results. You can change engines from the home search selector.")
+                .setNegativeButton("Use Google") { _, _ ->
+                    prefs.edit().putString(KEY_SEARCH_PROVIDER, "Google").apply()
+                    findViewById<TextView>(R.id.start_page_engine).text = "Google  ▾"
+                    urlBar.setText(query); navigateFromUrlBar()
+                }
+                .setPositiveButton("Use Phormi Search") { _, _ -> prefs.edit().putBoolean("multi_engine_consent_v1", true).apply(); runUnifiedSearch(query) }.show()
+            return
+        }
         if (activeWebView() == null) createNewTab(NEW_TAB_URL)
         val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
         val webView = tab.webView
@@ -1213,7 +1226,7 @@ class MainActivity : AppCompatActivity() {
                 val mergedSnapshot = mergeUnifiedResults(snapshot, query)
                 runOnUiThread {
                     if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@runOnUiThread
-                    webView.loadDataWithBaseURL(
+                    if (done == providers.size) webView.loadDataWithBaseURL(
                             "https://phormi.local/",
                             unifiedSearchHtml(
                                 query,
@@ -1236,11 +1249,9 @@ class MainActivity : AppCompatActivity() {
                             val answer = aiController.synthesizeSearchAnswer(query, evidence)
                             if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@launch
                             if (answer != null) {
-                                webView.loadDataWithBaseURL(
-                                    "https://phormi.local/",
-                                    unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer),
-                                    "text/html", "UTF-8", null
-                                )
+                                webView.evaluateJavascript("""
+                                    (function(){var el=document.getElementById('ai-answer');if(el){el.textContent=${JSONObject.quote(answer)};el.style.display='block';}})();
+                                """.trimIndent(), null)
                             }
                         }
                     }
@@ -1577,6 +1588,7 @@ class MainActivity : AppCompatActivity() {
             <div class='top'><div class='brand'>Phormi Search</div><div class='query'>$q</div><div class='query'>${if (loading) "Collecting $completed/$total engines…" else "Unified results · $total engines"}</div></div>
             <div class='coverage'>${if (loading) "${finishedEngines.size}/$total answered" else "${successfulEngines.size}/$total answered"}</div>
             $body
+            <section id='ai-answer' class='ai' style='display:none' aria-live='polite'></section>
             <div class='footer'>
               Phormi queries all available independent search indexes together, merges matching pages, removes duplicates, and ranks results using the combined evidence from every engine that responds. No single engine is treated as a fallback or as the only authority.<br><br>
               <a class='engine' href='https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Google</a>
@@ -1602,14 +1614,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun navigateFromStartPage() {
         val raw = startPageSearch.text?.toString()?.trim().orEmpty()
-        if (raw.isEmpty()) return
-        if ((prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH) == PHORMI_SEARCH &&
-            !raw.startsWith("http://") && !raw.startsWith("https://") &&
-            !(raw.contains(".") && !raw.contains(" "))
-        ) {
-            runUnifiedSearch(raw)
-            return
-        }
+        if (raw.isBlank()) return
         urlBar.setText(raw)
         navigateFromUrlBar()
     }
@@ -1618,7 +1623,7 @@ class MainActivity : AppCompatActivity() {
      * wide screens may expose the compact tab strip inside that same layer. */
     private fun updateResponsiveChrome() {
         val tabStrip = findViewById<View>(R.id.tab_strip) ?: return
-        val wide = resources.configuration.screenWidthDp >= 600
+        val wide = resources.configuration.screenWidthDp >= 900
         tabStrip.visibility = if (wide) View.VISIBLE else View.GONE
     }
 
@@ -1637,19 +1642,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateHomeChromeVisibility() {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
+        val wide = resources.configuration.screenWidthDp >= 900
+        findViewById<View>(R.id.btn_new_tab)?.visibility = if (wide || onHome) View.VISIBLE else View.GONE
         val fullscreen = customView != null || isInPictureInPictureMode
         findViewById<View>(R.id.top_toolbar)?.visibility = if (fullscreen || splitChromeLocked) View.GONE else View.VISIBLE
         findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_home)?.visibility = if (onHome || !wide) View.GONE else View.VISIBLE
         findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
         val bottom = PhormiBrowserPreferences.showBottomToolbar(this)
         // Favorite remains in the Browse menu; reserve more width for the address field.
-        findViewById<View>(R.id.btn_favorite)?.visibility = if (onHome || !bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_favorite)?.visibility = if (onHome || !bottom || !wide) View.GONE else View.VISIBLE
         findViewById<View>(R.id.bottom_toolbar)?.visibility =
             if (onHome || !bottom || splitChromeLocked || fullscreen) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_ai)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_back)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_forward)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_ai)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_back)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_forward)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
         updateDownloadBadge()
         swipeRefresh.isEnabled = !onHome && PhormiBrowserPreferences.pullToRefresh(this)
     }
@@ -1715,10 +1722,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btn_bottom_downloads)?.apply {
             text = if (count == 0) "↓" else "↓ $count"
             contentDescription = if (count == 0) "Downloads" else "$count downloads in progress"
-            setTextColor(if (count == 0) Color.rgb(203, 213, 225) else Color.rgb(56, 189, 248))
+            setTextColor(if (count == 0) PhormiUiColors.text(this@MainActivity) else PhormiUiColors.accent(this@MainActivity))
         }
         findViewById<TextView>(R.id.btn_top_downloads)?.apply {
-            visibility = if (count > 0 && (startPageContainer.visibility == View.VISIBLE ||
+            visibility = if (resources.configuration.screenWidthDp >= 900 && count > 0 && (startPageContainer.visibility == View.VISIBLE ||
                 !PhormiBrowserPreferences.showBottomToolbar(this@MainActivity)) &&
                 customView == null && !isInPictureInPictureMode) View.VISIBLE else View.GONE
             contentDescription = "$count downloads in progress"
@@ -1766,21 +1773,64 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    private data class AddressSuggestion(val title: String, val url: String) {
+        override fun toString() = "$title\n$url"
+    }
+    private fun configureOmnibox() {
+        val input = urlBar as? android.widget.AutoCompleteTextView ?: return
+        input.threshold = 1
+        input.setSelectAllOnFocus(true)
+        input.setOnFocusChangeListener { _, focused ->
+            if (focused) {
+                val saved = PhormiFavorites.getAll(this).map { AddressSuggestion(it.title, it.url) }
+                val recent = runCatching {
+                    val array = JSONArray(getSharedPreferences("phormi_history", MODE_PRIVATE).getString("items", "[]"))
+                    (array.length() - 1 downTo maxOf(0, array.length() - 100)).mapNotNull { index ->
+                        array.optJSONObject(index)?.let { AddressSuggestion(it.optString("title"), it.optString("url")) }
+                    }
+                }.getOrDefault(emptyList())
+                input.setAdapter(android.widget.ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, (saved + recent).distinctBy { it.url }))
+            }
+        }
+        input.setOnItemClickListener { parent, _, position, _ ->
+            val suggestion = parent.getItemAtPosition(position) as? AddressSuggestion ?: return@setOnItemClickListener
+            input.setText(suggestion.url, false)
+            navigateFromUrlBar()
+        }
+    }
+    private fun updatePageProgress(view: WebView?, progress: Int) {
+        if (view !== activeWebView()) return
+        findViewById<android.widget.ProgressBar>(R.id.page_progress)?.apply {
+            this.progress = progress
+            visibility = if (progress in 1..99 && startPageContainer.visibility != View.VISIBLE) View.VISIBLE else View.GONE
+        }
+        findViewById<TextView>(R.id.btn_refresh)?.apply {
+            text = if (progress in 1..99) "×" else "↻"
+            contentDescription = if (progress in 1..99) "Stop loading" else "Refresh page"
+        }
+    }
+    private fun showSiteInformation() {
+        val page = activeWebView() ?: return
+        val target = page.url.orEmpty()
+        val origin = PhormiSitePermissions.secureOrigin(target)
+        AlertDialog.Builder(this).setTitle("Site information")
+            .setMessage((origin ?: target) + "\n\n" + if (origin != null)
+                "HTTPS connection. This does not guarantee that the website is trustworthy. Camera, microphone and location requests require approval for this page. Reload to end active page access."
+                else "This is not a verified HTTPS page. Do not enter sensitive information over HTTP.")
+            .setPositiveButton("Close", null)
+            .setNegativeButton("Reload / end access") { _, _ -> sitePermissions.cancel(); page.reload() }
+            .setNeutralButton("Privacy settings") { _, _ -> startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }.show()
+    }
+
     private fun navigateFromUrlBar() {
         val raw = urlBar.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
-        if ((prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH) == PHORMI_SEARCH &&
-            !raw.startsWith("http://") && !raw.startsWith("https://") &&
-            !(raw.contains(".") && !raw.contains(" "))
-        ) {
+        val direct = PhormiNavigationInput.webUrl(raw)
+        if (direct == null && (prefs.getString(KEY_SEARCH_PROVIDER, "Google") == PHORMI_SEARCH)) {
             runUnifiedSearch(raw)
             return
         }
-        val url = when {
-            raw.startsWith("http://") || raw.startsWith("https://") -> raw
-            raw.contains(".") && !raw.contains(" ") -> "https://$raw"
-            else -> searchUrlForProvider(raw)
-        }
+        val url = direct ?: searchUrlForProvider(raw)
         val webView = activeWebView()
         tabs.firstOrNull { it.id == activeTabId }?.searchQuery = null
         if (webView != null) {
@@ -2049,7 +2099,7 @@ class MainActivity : AppCompatActivity() {
         chip.setOnClickListener { switchToTab(id) }
         chipClose.setOnClickListener { closeTab(id) }
 
-        webView.webChromeClient = buildChromeClient { newTitle ->
+        webView.webChromeClient = buildChromeClient(webView) { newTitle ->
             val t = if (newTitle.isNullOrBlank()) getString(R.string.new_tab) else newTitle
             chipTitle.text = t
             tabs.find { it.id == id }?.title = t
@@ -2097,6 +2147,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun switchToTabUnlocked(id: Int) {
+        if (id != activeTabId) sitePermissions.cancel()
         activeTabId = id
         tabs.find { it.id == id }?.lastUsed = System.currentTimeMillis()
         val liveIds = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(id)
@@ -2123,6 +2174,7 @@ class MainActivity : AppCompatActivity() {
         updateTabCount()
         updateNavButtons()
         updateFavoriteButton()
+        updatePageProgress(activeWebView(), activeWebView()?.progress ?: 100)
         val current = tabs.find { it.id == id }?.webView?.url
         val query = tabs.firstOrNull { it.id == id }?.searchQuery
         if (query != null) urlBar.setText(query)
@@ -2169,6 +2221,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeTab(id: Int) {
+        tabs.firstOrNull { it.id == id }?.webView?.let { sitePermissions.cancel(it) }
         if (splitMode && (id == splitTopTabId || id == splitBottomTabId)) setSplitMode(false)
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
@@ -2958,10 +3011,7 @@ class MainActivity : AppCompatActivity() {
         unifiedSearchExecutor.shutdownNow()
         rendererCrashCounts.clear()
         rendererCrashTimes.clear()
-        pendingPermissionRequest?.deny()
-        pendingPermissionRequest = null
-        pendingGeoCallback?.invoke(pendingGeoOrigin, false, false)
-        pendingGeoCallback = null
+        sitePermissions.cancel()
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         runCatching { exitFullscreenVideo() }
@@ -2974,6 +3024,16 @@ class MainActivity : AppCompatActivity() {
         PhormiBrowserPerformance.clearAll()
         CookieManager.getInstance().flush()
         super.onDestroy()
+    }
+
+    private fun applyLiveWebSettings(webView: WebView) {
+        webView.settings.apply {
+            textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
+            javaScriptEnabled = prefs.getBoolean("security_javascript", true)
+            mixedContentMode = if (prefs.getBoolean("security_mixed_content", false))
+                WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        }
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean("security_third_party_cookies", true))
     }
 
     @SuppressLint("WrongConstant")
@@ -3118,6 +3178,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                view?.let { sitePermissions.cancel(it) }
+                if (view === activeWebView() && !urlBar.hasFocus() && url != NEW_TAB_URL && !url.orEmpty().startsWith("https://phormi.local/")) urlBar.setText(url.orEmpty())
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
                 val target = url.orEmpty()
@@ -3135,7 +3197,10 @@ class MainActivity : AppCompatActivity() {
                 error: android.net.http.SslError?
             ) {
                 handler?.cancel()
-                if (view == activeWebView()) Toast.makeText(this@MainActivity, "Secure connection could not be verified.", Toast.LENGTH_LONG).show()
+                if (view == activeWebView()) AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Connection blocked")
+                    .setMessage("The certificate for ${view?.url.orEmpty()} could not be verified. No insecure exception was allowed. Check the address and your device clock, or contact the website owner.")
+                    .setPositiveButton("Close", null).show()
             }
 
             override fun onSafeBrowsingHit(
@@ -3247,8 +3312,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildChromeClient(onTitleChanged: (String?) -> Unit): WebChromeClient {
+    private fun buildChromeClient(source: WebView, onTitleChanged: (String?) -> Unit): WebChromeClient {
         return object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) { updatePageProgress(view, newProgress) }
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 super.onReceivedTitle(view, title)
                 onTitleChanged(title)
@@ -3345,52 +3411,15 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-                val allowed = request.resources.filter {
-                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
-                }.toTypedArray()
-                if (allowed.isEmpty()) { request.deny(); return }
-                pendingPermissionRequest?.deny()
-                pendingPermissionRequest = request
-                val needed = mutableListOf<String>()
-                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in allowed &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    needed.add(Manifest.permission.CAMERA)
-                }
-                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in allowed &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    needed.add(Manifest.permission.RECORD_AUDIO)
-                }
-                if (needed.isEmpty()) {
-                    request.grant(allowed)
-                    pendingPermissionRequest = null
-                } else {
-                    pendingPermissionPermissions = needed.toTypedArray()
-                    ActivityCompat.requestPermissions(this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS)
-                }
+                sitePermissions.requestMedia(source, request)
             }
-
-            override fun onGeolocationPermissionsShowPrompt(
-                origin: String?,
-                callback: android.webkit.GeolocationPermissions.Callback?
-            ) {
-                this@MainActivity.pendingGeoCallback?.invoke(this@MainActivity.pendingGeoOrigin, false, false)
-                this@MainActivity.pendingGeoCallback = null
-                this@MainActivity.pendingGeoOrigin = null
-                if (ContextCompat.checkSelfPermission(
-                        this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    callback?.invoke(origin, true, false)
-                } else {
-                    pendingGeoOrigin = origin
-                    pendingGeoCallback = callback
-                    ActivityCompat.requestPermissions(
-                        this@MainActivity,
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                        REQ_GEOLOCATION
-                    )
-                }
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                sitePermissions.cancelled(request)
             }
+            override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) {
+                sitePermissions.requestLocation(source, origin, callback)
+            }
+            override fun onGeolocationPermissionsHidePrompt() { sitePermissions.cancel(source) }
 
             override fun onShowFileChooser(
                 webViewParam: WebView?,
@@ -3428,25 +3457,7 @@ class MainActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            REQ_MEDIA_PERMISSIONS -> {
-                val request = pendingPermissionRequest
-                if (request != null) {
-                    val granted = grantResults.isNotEmpty() &&
-                        grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-                    if (granted) request.grant(request.resources) else request.deny()
-                }
-                pendingPermissionRequest = null
-                pendingPermissionPermissions = emptyArray()
-            }
-            REQ_GEOLOCATION -> {
-                val granted = grantResults.isNotEmpty() &&
-                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-                pendingGeoCallback?.invoke(pendingGeoOrigin, granted, false)
-                pendingGeoCallback = null
-                pendingGeoOrigin = null
-            }
-        }
+        sitePermissions.onResult(requestCode)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -3506,6 +3517,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 MenuActivity.ACTION_TAB_ENVIRONMENT -> showTabEnvironmentChooser()
                 MenuActivity.ACTION_TABS_RESULT -> data?.let(::handleTabsOverviewResult)
+                MenuActivity.ACTION_HOME -> showStartPage()
                 MenuActivity.ACTION_BACK -> activeWebView()?.let { if (it.canGoBack()) it.goBack() }
                 MenuActivity.ACTION_FORWARD -> activeWebView()?.let { if (it.canGoForward()) it.goForward() }
                 MenuActivity.ACTION_REFRESH -> refreshActivePage()

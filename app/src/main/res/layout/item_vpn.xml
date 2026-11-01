@@ -7,13 +7,13 @@
     android:paddingEnd="14dp"
     android:paddingTop="12dp"
     android:paddingBottom="12dp"
-    android:background="#0B1220">
+    android:background="@color/phormi_background">
 
     <TextView
         android:id="@+id/vpn_item_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#F1F5F9"
+        android:textColor="@color/phormi_text"
         android:textSize="14sp"
         android:maxLines="2"
         android:ellipsize="end" />
@@ -23,6 +23,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="3dp"
-        android:textColor="#94A3B8"
+        android:textColor="@color/phormi_secondary"
         android:textSize="11sp" />
 </LinearLayout>

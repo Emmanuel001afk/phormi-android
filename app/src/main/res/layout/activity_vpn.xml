@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0B1220">
+    android:background="@color/phormi_background">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,7 +11,7 @@
         android:gravity="center_vertical"
         android:paddingStart="4dp"
         android:paddingEnd="8dp"
-        android:background="#111827">
+        android:background="@color/phormi_surface">
 
         <TextView
             android:id="@+id/vpn_back"
@@ -19,7 +19,7 @@
             android:layout_height="40dp"
             android:gravity="center"
             android:text="‹"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="24sp"
             android:clickable="true"
             android:focusable="true" />
@@ -29,7 +29,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="VPN"
-            android:textColor="#F8FAFC"
+            android:textColor="@color/phormi_text"
             android:textSize="17sp"
             android:textStyle="bold" />
 
@@ -41,7 +41,7 @@
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
             android:text="Refresh"
-            android:textColor="#38BDF8"
+            android:textColor="@color/phormi_accent"
             android:textSize="14sp"
             android:clickable="true"
             android:focusable="true" />
@@ -56,7 +56,7 @@
         android:paddingTop="8dp"
         android:paddingBottom="4dp"
         android:text="Off — pick a free public server"
-        android:textColor="#94A3B8"
+        android:textColor="@color/phormi_secondary"
         android:textSize="12sp" />
 
     <LinearLayout
@@ -74,9 +74,9 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="Connect"
-            android:textColor="#0B1220"
+            android:textColor="@color/phormi_background"
             android:textStyle="bold"
-            android:background="#38BDF8"
+            android:background="@color/phormi_accent"
             android:clickable="true"
             android:focusable="true" />
 
@@ -88,7 +88,7 @@
             android:layout_marginStart="8dp"
             android:gravity="center"
             android:text="Disconnect"
-            android:textColor="#F8FAFC"
+            android:textColor="@color/phormi_text"
             android:background="#334155"
             android:clickable="true"
             android:focusable="true" />
@@ -101,10 +101,10 @@
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
         android:layout_marginBottom="6dp"
-        android:background="#1E293B"
+        android:background="@color/phormi_surface"
         android:hint="Search country, code, or IP"
-        android:textColorHint="#64748B"
-        android:textColor="#F1F5F9"
+        android:textColorHint="@color/phormi_secondary"
+        android:textColor="@color/phormi_text"
         android:textSize="13sp"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
@@ -123,7 +123,7 @@
         android:paddingStart="10dp"
         android:paddingEnd="10dp"
         android:text="Embedded engine check"
-        android:textColor="#38BDF8"
+        android:textColor="@color/phormi_accent"
         android:textSize="12sp"
         android:clickable="true"
         android:focusable="true" />
@@ -135,7 +135,7 @@
         android:gravity="center"
         android:padding="24dp"
         android:text="Loading free servers from multiple sources…"
-        android:textColor="#64748B"
+        android:textColor="@color/phormi_secondary"
         android:visibility="gone" />
 
     <ListView
@@ -143,6 +143,6 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:divider="#1E293B"
+        android:divider="@color/phormi_surface"
         android:dividerHeight="1dp" />
 </LinearLayout>
