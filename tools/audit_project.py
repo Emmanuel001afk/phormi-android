@@ -10,6 +10,7 @@ SRC = ROOT / "app/src/main/java/com/uong/phormi"
 RES = ROOT / "app/src/main/res"
 MANIFEST = ROOT / "app/src/main/AndroidManifest.xml"
 errors: list[str] = []
+manifest = None
 
 sources = [
     "MainActivity.kt", "MenuActivity.kt", "AccountsActivity.kt", "AiActivity.kt",
@@ -84,6 +85,58 @@ for language in ("en", "fr", "es", "pt", "de", "it", "id", "tr"):
     asset = ROOT / f"app/src/main/assets/keyboard/words_{language}.txt"
     if not asset.is_file() or asset.stat().st_size < 1000:
         errors.append(f"missing/empty keyboard dictionary: {language}")
+
+# --- Regression guards (added with the Chrome/Gboard fix pass) -----------------
+kotlin_paths = sorted(SRC.rglob("*.kt"))
+kotlin_text = "\n".join(p.read_text(errors="replace") for p in kotlin_paths)
+manifest_root = manifest.getroot() if manifest is not None else None
+
+# Every declared component must map to an actual Kotlin/Java class declaration.
+for kind in ("activity", "service", "receiver"):
+    for element in (manifest_root.iter(kind) if manifest_root is not None else []):
+        name = element.get(android_ns + "name", "")
+        if not name.startswith("."):
+            continue
+        simple = name[1:].split(".")[-1]
+        if not re.search(r"\b(?:class|object)\s+" + re.escape(simple) + r"\b", kotlin_text):
+            errors.append(f"manifest {kind} has no class declaration: {name}")
+
+# Every R.id reference, in every Kotlin file, must resolve to a real resource ID.
+for path in kotlin_paths:
+    for ref in sorted(set(re.findall(r"(?<!android\.)R\.id\.(\w+)", path.read_text(errors="replace")))):
+        if ref not in ids:
+            errors.append(f"{path.name} references unknown R.id.{ref}")
+
+# IME subtypes must be Latin-script (the only layouts that exist) and ASCII capable.
+ime_path = RES / "xml/method_phormi_keyboard.xml"
+locales_path = SRC / "PhormiKeyboardLocales.kt"
+if ime_path.is_file() and locales_path.is_file():
+    block = re.search(r"latinLanguages[^=]*=\s*setOf\((.*?)\)", locales_path.read_text(), re.S)
+    latin = set(re.findall(r'"(\w+)"', block.group(1))) if block else set()
+    for subtype in ET.parse(ime_path).iter("subtype"):
+        locale = subtype.get(android_ns + "imeSubtypeLocale", "")
+        language = locale.split("_")[0].lower()
+        if language not in latin:
+            errors.append(f"IME subtype advertises an unsupported script: {locale}")
+        if subtype.get(android_ns + "isAsciiCapable") != "true":
+            errors.append(f"IME subtype is not ASCII capable: {locale}")
+
+# App-owned network calls must use TLS (loopback development endpoints excepted).
+for path in kotlin_paths:
+    for line_no, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        for candidate in re.findall(r'https?://[^\s"\')]+', line):
+            if candidate.startswith("http://") and not (
+                "localhost" in candidate or "127.0.0.1" in candidate
+            ):
+                errors.append(f"{path.name}:{line_no} plain HTTP endpoint: {candidate[:64]}")
+
+if 'getDeclaredField("Companion")' in kotlin_text or 'getDeclaredField("instance")' in kotlin_text:
+    errors.append("reflection into private IME Companion.instance is still present")
+if (SRC / "PhormiKeyboardRenderCompat.kt").exists():
+    errors.append("dead shadowed render() compat layer is still present")
+application = manifest_root.find("application") if manifest_root is not None else None
+if application is not None and application.get(android_ns + "usesCleartextTraffic") == "true":
+    errors.append("cleartext traffic is globally enabled")
 
 if errors:
     print("PHORMI SOURCE AUDIT: FAIL")

@@ -46,19 +46,20 @@ object PhormiKeyboardDictionaryApi {
         // 1. offline expanded
         val base = expandedForLocale(locale).filter { it.startsWith(p, true) && !it.equals(p, true) }.take(6)
         // 2. fruit boost (already in base) + learned already handled by TextEngine
-        // 3. cached remote
+        // 3. cached remote results. Disk cache is read by PhormiKeyboardTextEngine
+        // through loadDisk(context, ...), which has the Context this object lacks.
+        // The old loadDiskInner(null, ...) stub always returned an empty list.
         val remote = cache["${locale.language}|$p"].orEmpty()
-        // 4. disk cache
-        val disk = loadDiskInner(null, locale.language, p)
         val merged = LinkedHashSet<String>()
         remote.forEach { if (!it.equals(p, true)) merged.add(it) }
-        disk.forEach { if (!it.equals(p, true)) merged.add(it) }
         base.forEach(merged::add)
         return merged.take(6)
     }
 
-    // Async fetch: Datamuse sp= prefix* (free, no key), fallback dictionaryapi validation
+    // Async fetch: Datamuse sp= prefix* (free, no key), fallback dictionaryapi validation.
+    // Opt-in only: a typed word prefix must never leave the device without consent.
     fun request(context: Context, prefix: String, locale: Locale) {
+        if (!PhormiKeyboardPreferences.cloudSuggestions(context)) return
         val p = prefix.trim().lowercase(locale)
         if (p.length < 2 || locale.language != "en") return
         val key = "${locale.language}|$p"
@@ -113,14 +114,6 @@ object PhormiKeyboardDictionaryApi {
         } catch (_: Exception) {}
     }
 
-    private fun loadDiskInner(context: Context?, lang: String, prefix: String): List<String> {
-        // Used sync where context available via cache disk
-        return try {
-            // lazy disk access via last context cache — we also keep in-memory cache
-            emptyList()
-        } catch (_: Exception) { emptyList() }
-    }
-
     fun loadDisk(context: Context, prefix: String, locale: Locale): List<String> {
         val p = prefix.trim().lowercase(locale)
         val key = CACHE_PREFIX + locale.language + "|" + p
@@ -132,15 +125,9 @@ object PhormiKeyboardDictionaryApi {
     }
 
     private fun refreshKeyboard() {
-        runCatching {
-            val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
-            val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
-            val service = field?.get(companion) as? PhormiKeyboardServiceV2 ?: return
-            // reflect refresh strip
-            var type: Class<*>? = service.javaClass
-            var m: java.lang.reflect.Method? = null
-            while (type != null && m == null) { m = type.declaredMethods.firstOrNull { it.name == "refreshPredictionStrip" }; type = type.superclass }
-            m?.apply { isAccessible = true }?.invoke(service)
-        }
+        // Direct API instead of reflecting into the private Companion.instance field and
+        // looking up refreshPredictionStrip() by name. The old code broke silently under
+        // R8/minification as soon as release shrinking was enabled.
+        PhormiKeyboardServiceV2.activeInstance()?.onDictionaryResult()
     }
 }

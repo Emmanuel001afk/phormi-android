@@ -102,6 +102,27 @@ class HistoryActivity : AppCompatActivity() {
         fun getTopSites(context: android.content.Context, limit: Int = 4): List<Entry> =
             getMostVisited(context, limit, 1)
 
+        /** Most recent visits, newest first, for omnibox autocomplete. Local only. */
+        fun recent(context: android.content.Context, limit: Int = 80): List<Entry> {
+            if (limit <= 0) return emptyList()
+            val arr = runCatching {
+                JSONArray(context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY, "[]"))
+            }.getOrElse { JSONArray() }
+            val out = mutableListOf<Entry>()
+            for (i in arr.length() - 1 downTo 0) {
+                val o = arr.optJSONObject(i) ?: continue
+                val url = o.optString("url", "").trim()
+                if (url.isBlank() || url == "about:blank") continue
+                out += Entry(
+                    title = o.optString("title", url).ifBlank { url },
+                    url = url,
+                    visitedAt = o.optLong("visitedAt", 0L),
+                    visitCount = o.optInt("visitCount", 1).coerceAtLeast(1)
+                )
+            }
+            return out.distinctBy { it.url }.take(limit)
+        }
+
         private fun canonical(url: String): String {
             return try {
                 java.net.URL(url).run { "${host.lowercase().removePrefix("www.")}${path.ifBlank { "/" }}".lowercase() }

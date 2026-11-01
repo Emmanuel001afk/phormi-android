@@ -19,8 +19,8 @@ import java.net.URL
  * Lightweight news surface.
  *
  * Likes are stored locally and used to re-rank future stories.
- * Story rows are created programmatically so the activity does not depend on
- * a missing item_news.xml resource.
+ * Story rows are created programmatically (no separate row layout binding),
+ * and the activity is registered in AndroidManifest.xml with a menu entry.
  */
 class NewsActivity : AppCompatActivity() {
 
