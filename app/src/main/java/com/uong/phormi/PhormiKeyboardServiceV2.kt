@@ -84,6 +84,75 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var spaceSteps = 0
     private val letterButtons = mutableListOf<Pair<Button, String>>()
     private var inputSession = 0L
+    private val glideWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private var glideFuture: java.util.concurrent.Future<*>? = null
+    private var glideGeneration = 0L
+    private var glidePending = false
+    private var glideCandidates = emptyList<String>()
+    private var glideComposing = false
+    private fun finishGlide(space: Boolean = false) {
+        glideGeneration++; glideFuture?.cancel(true); glidePending = false
+        if (glideComposing) {
+            currentInputConnection?.finishComposingText()
+            if (space) currentInputConnection?.commitText(" ", 1)
+        }
+        glideCandidates = emptyList(); glideComposing = false
+        lastPredictionWord = ""; lastPredictionPrevious = ""
+    }
+    private fun canGlide(): Boolean = PhormiKeyboardPreferences.glide(this) &&
+        PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo) &&
+        PhormiKeyboardTextEngine.localeFor(editorInfo).language in PhormiGlideDecoder.languages
+
+    private fun decodeGlide(trace: List<PhormiGlideDecoder.Point>, keys: Map<Char, PhormiGlideDecoder.Point>) {
+        if (!canGlide()) return
+        finishGlide()
+        val connection = currentInputConnection ?: return
+        val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
+        val capital = shift || capsLock || autoShift
+        val allCaps = capsLock
+        val generation = ++glideGeneration
+        val session = inputSession
+        glidePending = true; refreshPredictionStrip()
+        glideFuture = glideWorker.submit {
+            val result = runCatching { PhormiGlideDecoder.decode(trace, keys,
+                PhormiKeyboardDictionary.glideWords(applicationContext, locale), locale) }.getOrDefault(emptyList())
+            repeatHandler.post {
+                if (generation != glideGeneration || session != inputSession || !isInputViewShown || !canGlide() ||
+                    locale != PhormiKeyboardTextEngine.localeFor(editorInfo)) return@post
+                glidePending = false
+                glideCandidates = result.map { candidate ->
+                    if (allCaps) candidate.word.uppercase(locale)
+                    else if (capital) candidate.word.replaceFirstChar { it.titlecase(locale) } else candidate.word
+                }
+                if (glideCandidates.isNotEmpty()) {
+                    connection.beginBatchEdit()
+                    try {
+                        val previous = connection.getTextBeforeCursor(1, 0)?.lastOrNull()
+                        if (previous?.isLetterOrDigit() == true) connection.commitText(" ", 1)
+                        glideComposing = true
+                        if (!connection.setComposingText(glideCandidates.first(), 1)) {
+                            glideComposing = false; glideCandidates = emptyList()
+                        }
+                    } finally { connection.endBatchEdit() }
+                    if (!capsLock) shift = false
+                    autoShift = false; updateLetterLabels()
+                } else android.widget.Toast.makeText(this, "Gesture not recognized — try again or tap the word", android.widget.Toast.LENGTH_SHORT).show()
+                refreshPredictionStrip()
+            }
+        }
+    }
+    private fun showGlideCandidates(row: LinearLayout): Boolean {
+        if (!glidePending && glideCandidates.isEmpty()) return false
+        row.removeAllViews()
+        if (glidePending) row.addView(TextView(this).apply { text = "Recognizing gesture…"; setTextColor(themeText()); gravity = Gravity.CENTER }, LinearLayout.LayoutParams(-1, -1))
+        else glideCandidates.forEach { word ->
+            row.addView(pill(word) {
+                if (glideComposing) currentInputConnection?.setComposingText(word, 1)
+                finishGlide(); refreshPredictionStrip()
+            }.apply { contentDescription = "Glide candidate $word" }, LinearLayout.LayoutParams(0, -1, 1f))
+        }
+        return true
+    }
     private var voiceStatus = ""
     private var voiceActive = false
     private var accentPopup: android.widget.PopupWindow? = null
@@ -112,6 +181,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         clipboardListener?.let { cm?.addPrimaryClipChangedListener(it) }
     }
     override fun onDestroy() {
+        finishGlide()
+        glideWorker.shutdownNow()
         wallpaperWorker.shutdownNow()
         wallpaperBitmap = null
         stopVoice(false)
@@ -122,6 +193,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         if (instance === this) instance = null; super.onDestroy()
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        finishGlide()
         stopVoice(false)
         inputSession++
         super.onStartInput(attribute, restarting); editorInfo = attribute
@@ -148,6 +220,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     override fun onUpdateSelection(oldSelStart:Int, oldSelEnd:Int, newSelStart:Int, newSelEnd:Int, candidatesStart:Int, candidatesEnd:Int) {
         super.onUpdateSelection(oldSelStart,oldSelEnd,newSelStart,newSelEnd,candidatesStart,candidatesEnd)
+        if ((glidePending && (oldSelStart != newSelStart || oldSelEnd != newSelEnd)) ||
+            (glideComposing && (candidatesStart < 0 || newSelStart != newSelEnd || newSelEnd != candidatesEnd))) finishGlide()
         if(panel==Panel.KEYBOARD && page==KeyboardPage.LETTERS){
             schedulePredictionRefresh()
             if(PhormiKeyboardPreferences.autoCaps(this)){
@@ -157,9 +231,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
     }
 
-    override fun onFinishInput() { inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onFinishInput() }
-    override fun onUnbindInput() { inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onUnbindInput() }
+    override fun onFinishInput() { finishGlide(); inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onFinishInput() }
+    override fun onUnbindInput() { finishGlide(); inputSession++; stopVoice(false); accentPopup?.dismiss(); stopRepeat(); shiftKeyView = null; editorInfo = null; super.onUnbindInput() }
     override fun onFinishInputView(finishingInput: Boolean) {
+        finishGlide()
         stopVoice(false)
         accentPopup?.dismiss()
         stopRepeat()
@@ -448,6 +523,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun refreshPredictionStrip(){
         val row=predictionRow ?: return
+        if (showGlideCandidates(row)) return
         val ic=currentInputConnection
         val eligible = PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)
         val word=if (eligible) PhormiKeyboardTextEngine.currentWord(ic) else ""
@@ -526,7 +602,19 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun buildLetterPage(root: LinearLayout) {
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
         val rows = PhormiKeyboardLayouts.rows(locale.language)
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val body = PhormiGlideLayout(this).apply {
+            enabledForEditor = { canGlide() && accentPopup?.isShowing != true }
+            keyGeometry = {
+                val origin = IntArray(2); getLocationOnScreen(origin)
+                letterButtons.mapNotNull { (button, label) ->
+                    val letter = label.singleOrNull() ?: return@mapNotNull null
+                    val location = IntArray(2); button.getLocationOnScreen(location)
+                    PhormiGlideLayout.Key(letter, location[0] - origin[0] + button.width / 2f,
+                        location[1] - origin[1] + button.height / 2f, button.width.toFloat(), button.height.toFloat())
+                }
+            }
+            onGlide = { trace, keys -> decodeGlide(trace, keys) }
+        }
         rows.forEachIndexed { index, chars ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
@@ -554,6 +642,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     private fun insertLetter(base: String) {
+        finishGlide(space = true)
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
         commitTextToEditor(if (shift || capsLock || autoShift) base.uppercase(locale) else base)
         if (!capsLock) shift = false
@@ -915,7 +1004,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         },LinearLayout.LayoutParams(-1,scaled(46)));list.addView(TextView(this).apply{text="Images/GIFs are inserted only when the focused field accepts the requested MIME type.";setTextColor(themeText());textSize=13f;setPadding(dp(8),dp(12),dp(8),dp(12))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildTools():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Contextual emoji"){openAiEmojiFromContext()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Settings"){panel=Panel.SETTINGS;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));addResizeControls(list);list.addView(pill("GIFs & stickers"){panel=Panel.MEDIA;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Voice typing"){launchVoice()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Select all"){currentInputConnection?.performContextMenuAction(android.R.id.selectAll)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Copy"){currentInputConnection?.performContextMenuAction(android.R.id.copy)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Paste"){currentInputConnection?.performContextMenuAction(android.R.id.paste)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Share text"){shareSelectedText()},LinearLayout.LayoutParams(-1,scaled(46)));scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Tools. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
+    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Tools. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Offline glide (8 dictionary languages)",PhormiKeyboardPreferences.glide(this)){PhormiKeyboardPreferences.set(this,PhormiKeyboardPreferences.KEY_GLIDE,!PhormiKeyboardPreferences.glide(this));finishGlide();setInputView(render())};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
             PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardServiceV2, (theme() + 1) % 8)
             setInputView(render())
         },LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
@@ -927,6 +1016,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Rose","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
     private fun render():View{
+        if (panel != Panel.KEYBOARD || page != KeyboardPage.LETTERS) finishGlide()
         shiftKeyView = null
         letterButtons.clear()
         predictionRow = null
@@ -1073,6 +1163,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         setInputView(render())
     }
     private fun commitTextToEditor(text: String) {
+        finishGlide()
         val ic = currentInputConnection ?: return
         if (text in setOf(".", ",", "!", "?", ";", ":")) autoCorrectCurrentWord(ic)
         ic.commitText(text, 1)
@@ -1106,6 +1197,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     private fun commitSpace() {
+        finishGlide()
         val ic = currentInputConnection ?: return
         autoCorrectCurrentWord(ic)
         val locale = PhormiKeyboardTextEngine.localeFor(editorInfo)
@@ -1122,6 +1214,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     private fun deleteBackward() {
         val ic = currentInputConnection ?: return
+        val deletingGlide = glideComposing
+        if (deletingGlide) ic.commitText("", 1)
+        finishGlide()
+        if (deletingGlide) return
         val selected = ic.getSelectedText(0)?.toString()
         if (!selected.isNullOrEmpty()) { ic.commitText("", 1); return }
         val correction = lastAutoCorrection
@@ -1147,7 +1243,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             else { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL)) }
         }
     }
-    private fun moveCursor(delta:Int){val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
+    private fun moveCursor(delta:Int){finishGlide();val ic=currentInputConnection?:return;val code=if(delta<0)KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT;ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,code));ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,code));refreshAfterTextKey()}
     private fun toggleShift() {
         when {
             capsLock -> { capsLock = false; shift = false; autoShift = false }
@@ -1169,6 +1265,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         EditorInfo.IME_ACTION_DONE -> "Done"; EditorInfo.IME_ACTION_PREVIOUS -> "Previous"; else -> "↵"
     }
     private fun sendEditorAction() {
+        finishGlide()
         val ic = currentInputConnection ?: return
         autoCorrectCurrentWord(ic)
         val info = editorInfo

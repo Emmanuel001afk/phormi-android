@@ -22,6 +22,9 @@ object PhormiKeyboardPreferences {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    const val KEY_GLIDE = "offline_glide"
+    fun glide(context: Context) = prefs(context).getBoolean(KEY_GLIDE, true)
+
     const val KEY_ONLINE_SUGGESTIONS = "online_suggestions"
     fun onlineSuggestions(context: Context) = prefs(context).getBoolean(KEY_ONLINE_SUGGESTIONS, false)
 

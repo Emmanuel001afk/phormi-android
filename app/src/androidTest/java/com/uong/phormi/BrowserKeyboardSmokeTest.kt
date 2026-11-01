@@ -67,6 +67,22 @@ class BrowserKeyboardSmokeTest {
             scenario.onActivity { assertEquals("", it.editor.text.toString()) }
         }
     }
+    @Test fun continuousGlideProducesAComposingWordAndBackspaceUndoesIt() {
+        editor(InputType.TYPE_CLASS_TEXT).use { scenario ->
+            assertTrue(device.wait(Until.hasObject(By.desc("Backspace")), 7000))
+            val points = "helo".map { letter ->
+                val key = device.findObject(By.desc(java.util.regex.Pattern.compile(letter.toString(), java.util.regex.Pattern.CASE_INSENSITIVE)))
+                assertNotNull("Letter $letter is visible", key)
+                val bounds = key.visibleBounds
+                android.graphics.Point(bounds.centerX(), bounds.centerY())
+            }.toTypedArray()
+            assertTrue(device.swipe(points, 12))
+            assertTrue("Decoder offers a real word", device.wait(Until.hasObject(By.desc("Glide candidate Hello")), 10000))
+            scenario.onActivity { assertEquals("Hello", it.editor.text.toString()) }
+            device.findObject(By.desc("Backspace")).click()
+            scenario.onActivity { assertEquals("", it.editor.text.toString()) }
+        }
+    }
     @Test fun keyboardSettingsOpensWithCompatibleTheme() {
         ActivityScenario.launch(PhormiKeyboardSettingsActivity::class.java).use {
             assertTrue(device.wait(Until.hasObject(By.text("Phormi Keyboard")), 7000))
