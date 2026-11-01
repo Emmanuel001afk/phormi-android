@@ -4,7 +4,7 @@ PR #11 remains **draft**. The original application baseline is
 `d2436ad06f6e2ef4240d9bf08c667a6273a8d92b`; the earlier repair milestone was
 `d0f87b5`. The previous 15 JVM / 6 emulator passes do not validate these new changes.
 
-## Implemented in this follow-up, validation in progress
+## Implemented in this follow-up, with the validation below
 
 ### Real tab suspension
 
@@ -56,6 +56,9 @@ PR #11 remains **draft**. The original application baseline is
 2. Real Indic/Thai composition/input support and language-quality validation. These
    languages remain unadvertised rather than shipping character-button placeholders.
 3. Broader glide accuracy, cancellation/privacy/editor-compatibility and device tests.
+   Initial auto-capitalization also needs a focused regression: the CAP_SENTENCES
+   fixture attempt still produced lowercase. The passing glide smoke deliberately uses
+   a plain-text field and expects lowercase; it does not validate automatic capitalization.
 4. Navigation restoration and actual memory measurements across representative websites,
    low-RAM devices, media, Web Audio, unsaved editors, split view and AI tasks.
 5. Resolve whether cross-device sync is still wanted. The user said the browser should
@@ -69,5 +72,31 @@ label this PR complete on the strength of source audits or narrow smoke tests al
 
 ## Validation record
 
-Pending CI for the new implementation. See the branch's Build Phormi APK and Android
-interaction smoke test workflows; update this section with exact tested commits/results.
+Application/test commit: **`fd2eeed9e529f83d9aa22d32dbb295550f37d17c`**.
+
+- **PASS — 29 JVM tests**, including gesture geometry/native-key handling and all
+  11,172 modern Hangul syllables through the composer.
+- **PASS — debug and release APK builds**, source/resource audit and repair guardrails:
+  https://github.com/Emmanuel001afk/phormi-android/actions/runs/41363551635
+- **PASS — 12 Android emulator tests, 0 failures, 0 skipped** (API 30):
+  https://github.com/Emmanuel001afk/phormi-android/actions/runs/41363551691
+  Coverage includes a real swipe producing a composing word and undo, Korean syllable
+  composition/backspace/cursor movement, 20-tab lazy restoration, actual WebView
+  destruction/recreation, local-HTTP navigation history restoration, and edited-form
+  protection. HTML media safety is simulated; it is not an end-to-end playback test.
+- The earlier **`d7ece5a`** passed the CodeQL/Android-lint workflow:
+  https://github.com/Emmanuel001afk/phormi-android/actions/runs/41362745128
+  This is not a claim that those checks ran on the final `fd2eeed` changes.
+- Debug APK artifact (test build, not a store release):
+  https://github.com/Emmanuel001afk/phormi-android/actions/runs/41363551635/artifacts/13105414655
+  Do not uninstall an existing installation just to bypass a signing mismatch: that
+  could erase local browser data.
+
+The Korean integration initially had a duplicate lifecycle override, fixed in
+`d7ece5a`. The glide UI test initially expected capitalization inconsistent with its
+observed editor behavior; the final test asserts plain-text lowercase entry. Neither
+failure is hidden by disabling tests. The final 12-test run includes both new input
+features and all prior smoke tests. No main-branch merge or store publication occurred.
+
+No broad physical-device, native-language-quality, recognition-accuracy, memory/RSS,
+Web Audio, or Chrome/Gboard comparison benchmark has been performed. Keep the PR draft.
