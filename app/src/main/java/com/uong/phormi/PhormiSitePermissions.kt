@@ -13,7 +13,7 @@ import java.net.URI
 
 /** Android app permission never substitutes for consent to a specific website.
  * Grants are deliberately one-shot: no hidden durable allowlist or private-mode persistence. */
-class PhormiSitePermissions(private val activity: Activity, private val isActive: (WebView) -> Boolean) {
+class PhormiSitePermissions(private val activity: Activity, private val isActive: (WebView) -> Boolean, private val onAccessGranted: (WebView) -> Unit = {}) {
     private data class Pending(
         val view: WebView, val origin: String, val androidPermissions: Array<String>,
         val media: PermissionRequest? = null, val complete: (Boolean) -> Unit
@@ -97,7 +97,11 @@ class PhormiSitePermissions(private val activity: Activity, private val isActive
         val p = pending
         pending = null
         dialog?.dismiss(); dialog = null
-        if (p != null) p.complete(approved && valid(p))
+        if (p != null) {
+            val granted = approved && valid(p)
+            if (granted) onAccessGranted(p.view)
+            p.complete(granted)
+        }
     }
 
     companion object {

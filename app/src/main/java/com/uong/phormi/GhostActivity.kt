@@ -31,7 +31,7 @@ class GhostActivity : Activity() {
     private lateinit var url: EditText
     private lateinit var count: TextView
     private var ghostProfileName: String? = null
-    private val sitePermissions by lazy { PhormiSitePermissions(this) { it === active() } }
+    private val sitePermissions by lazy { PhormiSitePermissions(this, isActive = { it === active() }) }
     private var fileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
     private var fullscreen: View? = null
     private var fullscreenCallback: android.webkit.WebChromeClient.CustomViewCallback? = null

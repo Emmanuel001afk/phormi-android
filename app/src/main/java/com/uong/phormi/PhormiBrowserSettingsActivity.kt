@@ -85,6 +85,15 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         description(content, "The top-bar button stops a loading page or refreshes a completed page.")
 
         section(content, "Tabs and sessions")
+        button(content, "Live page budget · ${PhormiBrowserPreferences.liveTabBudget(this)}") {
+            val choices = intArrayOf(2, 3, 4, 6, 8)
+            AlertDialog.Builder(this).setTitle("Live page budget")
+                .setItems(choices.map { "$it live pages" }.toTypedArray()) { _, index ->
+                    prefs.edit().putInt("live_tab_budget", choices[index]).apply()
+                    recreate()
+                }.show()
+        }
+        description(content, "Inactive pages are saved and their WebViews destroyed to release memory. Switching back recreates the page and its navigation history. Active/split tabs, AI tasks, device access, playing media and unsaved edits are protected; these may temporarily exceed the budget. Everything stays on this device.")
         button(content, "Tab retention · ${retentionLabel()}") { showRetentionChooser() }
         description(content, "Normal tabs have independent pages and navigation. Sign-ins are shared across tabs in the same browsing environment, as in other browsers. Use a separate environment for another account.")
         button(content, "Separate account environments") {
