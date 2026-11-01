@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -8,6 +9,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -25,7 +27,15 @@ class TabsOverviewActivity : AppCompatActivity() {
     private lateinit var tabsGrid: LinearLayout
     private lateinit var tabCount: TextView
     private lateinit var modeButton: TextView
+    private lateinit var selectButton: TextView
+    private lateinit var selectAllButton: TextView
+    private lateinit var closeSelectedButton: TextView
     private var mode = "vertical"
+    private var query = ""
+    // Bulk selection is explicit: entering select mode changes what a tap means,
+    // so no tab is ever closed by an ordinary tap on a card.
+    private var selectionMode = false
+    private val selectedIds = mutableSetOf<Int>()
 
     companion object { private const val PREFS = "phormi_tabs"; private const val KEY_MODE = "tab_view_mode" }
 
@@ -41,7 +51,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         modeButton = findViewById(R.id.btn_view_mode)
         modeButton.setOnClickListener {
             mode = when (mode) { "vertical" -> "horizontal"; "horizontal" -> "grid"; else -> "vertical" }
-            prefs.edit().putString(KEY_MODE, mode).apply(); renderTabs(allTabs)
+            prefs.edit().putString(KEY_MODE, mode).apply(); applyFilter()
         }
         tabsVerticalScroll = findViewById(R.id.tabs_vertical_scroll)
         tabsHorizontalScroll = findViewById(R.id.tabs_horizontal_scroll)
@@ -50,12 +60,68 @@ class TabsOverviewActivity : AppCompatActivity() {
         tabsHorizontal = findViewById(R.id.tabs_horizontal)
         tabsGrid = findViewById(R.id.tabs_grid)
         tabCount = findViewById(R.id.tab_count)
-        loadTabs(); renderTabs(allTabs)
+        selectButton = findViewById(R.id.btn_select_tabs)
+        selectAllButton = findViewById(R.id.btn_select_all_tabs)
+        closeSelectedButton = findViewById(R.id.btn_close_selected)
+
+        selectButton.setOnClickListener {
+            selectionMode = !selectionMode
+            if (!selectionMode) selectedIds.clear()
+            updateSelectionUi()
+            applyFilter()
+        }
+        selectAllButton.setOnClickListener {
+            if (selectedIds.size == allTabs.size) selectedIds.clear()
+            else allTabs.forEach { selectedIds.add(it.id) }
+            updateSelectionUi()
+            applyFilter()
+        }
+        closeSelectedButton.setOnClickListener { confirmCloseSelected() }
+
+        loadTabs()
+        updateSelectionUi()
+        applyFilter()
         findViewById<EditText>(R.id.search_tabs).addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { val q = s?.toString()?.trim()?.lowercase().orEmpty(); renderTabs(allTabs.filter { it.title.lowercase().contains(q) || it.url.lowercase().contains(q) }) }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                query = s?.toString()?.trim()?.lowercase().orEmpty()
+                applyFilter()
+            }
             override fun afterTextChanged(s: Editable?) = Unit
         })
+    }
+
+    private fun applyFilter() {
+        val items = if (query.isBlank()) allTabs
+        else allTabs.filter { it.title.lowercase().contains(query) || it.url.lowercase().contains(query) }
+        renderTabs(items)
+    }
+
+    private fun updateSelectionUi() {
+        selectButton.text = if (selectionMode) "Cancel" else "Select"
+        val visible = if (selectionMode) View.VISIBLE else View.GONE
+        selectAllButton.visibility = visible
+        closeSelectedButton.visibility = visible
+        selectAllButton.text = if (selectedIds.size == allTabs.size && allTabs.isNotEmpty()) "None" else "All"
+        closeSelectedButton.text = "Close (${selectedIds.size})"
+        closeSelectedButton.isEnabled = selectedIds.isNotEmpty()
+        closeSelectedButton.alpha = if (selectedIds.isEmpty()) 0.5f else 1f
+    }
+
+    private fun confirmCloseSelected() {
+        if (selectedIds.isEmpty()) return
+        val count = selectedIds.size
+        AlertDialog.Builder(this)
+            .setTitle("Close $count tab${if (count == 1) "" else "s"}?")
+            .setMessage("The selected tabs will be removed from this browser session.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Close $count") { _, _ ->
+                setResult(RESULT_OK, Intent().apply {
+                    putExtra("action", "close_many")
+                    putExtra("tab_ids", selectedIds.toIntArray())
+                })
+                finish()
+            }.show()
     }
 
     private fun renderTabs(items: List<TabInfo>) {
@@ -66,7 +132,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         tabsHorizontalScroll.visibility = if (mode == "horizontal") View.VISIBLE else View.GONE
         tabsGridScroll.visibility = if (mode == "grid") View.VISIBLE else View.GONE
         if (items.isEmpty()) {
-            val empty = TextView(this).apply { text = "No matching tabs"; setTextColor(0xFF94A3B8.toInt()); textSize = 14f; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
+            val empty = TextView(this).apply { text = "No matching tabs"; setTextColor(0xFF94A3B8.toInt()); textSize = 14f; gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)) }
             when (mode) { "vertical" -> tabsVertical; "horizontal" -> tabsHorizontal; else -> tabsGrid }.addView(empty, LinearLayout.LayoutParams(-1, -1)); return
         }
         if (mode == "grid") {
@@ -74,7 +140,7 @@ class TabsOverviewActivity : AppCompatActivity() {
             sections.forEach { (group, groupItems) ->
                 tabsGrid.addView(groupHeader(group), LinearLayout.LayoutParams(-1, -2))
                 groupItems.chunked(2).forEach { pair ->
-                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, 160) }
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, dp(160)) }
                     pair.forEach { item -> row.addView(makeTab(item, "grid"), LinearLayout.LayoutParams(0, -1, 1f)) }
                     if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
                     tabsGrid.addView(row)
@@ -87,11 +153,11 @@ class TabsOverviewActivity : AppCompatActivity() {
                 if (group != lastGroup) {
                     tabsVertical.addView(TextView(this).apply {
                         text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
-                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp())
+                        textSize = 12f; setTextColor(0xFF38BDF8.toInt()); setPadding(dp(8), dp(12), dp(8), dp(4))
                     }, LinearLayout.LayoutParams(-1, -2))
                     lastGroup = group
                 }
-                tabsVertical.addView(makeTab(item, "vertical"), LinearLayout.LayoutParams(-1, 154).apply { topMargin = 6 })
+                tabsVertical.addView(makeTab(item, "vertical"), LinearLayout.LayoutParams(-1, dp(154)).apply { topMargin = dp(6) })
             }
         } else {
             tabsHorizontal.orientation = LinearLayout.VERTICAL
@@ -102,11 +168,11 @@ class TabsOverviewActivity : AppCompatActivity() {
                     val bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
                     pair.forEachIndexed { index, item ->
                         val view = makeTab(item, "horizontal")
-                        val lp = LinearLayout.LayoutParams(174.dp(), 174.dp()).apply { leftMargin = 6; rightMargin = 6 }
+                        val lp = LinearLayout.LayoutParams(dp(174), dp(174)).apply { leftMargin = dp(6); rightMargin = dp(6) }
                         if (index == 0) topRow.addView(view, lp) else bottomRow.addView(view, lp)
                     }
-                    tabsHorizontal.addView(topRow, LinearLayout.LayoutParams(-2, 182.dp()))
-                    if (bottomRow.childCount > 0) tabsHorizontal.addView(bottomRow, LinearLayout.LayoutParams(-2, 182.dp()))
+                    tabsHorizontal.addView(topRow, LinearLayout.LayoutParams(-2, dp(182)))
+                    if (bottomRow.childCount > 0) tabsHorizontal.addView(bottomRow, LinearLayout.LayoutParams(-2, dp(182)))
                 }
             }
         }
@@ -116,7 +182,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         text = if (group == "Ungrouped") "UNGROUPED TABS" else "GROUP · $group"
         textSize = 12f
         setTextColor(0xFF38BDF8.toInt())
-        setPadding(8.dp(), 12.dp(), 8.dp(), 4.dp())
+        setPadding(dp(8), dp(12), dp(8), dp(4))
     }
 
     private fun makeTab(item: TabInfo, style: String): View {
@@ -124,6 +190,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         val body = v.findViewById<View>(R.id.tab_circle_body)
         val title = v.findViewById<TextView>(R.id.tab_circle_title)
         val url = v.findViewById<TextView>(R.id.tab_circle_url)
+        val selected = selectionMode && item.id in selectedIds
         title.text = item.title
         url.text = buildString {
             append(if (item.url == "about:blank") "New tab" else item.url)
@@ -131,25 +198,97 @@ class TabsOverviewActivity : AppCompatActivity() {
             if (item.profile.isNotBlank() && !item.profile.equals("Default", true)) append("\nEnvironment: ${item.profile}")
         }
         if (style != "horizontal") {
-            val lp = body.layoutParams as android.widget.FrameLayout.LayoutParams
-            lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT; lp.height = if (style == "vertical") 142.dp() else 148.dp(); lp.gravity = Gravity.CENTER; body.layoutParams = lp
-            body.background = android.graphics.drawable.GradientDrawable().apply { setColor(0xFFFFE9E2.toInt()); setStroke(2.dp(), 0xFFF6CFC5.toInt()); cornerRadius = 18.dp().toFloat() }
-            body.setPadding(if (style == "vertical") 18.dp() else 12.dp(), 14.dp(), 92.dp(), 14.dp())
-            title.gravity = Gravity.CENTER_VERTICAL; title.setTextColor(0xFF111827.toInt()); url.gravity = Gravity.CENTER_VERTICAL; url.setTextColor(0xFF334155.toInt()); title.textSize = if (style == "vertical") 15f else 13f; url.textSize = if (style == "vertical") 10f else 9f
+            val lp = body.layoutParams as FrameLayout.LayoutParams
+            lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            lp.height = if (style == "vertical") dp(142) else dp(148)
+            lp.gravity = Gravity.CENTER
+            body.layoutParams = lp
+            body.background = GradientDrawable().apply {
+                setColor(if (selected) 0xFFDBEAFE.toInt() else 0xFFFFE9E2.toInt())
+                setStroke(if (selected) dp(3) else dp(2), if (selected) 0xFF2563EB.toInt() else 0xFFF6CFC5.toInt())
+                cornerRadius = dp(18).toFloat()
+            }
+            body.setPadding(if (style == "vertical") dp(18) else dp(12), dp(14), dp(92), dp(14))
+            title.gravity = Gravity.CENTER_VERTICAL
+            title.setTextColor(0xFF111827.toInt())
+            url.gravity = Gravity.CENTER_VERTICAL
+            url.setTextColor(0xFF334155.toInt())
+            title.textSize = if (style == "vertical") 15f else 13f
+            url.textSize = if (style == "vertical") 10f else 9f
+        } else if (selected) {
+            body.background = GradientDrawable().apply {
+                setColor(0xFFDBEAFE.toInt())
+                setStroke(dp(3), 0xFF2563EB.toInt())
+                cornerRadius = dp(18).toFloat()
+            }
         }
-        body.setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id)); finish() }
-        body.setOnLongClickListener { AlertDialog.Builder(this).setTitle(item.title).setItems(arrayOf("Environment", "Assign to group")) { _, which -> if (which == 0) showEnvironmentChooser(item) else showGroupChooser(item) }.show(); true }
+
+        if (selectionMode && v is FrameLayout) {
+            val check = TextView(this).apply {
+                text = if (selected) "✓" else ""
+                contentDescription = if (selected) "Deselect ${item.title}" else "Select ${item.title}"
+                gravity = Gravity.CENTER
+                setTextColor(0xFF0F172A.toInt())
+                textSize = 16f
+                background = GradientDrawable().apply {
+                    setColor(if (selected) 0xFF38BDF8.toInt() else 0xFFF8FAFC.toInt())
+                    setStroke(dp(2), 0xFF2563EB.toInt())
+                    cornerRadius = dp(17).toFloat()
+                }
+            }
+            v.addView(check, FrameLayout.LayoutParams(dp(34), dp(34), Gravity.TOP or Gravity.START).apply {
+                leftMargin = dp(8); topMargin = dp(8)
+            })
+        }
+
+        body.setOnClickListener {
+            if (selectionMode) {
+                if (item.id in selectedIds) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                updateSelectionUi()
+                applyFilter()
+            } else {
+                setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id))
+                finish()
+            }
+        }
+        body.setOnLongClickListener {
+            val actions = mutableListOf("Environment", "Assign to group")
+            if (!selectionMode) actions += "Select multiple tabs"
+            AlertDialog.Builder(this).setTitle(item.title).setItems(actions.toTypedArray()) { _, which ->
+                when {
+                    which == 0 -> showEnvironmentChooser(item)
+                    which == 1 -> showGroupChooser(item)
+                    else -> {
+                        selectionMode = true
+                        selectedIds.add(item.id)
+                        updateSelectionUi()
+                        applyFilter()
+                    }
+                }
+            }.show()
+            true
+        }
         val groupButton = TextView(this).apply {
-            text = "Group"; contentDescription = "Assign ${item.title} to a tab group"; gravity = Gravity.CENTER; setTextColor(0xFF0F172A.toInt()); textSize = 11f; setPadding(10.dp(), 5.dp(), 10.dp(), 5.dp())
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xFFBAE6FD.toInt()); cornerRadius = 14.dp().toFloat() }
+            text = "Group"; contentDescription = "Assign ${item.title} to a tab group"
+            gravity = Gravity.CENTER; setTextColor(0xFF0F172A.toInt()); textSize = 11f
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply { setColor(0xFFBAE6FD.toInt()); cornerRadius = dp(14).toFloat() }
             setOnClickListener { showGroupChooser(item) }
         }
-        if (body is android.widget.FrameLayout) body.addView(groupButton, android.widget.FrameLayout.LayoutParams(-2, 34.dp(), Gravity.BOTTOM or Gravity.END).apply { rightMargin = 44.dp(); bottomMargin = 8.dp() })
-        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("tab_id", item.id)); finish() }
+        // The card body is a LinearLayout, while the outer root is a FrameLayout.
+        // The old code checked `body is FrameLayout`, which was never true, so
+        // the "Group" action was silently missing from every card.
+        if (v is FrameLayout) v.addView(groupButton, FrameLayout.LayoutParams(-2, dp(34), Gravity.BOTTOM or Gravity.END).apply {
+            rightMargin = dp(44); bottomMargin = dp(8)
+        })
+        v.findViewById<TextView>(R.id.tab_circle_close).setOnClickListener {
+            setResult(RESULT_OK, Intent().putExtra("action", "close").putExtra("tab_id", item.id))
+            finish()
+        }
         return v
     }
 
-    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun loadTabs() {
         allTabs.clear(); val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -159,12 +298,12 @@ class TabsOverviewActivity : AppCompatActivity() {
             val profiles = org.json.JSONArray(prefs.getString("tab_profiles", "[]") ?: "[]")
             val ids = org.json.JSONArray(prefs.getString("tab_ids", "[]") ?: "[]")
             val groups = TabGroupManager(this).list()
-        val groupByTab = mutableMapOf<Int, String>()
-        groups.forEach { group -> group.tabIds.forEach { id -> groupByTab[id] = group.name } }
-        for (i in 0 until urls.length()) {
-            val id = ids.optInt(i, i + 1)
-            allTabs.add(TabInfo(i, id, titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }, groupByTab[id].orEmpty()))
-        }
+            val groupByTab = mutableMapOf<Int, String>()
+            groups.forEach { group -> group.tabIds.forEach { id -> groupByTab[id] = group.name } }
+            for (i in 0 until urls.length()) {
+                val id = ids.optInt(i, i + 1)
+                allTabs.add(TabInfo(i, id, titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }, groupByTab[id].orEmpty()))
+            }
         }
     }
 

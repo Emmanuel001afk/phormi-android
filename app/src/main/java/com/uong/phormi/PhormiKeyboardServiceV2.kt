@@ -90,6 +90,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private var keyboardResizeMode = false
     private data class AutoCorrection(val original: String, val corrected: String, val time: Long)
     private var lastAutoCorrection: AutoCorrection? = null
+    // A suggestion the user explicitly tapped must never be re-autocorrected by
+    // the trailing space commit. Without this, choosing "receive" could silently
+    // turn into a different dictionary word.
+    private var suppressAutoCorrectOnce = false
     private val repeatHandler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
     private var predictionRow: LinearLayout? = null
@@ -162,6 +166,14 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             getWindow().window?.decorView?.animate()?.cancel()
         }
         super.onWindowShown()
+        // Settings may have changed while the IME was hidden (e.g. toggling
+        // suggestions/autocorrect in the standalone keyboard settings). Force
+        // the reserved strip to re-read those preferences instead of showing
+        // the cached result from the previous session.
+        lastPredictionWord = ""
+        lastPredictionPrevious = ""
+        suppressAutoCorrectOnce = false
+        schedulePredictionRefresh()
     }
 
     override fun onWindowHidden() {
@@ -454,6 +466,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                             ic.finishComposingText()
                             ic.deleteSurroundingText(liveWord.length, 0)
                             ic.commitText(value, 1)
+                            // The tapped word is already the user's choice. Insert the
+                            // trailing space without running autocorrect over it again.
+                            suppressAutoCorrectOnce = true
                             commitSpace()
                         } finally {
                             ic.endBatchEdit()
@@ -462,6 +477,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                         val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
                         if (before.isNotEmpty() && !before.last().isWhitespace()) ic.commitText(" ", 1)
                         ic.commitText(value, 1)
+                        suppressAutoCorrectOnce = true
                         commitSpace()
                     }
                 }
@@ -481,7 +497,13 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             row.addView(button,LinearLayout.LayoutParams(0,scaled(32),1f).apply{setMargins(dp(2),0,dp(2),0)})
         }
         if (row.childCount == 0) row.addView(TextView(this).apply {
-            text = if (enabled) "Type to see suggestions" else "Suggestions are off for this field"
+            val autocorrect = PhormiKeyboardPreferences.autocorrect(this@PhormiKeyboardServiceV2)
+            text = if (!PhormiKeyboardPreferences.suggestions(this@PhormiKeyboardServiceV2))
+                "Suggestions off"
+            else if (!enabled)
+                "Suggestions off for this field"
+            else
+                "Suggestions on · autocorrect " + (if (autocorrect) "on" else "off") + " · type a word"
             textSize = 12f
             setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148, 163, 184))
             gravity = Gravity.CENTER
@@ -1077,6 +1099,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
 
     /** Apply corrections on separators without a prompt; never in protected/address fields. */
     private fun autoCorrectCurrentWord(ic: InputConnection) {
+        if (suppressAutoCorrectOnce) {
+            suppressAutoCorrectOnce = false
+            return
+        }
         if (!PhormiKeyboardPreferences.autocorrect(this) ||
             !PhormiKeyboardTextEngine.shouldUsePredictions(editorInfo)) return
         val current = PhormiKeyboardTextEngine.currentWord(ic)
