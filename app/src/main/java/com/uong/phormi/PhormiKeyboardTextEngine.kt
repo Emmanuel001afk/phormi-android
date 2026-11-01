@@ -4,7 +4,6 @@ import android.content.Context
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
-import android.view.inputmethod.InputMethodManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -78,18 +77,11 @@ object PhormiKeyboardTextEngine {
         return if (tag != null) Locale.forLanguageTag(tag) else info?.hintLocales?.get(0) ?: Locale.getDefault()
     }
 
-    private fun currentSubtype() = runCatching {
-        val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
-        val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
-        val service = field?.get(companion) as? PhormiKeyboardServiceV2
-        service?.getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
-    }.getOrNull()
+    /** Uses a public accessor; reflecting into a private Companion field was fragile
+     *  under R8 and returned null whenever the IME had not been created yet. */
+    private fun currentSubtype() = PhormiKeyboardServiceV2.activeInstance()?.currentInputSubtype()
 
-    private fun currentService(): PhormiKeyboardServiceV2? = runCatching {
-        val companion = PhormiKeyboardServiceV2::class.java.getDeclaredField("Companion").apply { isAccessible = true }.get(null)
-        val field = companion.javaClass.declaredFields.firstOrNull { it.name == "instance" }?.apply { isAccessible = true }
-        field?.get(companion) as? PhormiKeyboardServiceV2
-    }.getOrNull()
+    private fun currentService(): PhormiKeyboardServiceV2? = PhormiKeyboardServiceV2.activeInstance()
 
     fun currentWord(ic: InputConnection?): String {
         val before = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty()

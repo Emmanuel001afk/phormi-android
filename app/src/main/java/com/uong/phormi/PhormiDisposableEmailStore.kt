@@ -14,7 +14,9 @@ object PhormiDisposableEmailStore {
 
     data class Mailbox(val address: String, val createdAt: Long, val expiresAt: Long, val server: String)
 
-    fun server(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SERVER, "http://127.0.0.1:8080") ?: "http://127.0.0.1:8080"
+    // "localhost" is a hostname, so the network security config can grant this one
+    // loopback cleartext exception; an IP literal cannot be matched by domain-config.
+    fun server(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SERVER, "http://localhost:8080") ?: "http://localhost:8080"
     fun apiKey(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_API_KEY, "") ?: ""
 
     fun saveConfig(context: Context, server: String, apiKey: String) {

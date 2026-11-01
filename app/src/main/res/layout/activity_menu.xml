@@ -46,6 +46,8 @@
         <TextView style="@style/PhormiMenuSection" android:text="ASSIST &amp; CREATE" />
         <TextView android:id="@+id/menu_ai" style="@style/PhormiMenuItem" android:text="✦  Browser AI · tasks &amp; updates" />
         <TextView android:id="@+id/menu_keyboard" style="@style/PhormiMenuItem" android:text="⌨  Phormi Keyboard" />
+        <TextView android:id="@+id/menu_stickers" style="@style/PhormiMenuItem" android:text="✿  Sticker studio" />
+        <TextView android:id="@+id/menu_news" style="@style/PhormiMenuItem" android:text="▤  News" />
         <TextView android:id="@+id/menu_capsule" style="@style/PhormiMenuItem" android:text="◈  Phormi Capsule" />
         <TextView style="@style/PhormiMenuSection" android:text="PAGE TOOLS" />
         <TextView android:id="@+id/menu_navigation_lens" style="@style/PhormiMenuItem" android:text="⌖  Navigation Lens" />
@@ -66,7 +68,7 @@
         <TextView android:id="@+id/menu_default_browser" style="@style/PhormiMenuItem" android:text="◎  Make Phormi default" />
         <TextView android:id="@+id/menu_keep_screen_on" style="@style/PhormiMenuItem" android:text="◉  Keep screen on" />
         <TextView style="@style/PhormiMenuSection" android:text="PRIVACY &amp; ACCOUNTS" />
-        <TextView android:id="@+id/menu_settings" style="@style/PhormiMenuItem" android:text="☻  Accounts &amp; sign-in" />
+        <TextView android:id="@+id/menu_settings" style="@style/PhormiMenuItem" android:text="☻  Accounts &amp; services" />
         <TextView android:id="@+id/menu_browser_lock" style="@style/PhormiMenuItem" android:text="▣  Browser Lock" />
         <TextView android:id="@+id/menu_site_lock" style="@style/PhormiMenuItem" android:text="⌑  Site lock" />
         <TextView android:id="@+id/menu_security" style="@style/PhormiMenuItem" android:text="✓  Security Center" />

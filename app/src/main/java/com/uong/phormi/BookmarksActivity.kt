@@ -27,9 +27,13 @@ class BookmarksActivity : AppCompatActivity() {
          * Returns the canonical favorites. Quick Access gets a filtered view so a
          * Quick Access hide never makes the Favorite disappear from the Favorites UI.
          */
-        fun getAll(context: android.content.Context): List<Bookmark> {
+        /**
+         * Behaviour is chosen by an explicit flag, never by inspecting the caller's
+         * stack trace. A Quick Access "hide" must never delete the underlying favorite.
+         */
+        fun getAll(context: android.content.Context, hideQuickAccessRemovals: Boolean = false): List<Bookmark> {
             val all = PhormiFavorites.getAll(context).map { Bookmark(it.title, it.url, it.addedAt) }
-            return if (calledFromQuickAccessRenderer()) {
+            return if (hideQuickAccessRemovals) {
                 all.filterNot { PhormiQuickAccessState.isFavoriteHidden(context, it.url) }
             } else all
         }
@@ -38,21 +42,14 @@ class BookmarksActivity : AppCompatActivity() {
             PhormiFavorites.add(context, title, url)
         }
 
-        /**
-         * Existing MainActivity uses this for both real unfavorite and Quick Access
-         * removal. Distinguish the Quick Access action at the boundary so the latter
-         * only hides the tile; the actual Favorite remains intact.
-         */
-        fun remove(context: android.content.Context, url: String) {
-            if (calledFromQuickAccessRenderer()) {
+        /** [hideOnly] is set explicitly by the Quick Access removal path. */
+        fun remove(context: android.content.Context, url: String, hideOnly: Boolean = false) {
+            if (hideOnly) {
                 PhormiQuickAccessState.hideFavorite(context, url)
             } else {
                 PhormiFavorites.remove(context, url)
             }
         }
-
-        private fun calledFromQuickAccessRenderer(): Boolean =
-            Throwable().stackTrace.any { it.className == MainActivity::class.java.name && it.methodName == "confirmQuickSiteRemoval" }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

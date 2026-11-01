@@ -16,6 +16,7 @@ object PhormiKeyboardPreferences {
     private const val OFFSET_Y = "keyboard_offset_y"
     private const val FLOATING = "keyboard_floating"
     private const val AI_EMOJI = "ai_emoji"
+    private const val CLOUD_SUGGESTIONS = "cloud_suggestions"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
     private const val POLLINATIONS_KEY = "pollinations_api_key"
@@ -28,6 +29,12 @@ object PhormiKeyboardPreferences {
     fun haptic(context: Context) = prefs(context).getBoolean(HAPTIC, true)
     fun sound(context: Context) = prefs(context).getBoolean(SOUND, false)
     fun aiEmoji(context: Context) = prefs(context).getBoolean(AI_EMOJI, true)
+
+    /**
+     * Sending typed prefixes to third-party dictionary services is opt-in and off by
+     * default. The keyboard is offline-first unless the user explicitly enables this.
+     */
+    fun cloudSuggestions(context: Context) = prefs(context).getBoolean(CLOUD_SUGGESTIONS, false)
 
     fun pollinationsKey(context: Context): String =
         prefs(context).getString(POLLINATIONS_KEY, "").orEmpty()
@@ -66,4 +73,5 @@ object PhormiKeyboardPreferences {
     const val KEY_HAPTIC = HAPTIC
     const val KEY_SOUND = SOUND
     const val KEY_AI_EMOJI = AI_EMOJI
+    const val KEY_CLOUD_SUGGESTIONS = CLOUD_SUGGESTIONS
 }

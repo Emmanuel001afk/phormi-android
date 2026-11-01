@@ -16,6 +16,17 @@ class OpenVpnController(private val context: Context) {
     companion object {
         const val OPENVPN_PACKAGE = "de.blinkt.openvpn"
         const val API_ACTION = "de.blinkt.openvpn.api.IOpenVPNAPIService"
+
+        /** Must match the <queries> entries in AndroidManifest.xml. */
+        val API_PACKAGES = listOf(
+            "de.blinkt.openvpn",
+            "net.openvpn.openvpn",
+            "com.openvpn.client"
+        )
+    }
+
+    private fun installedPackages(): List<String> = API_PACKAGES.filter { pkg ->
+        runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess
     }
 
     private var api: IOpenVPNAPIService? = null
@@ -26,8 +37,9 @@ class OpenVpnController(private val context: Context) {
     fun connect(activity: Activity, config: String, onResult: (Boolean, String) -> Unit) {
         pendingConfig = config
         pendingActivity = activity
-        if (!isInstalled()) {
-            onResult(false, "OpenVPN for Android is not installed")
+        val candidates = installedPackages()
+        if (candidates.isEmpty()) {
+            onResult(false, "No supported OpenVPN client is installed. Install OpenVPN for Android (de.blinkt.openvpn) to use these profiles.")
             return
         }
 
@@ -62,13 +74,17 @@ class OpenVpnController(private val context: Context) {
                 api = null
             }
         }
-        connection = conn
-        val intent = Intent(API_ACTION).setPackage(OPENVPN_PACKAGE)
-        val bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
-        if (!bound) {
-            connection = null
-            onResult(false, "Could not connect to OpenVPN API")
+        // Try every installed client rather than assuming de.blinkt.openvpn. VpnActivity
+        // used to advertise three packages while the bind was hardcoded to one.
+        for (pkg in candidates) {
+            val intent = Intent(API_ACTION).setPackage(pkg)
+            if (context.bindService(intent, conn, Context.BIND_AUTO_CREATE)) {
+                connection = conn
+                return
+            }
         }
+        connection = null
+        onResult(false, "The installed OpenVPN client does not expose the remote API. Install OpenVPN for Android (de.blinkt.openvpn) to use these profiles.")
     }
 
     fun resumeAfterPermission(onResult: (Boolean, String) -> Unit) {
@@ -101,10 +117,5 @@ class OpenVpnController(private val context: Context) {
         api = null
     }
 
-    fun isInstalled(): Boolean = try {
-        context.packageManager.getPackageInfo(OPENVPN_PACKAGE, 0)
-        true
-    } catch (_: Exception) {
-        false
-    }
+    fun isInstalled(): Boolean = installedPackages().isNotEmpty()
 }

@@ -46,6 +46,14 @@ class GhostActivity : Activity() {
             ghostProfileName = savedProfile
                 ?: ("PhormiGhost_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
             runCatching { ProfileStore.getInstance().getOrCreateProfile(ghostProfileName!!) }
+        } else {
+            // Never silently degrade to the ordinary default WebView profile while
+            // still calling the screen "Ghost". Tell the user plainly instead.
+            Toast.makeText(
+                this,
+                "Warning: this WebView cannot create an isolated profile. Ghost mode is NOT private on this device — cookies and site data may persist.",
+                Toast.LENGTH_LONG
+            ).show()
         }
         val savedUrls = savedInstanceState?.getStringArrayList("ghost_urls").orEmpty()
         val savedActive = savedInstanceState?.getInt("ghost_active", 0) ?: 0

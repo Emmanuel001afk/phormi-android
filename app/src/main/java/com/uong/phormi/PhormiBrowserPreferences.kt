@@ -13,8 +13,10 @@ object PhormiBrowserPreferences {
     fun textZoom(context: Context): Int = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
         .getInt(TEXT_ZOOM, 100).coerceIn(80, 200)
 
+    // One chrome layer by default. The bottom bar remains available as an opt-in
+    // setting; showing both permanently duplicated back/forward/AI/downloads.
     fun showBottomToolbar(context: Context): Boolean = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
-        .getBoolean(BOTTOM_TOOLBAR, true)
+        .getBoolean(BOTTOM_TOOLBAR, false)
 
     // An accidental swipe on a long page should not reload and discard form state.
     fun pullToRefresh(context: Context): Boolean = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)

@@ -56,7 +56,7 @@ class MenuActivity : AppCompatActivity() {
         val tabs = intArrayOf(R.id.menu_tab_browse, R.id.menu_tab_features, R.id.menu_tab_settings)
         tabs.forEachIndexed { index, id -> findViewById<TextView>(id).setOnClickListener { showPage(index) } }
         showPage(savedInstanceState?.getInt("menu_page", 0) ?: 0)
-        wire(R.id.menu_browser_settings) { startActivity(Intent(this, PhormiBrowserSettingsActivity::class.java)) }
+        wire(R.id.menu_browser_settings) { finishWith(ACTION_SETTINGS) }
         wire(R.id.menu_back) { finishWith(ACTION_BACK) }
         wire(R.id.menu_forward) { finishWith(ACTION_FORWARD) }
         wire(R.id.menu_refresh) { finishWith(ACTION_REFRESH) }
@@ -79,6 +79,8 @@ class MenuActivity : AppCompatActivity() {
             finish() // Return to the browser when the queued AI command is submitted.
         }
         wire(R.id.menu_disposable_email) { startActivity(Intent(this, PhormiDisposableEmailActivity::class.java)) }
+        wire(R.id.menu_news) { startActivity(Intent(this, NewsActivity::class.java)) }
+        wire(R.id.menu_stickers) { startActivity(Intent(this, PhormiKeyboardStickerActivity::class.java)) }
         wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
         wire(R.id.menu_capsule) { startActivity(Intent(this, PhormiCapsuleActivity::class.java)) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }

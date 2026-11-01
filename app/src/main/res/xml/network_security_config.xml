@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  App-owned network calls (VPN profile lists, favicons, AI endpoints, dictionary
+  lookups) must use TLS. The only cleartext exception is a loopback development
+  server used by the optional disposable-email lab; it never leaves the device.
+
+  Note: WebView historically does not honour android:usesCleartextTraffic, so
+  ordinary http:// sites remain loadable and are visibly flagged "Not secure" in
+  the omnibox/site-info panel, like Chrome. This config secures the app's own
+  HttpURLConnection/OkHttp traffic rather than silently breaking HTTP browsing.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
+</network-security-config>

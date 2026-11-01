@@ -3,9 +3,12 @@ package com.uong.phormi
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
+import android.inputmethodservice.InputMethodService.Insets
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
@@ -26,10 +29,13 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
+import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.InputMethodSubtype
 import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.math.abs
@@ -168,6 +174,34 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
     override fun onEvaluateFullscreenMode(): Boolean = false
     override fun onCreateInputView(): View = render().also { applyKeyboardWindowSize() }
+
+    /** The framework tells us when the user switches IME subtype (locale/layout). */
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        lastPredictionWord = ""
+        setInputView(render())
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyKeyboardWindowSize()
+        setInputView(render())
+    }
+
+    /** Allow the target app to draw behind the IME instead of leaving a dead band. */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        if (outInsets.contentTopInsets < outInsets.visibleTopInsets) {
+            outInsets.contentTopInsets = outInsets.visibleTopInsets
+        }
+    }
+
+    /** Public, non-reflective access for the text engine and dictionary cache. */
+    fun currentInputSubtype(): InputMethodSubtype? = runCatching {
+        getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
+    }.getOrNull()
+
+    private fun keyboardLanguage(): String = PhormiKeyboardTextEngine.localeFor(editorInfo).language
 
     override fun onConfigureWindow(win: Window, isFullscreen: Boolean, isCandidatesOnly: Boolean) {
         super.onConfigureWindow(win, isFullscreen, isCandidatesOnly)
@@ -388,6 +422,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
     }
 
+    /** Async dictionary results arrive here; no reflection into private members is needed. */
+    fun onDictionaryResult() {
+        lastPredictionWord = ""
+        refreshPredictionStrip()
+    }
+
     private fun refreshPredictionStrip(){
         val row=predictionRow ?: return
         val ic=currentInputConnection
@@ -452,7 +492,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun buildKeyboard():View{val root=root();if(page==KeyboardPage.LETTERS)predictionStrip(root);toolbar(root);val type=editorInfo?.inputType?:InputType.TYPE_CLASS_TEXT;val clazz=type and InputType.TYPE_MASK_CLASS;val variation=type and InputType.TYPE_MASK_VARIATION;val number=clazz==InputType.TYPE_CLASS_NUMBER;val phone=clazz==InputType.TYPE_CLASS_PHONE;val dateTime=clazz==InputType.TYPE_CLASS_DATETIME;val email=variation==InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS||variation==InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS;val uri=variation==InputType.TYPE_TEXT_VARIATION_URI;if((number||phone||dateTime)&&page==KeyboardPage.LETTERS)page=KeyboardPage.NUMBERS;when{phone->responsiveRows(root,listOf("1234567890","*#+","()-"));dateTime->responsiveRows(root,listOf("1234567890","4567890",":/-"));number&&page==KeyboardPage.SYMBOLS->buildSymbolPage(root);number->buildNumberPage(root);page==KeyboardPage.LETTERS->buildLetterPage(root,email,uri);page==KeyboardPage.NUMBERS->buildNumberPage(root);else->buildSymbolPage(root)};return root}
     private fun buildLetterPage(root:LinearLayout,email:Boolean,uri:Boolean){
         val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        responsiveRows(body,listOf("qwertyuiop","asdfghjkl","zxcvbnm"))
+        // The active keyboard now honours the selected subtype instead of always
+        // drawing QWERTY. French uses AZERTY; German/Czech use QWERTZ.
+        responsiveRows(body, PhormiKeyboardLocales.letterRows(keyboardLanguage()), letters = true)
         if(email||uri){
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
             val tokens=if(email)listOf("@",".com",".net",".org")else listOf("/",".com","https://",".org")
@@ -528,7 +570,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             grid.addView(row,LinearLayout.LayoutParams(-1,scaled(44)))
         }
     }
-    private fun responsiveRows(root:LinearLayout,rows:List<String>){
+    private fun responsiveRows(root:LinearLayout,rows:List<String>,letters:Boolean=false){
+        val accents=if(letters)PhormiKeyboardLocales.accents(keyboardLanguage())else emptyMap()
+        val letterButtons=mutableListOf<Pair<Button,Char>>()
         rows.forEach{chars->
             val row=LinearLayout(this).apply{
                 orientation=LinearLayout.HORIZONTAL
@@ -539,17 +583,129 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 minimumWidth=0
             }
             chars.forEach{ch->
-                row.addView(keyButton(ch.toString()){
-                    val out=if(shift||capsLock||autoShift)ch.uppercaseChar().toString()else ch.toString()
-                    commitTextToEditor(out);if(shift&&!capsLock)shift=false;autoShift=false;refreshAfterTextKey()
-                }.apply{
+                val button=keyButton(ch.toString()){typeLetter(ch)}.apply{
                     // Gboard-style compact letter sizing keeps every key inside the safe
                     // IME viewport even on narrow screens and reduced-width settings.
                     textSize=18f
                     minimumWidth=0
-                },LinearLayout.LayoutParams(0,scaled(44),1f).apply{setMargins(dp(1),dp(2),dp(1),dp(2));width=0})
+                }
+                if(letters){
+                    letterButtons+=button to ch
+                    accents[ch.lowercaseChar().toString()]?.let{options->installAccentPopup(button,options)}
+                }
+                row.addView(button,LinearLayout.LayoutParams(0,scaled(44),1f).apply{setMargins(dp(1),dp(2),dp(1),dp(2));width=0})
             }
             root.addView(row,LinearLayout.LayoutParams(-1,scaled(44)).apply{width=-1})
+        }
+        if(letters&&letterButtons.isNotEmpty())installGlideTracing(letterButtons)
+    }
+
+    private fun typeLetter(ch:Char){
+        val out=if(shift||capsLock||autoShift)ch.uppercaseChar().toString()else ch.toString()
+        commitTextToEditor(out)
+        if(shift&&!capsLock)shift=false
+        autoShift=false
+        refreshAfterTextKey()
+    }
+
+    /** Real long-press accents. A PopupWindow is anchored to the key, so it works
+     *  from an InputMethodService without needing an Activity window token. */
+    private fun installAccentPopup(button:Button,options:String){
+        button.setOnLongClickListener{
+            feedback(button)
+            val row=LinearLayout(this).apply{
+                orientation=LinearLayout.HORIZONTAL
+                background=rounded(themePill(),dp(12))
+                setPadding(dp(4),dp(2),dp(4),dp(2))
+            }
+            // Non-focusable: a focusable popup would steal focus from the editor and
+            // break the InputConnection while the IME is committing the accent.
+            val popup=PopupWindow(row,LinearLayout.LayoutParams.WRAP_CONTENT,dp(52),false).apply{
+                isOutsideTouchable=true
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+                elevation=dp(6).toFloat()
+            }
+            options.forEach{accent->
+                val key=keyButton(accent.toString()){
+                    commitTextToEditor(accent.toString())
+                    refreshAfterTextKey()
+                    popup.dismiss()
+                }
+                key.textSize=18f
+                row.addView(key,LinearLayout.LayoutParams(dp(38),dp(46)).apply{setMargins(dp(2),0,dp(2),0)})
+            }
+            runCatching{popup.showAsDropDown(button,0,-dp(54))}
+            true
+        }
+    }
+
+    /** Glide typing: trace letters under the finger, then resolve the trace to the
+     *  best offline dictionary word rather than concatenating every crossed key. */
+    private fun installGlideTracing(buttons:List<Pair<Button,Char>>){
+        val rect=Rect()
+        fun letterAt(rawX:Float,rawY:Float):Char?{
+            for((button,ch)in buttons){
+                if(!button.isShown)continue
+                button.getGlobalVisibleRect(rect)
+                if(rect.contains(rawX.toInt(),rawY.toInt()))return ch.lowercaseChar()
+            }
+            return null
+        }
+        fun commitTrace(trace:String){
+            if(trace.isBlank())return
+            val locale=PhormiKeyboardTextEngine.localeFor(editorInfo)
+            val pool=LinkedHashSet<String>()
+            pool.addAll(PhormiKeyboardDictionaryApi.expandedWords(locale))
+            pool.addAll(PhormiKeyboardDictionary.wordsWithFirst(this,locale,trace.first()))
+            val word=PhormiKeyboardLocales.glideWord(trace,pool)?:trace
+            val before=currentInputConnection?.getTextBeforeCursor(1,0)?.toString().orEmpty()
+            val separator=if(before.isNotEmpty()&&!before.last().isWhitespace())" "else""
+            commitTextToEditor(separator+word)
+            if(shift&&!capsLock)shift=false
+            autoShift=false
+            refreshAfterTextKey()
+        }
+        buttons.forEach{(button,ch)->
+            var downX=0f
+            var downY=0f
+            var gliding=false
+            val trace=StringBuilder()
+            button.setOnTouchListener{_,event->
+                when(event.actionMasked){
+                    MotionEvent.ACTION_DOWN->{
+                        downX=event.rawX;downY=event.rawY
+                        gliding=false
+                        trace.setLength(0)
+                        trace.append(ch.lowercaseChar())
+                        false // let the framework deliver click and long-press
+                    }
+                    MotionEvent.ACTION_MOVE->{
+                        val moved=abs(event.rawX-downX)>24f*density()||abs(event.rawY-downY)>24f*density()
+                        if(!gliding&&!moved)false
+                        else{
+                            gliding=true
+                            letterAt(event.rawX,event.rawY)?.let{letter->
+                                if(trace.isEmpty()||trace.last()!=letter)trace.append(letter)
+                            }
+                            true
+                        }
+                    }
+                    MotionEvent.ACTION_UP->{
+                        if(gliding){
+                            letterAt(event.rawX,event.rawY)?.let{letter->
+                                if(trace.isEmpty()||trace.last()!=letter)trace.append(letter)
+                            }
+                            feedback(button)
+                            button.isPressed=false
+                            commitTrace(trace.toString())
+                            gliding=false
+                            true // consumed: do not also fire the key's click
+                        }else false
+                    }
+                    MotionEvent.ACTION_CANCEL->{gliding=false;trace.setLength(0);true}
+                    else->false
+                }
+            }
         }
     }
     private fun shiftKey(weight: Float): Button = keyButton("⇧", weight) {
@@ -695,6 +851,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 text = "Delete saved clipboard history? This cannot be undone. The system clipboard stays unchanged."
                 textSize = 12f; setTextColor(themeText()); setPadding(dp(6), dp(4), dp(6), dp(4))
             })
+            list.addView(pill("Delete unpinned items only") {
+                PhormiKeyboardClipboardStore.clearUnpinned(this)
+                confirmClearClipboard = false
+                setInputView(render())
+            }, LinearLayout.LayoutParams(-1, scaled(38)))
             list.addView(pill("Delete all saved items") {
                 PhormiKeyboardClipboardStore.clear(this)
                 confirmClearClipboard = false
@@ -708,9 +869,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
             val label=item.text.take(60).ifBlank{"Copied item"}
             val clip=pill(label){if(item.text.isNotBlank())commitTextToEditor(item.text)else item.uri?.let{commitContentToEditor(Uri.parse(it))}}
+            val pin=pill(if(item.pinned)"Unpin"else"Pin"){
+                PhormiKeyboardClipboardStore.togglePinned(this,item)
+                setInputView(render())
+            }
+            pin.contentDescription=if(item.pinned)"Unpin clipboard item: $label"else"Pin clipboard item: $label"
             val delete=pill("Delete") { PhormiKeyboardClipboardStore.remove(this,item);setInputView(render()) }
             delete.contentDescription = "Delete clipboard item: $label"
             row.addView(clip,LinearLayout.LayoutParams(0,scaled(44),1f).apply{setMargins(0,dp(2),dp(3),dp(2))})
+            row.addView(pin,LinearLayout.LayoutParams(dp(56),scaled(44)).apply{setMargins(dp(3),dp(2),dp(3),dp(2))})
             row.addView(delete,LinearLayout.LayoutParams(dp(72),scaled(44)).apply{setMargins(dp(3),dp(2),0,dp(2))})
             list.addView(row)
         }
@@ -784,7 +951,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         },LinearLayout.LayoutParams(-1,scaled(46)));list.addView(TextView(this).apply{text="Images/GIFs are inserted only when the focused field accepts the requested MIME type.";setTextColor(themeText());textSize=13f;setPadding(dp(8),dp(12),dp(8),dp(12))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildTools():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Settings"){panel=Panel.SETTINGS;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));addResizeControls(list);list.addView(pill("GIFs & stickers"){panel=Panel.MEDIA;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Voice typing"){launchVoice()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Select all"){currentInputConnection?.performContextMenuAction(android.R.id.selectAll)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Copy"){currentInputConnection?.performContextMenuAction(android.R.id.copy)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Paste"){currentInputConnection?.performContextMenuAction(android.R.id.paste)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Share text"){shareSelectedText()},LinearLayout.LayoutParams(-1,scaled(46)));scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Cabinet. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
+    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Cabinet. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};toggle("Online word lookups",PhormiKeyboardPreferences.cloudSuggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_CLOUD_SUGGESTIONS,!PhormiKeyboardPreferences.cloudSuggestions(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
             PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardServiceV2, (theme() + 1) % 8)
             setInputView(render())
         },LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})

@@ -45,11 +45,11 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Languages"))
         content.addView(TextView(this).apply{
-            text="Built-in language layers: English, French, Spanish, Portuguese, German, Italian, Indonesian, Turkish, Yoruba, Igbo, Hausa, Swahili, Arabic, Hindi, Bengali, Urdu, Punjabi, Gujarati, Tamil, Telugu, Malayalam, Thai, Vietnamese, Chinese, Japanese, Korean, Russian, Ukrainian, Polish, Dutch, Swedish, Norwegian, Danish, Finnish, Czech, Romanian, Hungarian, Greek and Hebrew."
+            text="Latin-script typing is supported for English, French, Spanish, Portuguese, German, Italian, Indonesian, Turkish, Yoruba, Igbo, Hausa, Swahili, Vietnamese, Polish, Dutch, Swedish, Norwegian, Danish, Finnish, Czech, Romanian and Hungarian. QWERTY, AZERTY (French) and QWERTZ (German/Czech) layouts, locale long-press accents, glide typing, offline word lists and local correction follow the selected subtype."
             textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
         })
         content.addView(Button(this).apply{text="Choose Phormi language";isAllCaps=false;setOnClickListener{runCatching{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS))}.onFailure{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))}}})
-        content.addView(TextView(this).apply{text="Android controls active IME subtypes. Prediction, correction and character long-presses follow the selected locale; installed system spell-check dictionaries are also used when available.";textSize=12f;setTextColor(Color.rgb(148,163,184));setPadding(0,dp(5),0,dp(8))})
+        content.addView(TextView(this).apply{text="Android controls active IME subtypes. Scripts that need their own keyboard (Arabic, Devanagari, CJK, Cyrillic, Greek, Hebrew and others) are not advertised until a real layout and composition flow exist for them.";textSize=12f;setTextColor(Color.rgb(148,163,184));setPadding(0,dp(5),0,dp(8))})
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{
@@ -65,10 +65,16 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         })
 
         content.addView(sectionTitle("Appearance"))
-        val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Rose","Sand")
-        val themeRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
-        themes.forEachIndexed{index,name->themeRow.addView(Button(this).apply{text=name;isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity,index);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"$name appearance saved")}},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(2),0,dp(2),0)})}
-        content.addView(themeRow)
+        // Two rows of four instead of eight buttons squeezed into one clipped row.
+        val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand")
+        themes.asList().chunked(4).forEach{group->
+            val themeRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+            group.forEach{name->
+                val index=themes.indexOf(name)
+                themeRow.addView(Button(this).apply{text=name;isAllCaps=false;textSize=11f;setOnClickListener{PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity,index);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"$name appearance saved")}},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(2),dp(2),dp(2),dp(2))})
+            }
+            content.addView(themeRow)
+        }
         content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
         content.addView(Button(this).apply{text="Choose keyboard wallpaper";isAllCaps=false;setOnClickListener{wallpaperPicker.launch(arrayOf("image/*"))}})
         content.addView(Button(this).apply{text="Remove keyboard wallpaper";isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setWallpaperUri(this@PhormiKeyboardSettingsActivity,null);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard wallpaper removed")}})
@@ -79,6 +85,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         option(content,"Autocorrect","Apply conservative local corrections for common typing mistakes.",PhormiKeyboardPreferences.autocorrect(this),PhormiKeyboardPreferences.KEY_AUTOCORRECT)
         option(content,"Auto-capitalization","Capitalize sentence starts and the first word in a text field.",PhormiKeyboardPreferences.autoCaps(this),PhormiKeyboardPreferences.KEY_AUTO_CAPS)
         option(content,"Contextual emoji","Suggest Unicode emoji from typed context, on-device (not image stickers).",PhormiKeyboardPreferences.aiEmoji(this),PhormiKeyboardPreferences.KEY_AI_EMOJI)
+        option(content,"Online word lookups","Off by default. When enabled, English word prefixes are sent to Datamuse/dictionaryapi.dev to enrich suggestions. Everything else stays on this device.",PhormiKeyboardPreferences.cloudSuggestions(this),PhormiKeyboardPreferences.KEY_CLOUD_SUGGESTIONS)
         option(content,"Key vibration","Use device haptic feedback for key presses.",PhormiKeyboardPreferences.haptic(this),PhormiKeyboardPreferences.KEY_HAPTIC)
         option(content,"Key sounds","Play a short key sound where the device allows it.",PhormiKeyboardPreferences.sound(this),PhormiKeyboardPreferences.KEY_SOUND)
 

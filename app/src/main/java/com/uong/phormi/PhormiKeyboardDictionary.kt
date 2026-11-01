@@ -38,6 +38,10 @@ object PhormiKeyboardDictionary {
         return pool.orEmpty().asSequence().filter { it != clean && it.startsWith(clean) }.take(limit).toList()
     }
 
+    /** A bounded candidate pool for glide-trace resolution, keyed by the first letter. */
+    fun wordsWithFirst(context: Context, locale: Locale, first: Char, limit: Int = 500): List<String> =
+        lexicon(context, locale).byFirst[first.toString().lowercase(locale)].orEmpty().take(limit)
+
     /** Conservative one-edit correction of unknown words; real dictionary words are never changed. */
     fun closestWord(context: Context, locale: Locale, input: String): String? {
         return candidateFor(input.lowercase(locale), lexicon(context, locale).rank, locale)

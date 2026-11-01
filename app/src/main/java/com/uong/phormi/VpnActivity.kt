@@ -56,11 +56,9 @@ class VpnActivity : AppCompatActivity() {
 
     companion object {
         private const val REQ_VPN_PREPARE = 9101
-        private val OPENVPN_PACKAGES = listOf(
-            "de.blinkt.openvpn",
-            "net.openvpn.openvpn",
-            "com.openvpn.client"
-        )
+        // Supported clients now live in OpenVpnController.API_PACKAGES, which is the
+        // list actually used when binding. Duplicating it here caused the mismatch
+        // where the UI advertised three apps but only one was ever contacted.
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -141,9 +139,16 @@ class VpnActivity : AppCompatActivity() {
 
     private val openVpnController by lazy { OpenVpnController(this) }
 
+    /**
+     * The declared PhormiVpnService was never started, so its static isRunning flag
+     * was permanently false. Connection state is owned by this screen (and the
+     * external OpenVPN engine), not by an unstarted foreground-service shell.
+     */
+    private fun vpnRequested(): Boolean = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
+        .getBoolean("vpn_requested", false)
+
     private fun refreshConnectionUi() {
-        val running = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
-            .getBoolean("vpn_requested", false)
+        val running = vpnRequested()
         btnDisconnect.isEnabled = running
         btnConnect.isEnabled = !running
     }
@@ -252,7 +257,7 @@ class VpnActivity : AppCompatActivity() {
             )
         }
         val countries = shown.map { it.countryCode }.distinct().size
-        if (!PhormiVpnService.isRunning) {
+        if (!vpnRequested()) {
             status.text = if (allServers.isEmpty()) {
                 "No servers loaded — try Refresh"
             } else {
@@ -265,15 +270,14 @@ class VpnActivity : AppCompatActivity() {
     private fun loadServers() {
         loading.visibility = View.VISIBLE
         listView.visibility = View.GONE
-        if (!PhormiVpnService.isRunning) {
+        if (!vpnRequested()) {
             status.text = "Loading from multiple free sources…"
         }
         executor.execute {
             val merged = linkedMapOf<String, VpnServer>()
-            fetchVpnGate("http://www.vpngate.net/api/iphone/", "VPN Gate").forEach {
-                merged.putIfAbsent(it.ip, it)
-            }
-            fetchVpnGate("https://www.vpngate.net/api/iphone/", "VPN Gate HTTPS").forEach {
+            // HTTPS only. The old plain-HTTP mirror duplicated the same endpoint and
+            // was also the reason the app needed a global cleartext exemption.
+            fetchVpnGate("https://www.vpngate.net/api/iphone/", "VPN Gate").forEach {
                 merged.putIfAbsent(it.ip, it)
             }
             fetchVpnGate(
