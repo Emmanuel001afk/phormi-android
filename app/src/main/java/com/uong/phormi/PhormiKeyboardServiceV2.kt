@@ -99,12 +99,6 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         refreshAfterTextKey()
         return true
     }
-    override fun onCurrentInputMethodSubtypeChanged(newSubtype: android.view.inputmethod.InputMethodSubtype?) {
-        finishGlide(); finishHangul()
-        super.onCurrentInputMethodSubtypeChanged(newSubtype)
-        page = KeyboardPage.LETTERS
-        if (isInputViewShown) setInputView(render())
-    }
     private var inputSession = 0L
     private val glideWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var glideFuture: java.util.concurrent.Future<*>? = null
@@ -286,6 +280,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         super.onWindowHidden()
     }
     override fun onCurrentInputMethodSubtypeChanged(newSubtype: android.view.inputmethod.InputMethodSubtype?) {
+        finishGlide(); finishHangul(); page = KeyboardPage.LETTERS
         super.onCurrentInputMethodSubtypeChanged(newSubtype)
         lastPredictionWord = ""; lastPredictionPrevious = ""
         if (isInputViewShown) setInputView(render())

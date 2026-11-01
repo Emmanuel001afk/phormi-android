@@ -31,10 +31,13 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace
+          script: bash -o pipefail -c "gradle connectedDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-smoke.log"
       - name: Expose test failures
         if: failure()
         run: |
+          grep -E '^e: |^> Task .*FAILED|^FAILURE:|^Caused by:' /tmp/phormi-smoke.log | head -30 | while IFS= read -r line; do
+            echo "::error title=Android compilation::$line"
+          done
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET

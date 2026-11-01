@@ -88,11 +88,12 @@ class MainActivity : AppCompatActivity() {
         var deferredUrl: String? = null,
         var savedState: String? = null,
         var savedScrollY: Int = 0,
+        var lastKnownUrl: String = NEW_TAB_URL,
         var documentEpoch: Long = 0,
         var hasDeviceAccess: Boolean = false,
         var discardReason: String? = null
     ) {
-        val currentUrl: String get() = deferredUrl ?: webView?.url ?: NEW_TAB_URL
+        val currentUrl: String get() = deferredUrl ?: webView?.url ?: lastKnownUrl
     }
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -125,6 +126,8 @@ class MainActivity : AppCompatActivity() {
         isActive = { it === activeWebView() },
         onAccessGranted = { view -> tabs.firstOrNull { it.webView === view }?.hasDeviceAccess = true }) }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var fileChooserOwner: Int = -1
+    private var fullscreenOwner: Int = -1
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
     private var pendingLockedNavigationUrl: String? = null
@@ -240,6 +243,7 @@ class MainActivity : AppCompatActivity() {
         if (::prefs.isInitialized) {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
+            scheduleTabBudget()
             tabs.forEach { it.webView?.let(::applyLiveWebSettings) }
             updateHomeChromeVisibility()
             downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
@@ -2061,7 +2065,7 @@ class MainActivity : AppCompatActivity() {
         tabs.firstOrNull { it.id == tabId }?.let { resumeDeferredTab(it) }
         val webView = tabs.find { it.id == tabId }?.webView ?: return
         (webView.parent as? ViewGroup)?.removeView(webView)
-        host.removeAllViews()
+        if (host !== webViewContainer) host.removeAllViews()
         host.addView(webView, FrameLayout.LayoutParams(-1, -1))
         webView.visibility = View.VISIBLE
     }
@@ -2094,7 +2098,7 @@ class MainActivity : AppCompatActivity() {
         val tab = Tab(id, null, getString(R.string.new_tab), chip,
             isGhost = ghostRequested, createdAt = requestedCreatedAt ?: System.currentTimeMillis(),
             profileName = if (isMultiProfileSupported()) requested else DEFAULT_PROFILE_NAME,
-            deferredUrl = url, savedState = restoredStateBase64)
+            deferredUrl = url, savedState = restoredStateBase64, lastKnownUrl = url)
         tabs.add(tab); tabStripContainer.addView(chip)
         chip.setOnClickListener { switchToTab(id) }
         chip.findViewById<TextView>(R.id.tab_chip_close).setOnClickListener { closeTab(id) }
@@ -2129,7 +2133,7 @@ class MainActivity : AppCompatActivity() {
                 saveTabs()
             }
         }
-        tab.deferredUrl = null; tab.discardReason = null
+        tab.deferredUrl = null; tab.discardReason = null; tab.lastKnownUrl = target
         applyDesktopMode(view, isDesktopModeFor(target))
         val restored = tab.savedState?.let { restoreWebViewState(view, it) } == true
         if (!restored && target != NEW_TAB_URL) view.loadUrl(target)
@@ -2138,7 +2142,9 @@ class MainActivity : AppCompatActivity() {
     private val memoryHandler = Handler(Looper.getMainLooper())
     private val discardChecks = mutableSetOf<Int>()
     private var budgetWork: Runnable? = null
-    private fun protectedTabIds(): Set<Int> = setOf(activeTabId, splitTopTabId, splitBottomTabId) + aiBackgroundTabIds
+    private fun protectedTabIds(): Set<Int> = setOf(activeTabId, splitTopTabId, splitBottomTabId,
+        if (filePathCallback != null) fileChooserOwner else -1,
+        if (customView != null) fullscreenOwner else -1) + aiBackgroundTabIds
     private fun scheduleTabBudget() {
         budgetWork?.let(memoryHandler::removeCallbacks)
         budgetWork = Runnable { enforceTabBudget() }.also { memoryHandler.postDelayed(it, 800) }
@@ -3247,6 +3253,7 @@ class MainActivity : AppCompatActivity() {
                 val owner = tabs.firstOrNull { it.webView === view }
                 if (owner?.deferredUrl != null) return
                 owner?.savedState = null
+                if (!url.isNullOrBlank()) owner?.lastKnownUrl = url
                 owner?.documentEpoch = (owner?.documentEpoch ?: 0) + 1
                 owner?.hasDeviceAccess = false
                 view?.let { sitePermissions.cancel(it) }
@@ -3453,6 +3460,7 @@ class MainActivity : AppCompatActivity() {
                     callback?.onCustomViewHidden()
                     return
                 }
+                fullscreenOwner = tabs.firstOrNull { it.webView === source }?.id ?: -1
                 customView = view
                 customViewCallback = callback
                 originalOrientation = requestedOrientation
@@ -3508,6 +3516,7 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
+                fileChooserOwner = tabs.firstOrNull { it.webView === source }?.id ?: -1
                 val params = fileChooserParams ?: run {
                     this@MainActivity.filePathCallback = null
                     return false
