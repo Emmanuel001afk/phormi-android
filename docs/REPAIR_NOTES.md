@@ -1,5 +1,9 @@
 # Browser and keyboard repair notes
 
+> This is the earlier repair milestone. Substantive feature work has reopened; see
+> [Feature completion status](FEATURE_COMPLETION_STATUS.md) for the latest scope and validation.
+> PR #11 is a draft and must not be merged while the outstanding requirements remain open.
+
 Baseline: `d2436ad06f6e2ef4240d9bf08c667a6273a8d92b` (original application).
 The audit-only checkpoint is `3473c62`; it has the same application code as the baseline.
 All work stays on `arena/d4887026-phormi-android`. Nothing has been merged into main or published to the store.

@@ -23,6 +23,16 @@ class PhormiHangulComposerTest {
             }
         }
     }
+    @Test fun everyModernHangulSyllableIsReachableFromKeys() {
+        val finals = listOf("", "ㄱ", "ㄲ", "ㄱㅅ", "ㄴ", "ㄴㅈ", "ㄴㅎ", "ㄷ", "ㄹ", "ㄹㄱ", "ㄹㅁ", "ㄹㅂ", "ㄹㅅ", "ㄹㅌ", "ㄹㅍ", "ㄹㅎ", "ㅁ", "ㅂ", "ㅂㅅ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ")
+        PhormiHangulComposer.INITIALS.forEachIndexed { l, consonant ->
+            PhormiHangulComposer.VOWELS.forEachIndexed { v, vowel ->
+                finals.forEachIndexed { t, tail ->
+                    assertEquals((0xAC00 + (l * 21 + v) * 28 + t).toChar().toString(), PhormiHangulComposer.compose("$consonant$vowel$tail"))
+                }
+            }
+        }
+    }
     @Test fun doubleConsonantsAreShiftedAndInvalidTextPassesThrough() {
         assertEquals("ㄲ", PhormiHangulComposer.shifted("ㄱ"))
         assertEquals("까", PhormiHangulComposer.compose("ㄲㅏ"))

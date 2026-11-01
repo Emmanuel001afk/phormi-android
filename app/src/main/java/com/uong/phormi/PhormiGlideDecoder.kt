@@ -46,6 +46,7 @@ object PhormiGlideDecoder {
         val path = sample(trace)
         data class Match(val word: String, val rank: Int, val shape: List<Point>, val coarse: Float, val endpoints: Float)
         val shortlist = words.asSequence().mapIndexedNotNull { rank, word ->
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("Gesture cancelled")
             val letters = fold(word, locale)
             if (letters.length !in 2..24) return@mapIndexedNotNull null
             val centers = letters.map { keys[it] ?: return@mapIndexedNotNull null }.fold(mutableListOf<Point>()) { result, point ->

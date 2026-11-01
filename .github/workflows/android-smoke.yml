@@ -32,12 +32,12 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: bash -o pipefail -c "gradle connectedDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-smoke.log"
-      - name: Expose test failures
-        if: failure()
+      - name: Summarize interaction results
+        if: always()
         run: |
           grep -E '^e: |^> Task .*FAILED|^FAILURE:|^Caused by:' /tmp/phormi-smoke.log | head -30 | while IFS= read -r line; do
             echo "::error title=Android compilation::$line"
-          done
+          done || true
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET
@@ -46,7 +46,11 @@ jobs:
                   tree = ET.parse(report)
               except ET.ParseError:
                   continue
-              for case in tree.iter('testcase'):
+              cases = list(tree.iter('testcase'))
+              failures = sum(case.find('failure') is not None or case.find('error') is not None for case in cases)
+              skipped = sum(case.find('skipped') is not None for case in cases)
+              print(f"::notice title=Interaction test results::{report.name}: {len(cases)} tests, {failures} failures, {skipped} skipped")
+              for case in cases:
                   failure = case.find('failure')
                   if failure is not None:
                       message = (failure.get('message', '') + ' ' + (failure.text or '')[:1800]).replace('\n', '%0A')

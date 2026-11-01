@@ -55,6 +55,73 @@ class TabMemoryTest {
             }
         }
     }
+    @Test fun suspendedNavigationRestoresHistoryAndDirtyPageStaysLive() {
+        val server = java.net.ServerSocket(0, 4, java.net.InetAddress.getByName("127.0.0.1"))
+        val worker = Thread {
+            while (!server.isClosed) {
+                try {
+                    server.accept().use { socket ->
+                        socket.soTimeout = 5000
+                        val input = socket.getInputStream().bufferedReader()
+                        val request = input.readLine().orEmpty()
+                        while (!input.readLine().isNullOrEmpty()) { /* consume HTTP headers */ }
+                        val page = if (request.contains("/two")) "Two" else "One"
+                        val body = "<html><head><title>$page</title></head><body><input id='draft' value='saved'><div style='height:2500px'>$page</div></body></html>".toByteArray()
+                        val headers = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray()
+                        socket.getOutputStream().apply { write(headers); write(body); flush() }
+                    }
+                } catch (_: java.io.IOException) { if (server.isClosed) break }
+            }
+        }.apply { isDaemon = true; start() }
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                lateinit var tab: Any
+                fun waitUntil(message: String, test: () -> Boolean) {
+                    val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+                    while (System.nanoTime() < end) { if (test()) return; Thread.sleep(50) }
+                    fail(message)
+                }
+                fun pageIs(title: String): Boolean {
+                    var ready = false
+                    scenario.onActivity { ready = live(tab)?.let { it.title == title && it.progress == 100 } == true }
+                    return ready
+                }
+                val base = "http://127.0.0.1:${server.localPort}"
+                scenario.onActivity { activity ->
+                    activity.handleCentralHubCommand(JSONObject().put("command", "open_url").put("url", "$base/one"))
+                    tab = (value(activity, "tabs") as List<*>).last()!!
+                }
+                waitUntil("First fixture page loaded") { pageIs("One") }
+                scenario.onActivity { live(tab)!!.loadUrl("$base/two") }
+                waitUntil("Second fixture page loaded") { pageIs("Two") }
+                scenario.onActivity { activity ->
+                    assertTrue(live(tab)!!.canGoBack())
+                    repeat(2) { activity.handleCentralHubCommand(JSONObject().put("command", "new_tab")) }
+                    activity.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+                }
+                waitUntil("Background document was genuinely suspended") {
+                    var suspended = false; scenario.onActivity { suspended = live(tab) == null }; suspended
+                }
+                scenario.onActivity { (value(tab, "chipView") as android.view.View).performClick() }
+                waitUntil("Suspended document restored") { pageIs("Two") }
+                scenario.onActivity { assertTrue(live(tab)!!.canGoBack()); live(tab)!!.goBack() }
+                waitUntil("Restored Back navigation reaches the first page") { pageIs("One") }
+                val edited = CountDownLatch(1)
+                scenario.onActivity { live(tab)!!.evaluateJavascript("document.getElementById('draft').value='keep this draft'; true") { edited.countDown() } }
+                assertTrue(edited.await(10, TimeUnit.SECONDS))
+                scenario.onActivity { activity ->
+                    activity.handleCentralHubCommand(JSONObject().put("command", "new_tab"))
+                    activity.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+                }
+                waitUntil("Unsaved form is protected") {
+                    var protected = false
+                    scenario.onActivity { protected = live(tab) != null && value(tab, "discardReason").toString().startsWith("Protected:") }
+                    protected
+                }
+            }
+        } finally { server.close(); worker.join(2000) }
+    }
+
     @Test fun rendererSafetyProbeProtectsEditsFramesAndMedia() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var view: WebView
@@ -73,7 +140,7 @@ class TabMemoryTest {
             }
             // Wait for page load, not a fixed device-speed-dependent delay.
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-            while (js("document.readyState") != "\"complete\"" && System.nanoTime() < deadline) Thread.sleep(50)
+            while (js("document.readyState === 'complete' && !!document.getElementById('draft')") != "true" && System.nanoTime() < deadline) Thread.sleep(50)
             assertEquals("true", js(PhormiTabMemoryPolicy.CAN_DISCARD_SCRIPT))
             js("document.getElementById('draft').value='unsaved'")
             assertEquals("false", js(PhormiTabMemoryPolicy.CAN_DISCARD_SCRIPT))

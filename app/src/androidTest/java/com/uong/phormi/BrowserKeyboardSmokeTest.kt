@@ -68,7 +68,7 @@ class BrowserKeyboardSmokeTest {
         }
     }
     @Test fun continuousGlideProducesAComposingWordAndBackspaceUndoesIt() {
-        editor(InputType.TYPE_CLASS_TEXT).use { scenario ->
+        editor(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES).use { scenario ->
             assertTrue(device.wait(Until.hasObject(By.desc("Backspace")), 7000))
             val points = "helo".map { letter ->
                 val key = device.findObject(By.desc(java.util.regex.Pattern.compile(letter.toString(), java.util.regex.Pattern.CASE_INSENSITIVE)))
@@ -77,7 +77,13 @@ class BrowserKeyboardSmokeTest {
                 android.graphics.Point(bounds.centerX(), bounds.centerY())
             }.toTypedArray()
             assertTrue(device.swipe(points, 12))
-            assertTrue("Decoder offers a real word", device.wait(Until.hasObject(By.desc("Glide candidate Hello")), 10000))
+            val recognized = device.wait(Until.hasObject(By.desc("Glide candidate Hello")), 10000)
+            if (!recognized) {
+                var text = ""
+                scenario.onActivity { text = it.editor.text.toString() }
+                val choices = device.findObjects(By.clazz("android.widget.Button")).take(6).joinToString { it.contentDescription.orEmpty() }
+                fail("Glide expected Hello; editor=$text; candidates=$choices")
+            }
             scenario.onActivity { assertEquals("Hello", it.editor.text.toString()) }
             device.findObject(By.desc("Backspace")).click()
             scenario.onActivity { assertEquals("", it.editor.text.toString()) }
