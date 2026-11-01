@@ -18,6 +18,11 @@ class PhormiGlideDecoderTest {
         val path = trace("house").map { PhormiGlideDecoder.Point(it.x + .12f, it.y - .08f) }
         assertEquals("house", PhormiGlideDecoder.decode(path, keys, words, Locale.ENGLISH).first().word)
     }
+    @Test fun visibleNativeLetterKeysAreNotReplacedByDistantAsciiKeys() {
+        val spanish = keys + ('ñ' to PhormiGlideDecoder.Point(9.4f, 1f))
+        val path = PhormiGlideDecoder.sample("niño".map { spanish.getValue(it) }, 64)
+        assertEquals("niño", PhormiGlideDecoder.decode(path, spanish, listOf("nino", "niño"), Locale("es")).first().word)
+    }
     @Test fun rejectsTapsAndOutOfKeyboardPaths() {
         assertTrue(PhormiGlideDecoder.decode(List(20) { keys.getValue('a') }, keys, words, Locale.ENGLISH).isEmpty())
         assertTrue(PhormiGlideDecoder.decode(trace("house").map { PhormiGlideDecoder.Point(it.x + 90, it.y) }, keys, words, Locale.ENGLISH).isEmpty())

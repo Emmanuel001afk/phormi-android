@@ -47,9 +47,15 @@ object PhormiGlideDecoder {
         data class Match(val word: String, val rank: Int, val shape: List<Point>, val coarse: Float, val endpoints: Float)
         val shortlist = words.asSequence().mapIndexedNotNull { rank, word ->
             if (Thread.currentThread().isInterrupted) throw InterruptedException("Gesture cancelled")
-            val letters = fold(word, locale)
+            val letters = word.lowercase(locale)
             if (letters.length !in 2..24) return@mapIndexedNotNull null
-            val centers = letters.map { keys[it] ?: return@mapIndexedNotNull null }.fold(mutableListOf<Point>()) { result, point ->
+            // Prefer a visible native key (ñ, ç, ö, ü…) before falling back to its base letter.
+            val centers = letters.flatMap { letter ->
+                keys[letter]?.let { listOf(it) } ?: run {
+                    val base = when (letter) { 'ß' -> "ss"; 'œ' -> "oe"; 'æ' -> "ae"; else -> fold(letter.toString(), locale) }
+                    base.map { keys[it] ?: return@mapIndexedNotNull null }
+                }
+            }.fold(mutableListOf<Point>()) { result, point ->
                 if (result.lastOrNull() != point) result.add(point)
                 result
             }
