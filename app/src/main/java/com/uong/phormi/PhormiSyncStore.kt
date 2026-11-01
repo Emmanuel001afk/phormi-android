@@ -7,7 +7,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * Cross-device, sync-safe browser state.
+ * Experimental snapshot serializer only. Not wired to an authenticated cloud-sync service.
  *
  * The payload mirrors the shared Phormi sync contract. It deliberately excludes
  * website cookies, passwords, authentication tokens, downloads and private
@@ -34,17 +34,20 @@ class PhormiSyncStore(context: Context) {
         val urls = readArray(KEY_TAB_URLS)
         val titles = readArray(KEY_TAB_TITLES)
         val tabs = JSONArray()
-        val count = minOf(urls.length(), MAX_TABS)
+        require(urls.length() <= MAX_TABS) { "Snapshot exceeds $MAX_TABS tabs; no data was silently truncated" }
+        val ids = readArray("tab_ids")
+        val updated = readArray("tab_last_used")
+        val count = urls.length()
 
         for (index in 0 until count) {
             val url = urls.optString(index, NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
             val title = titles.optString(index, "")
             tabs.put(
                 JSONObject()
-                    .put("id", "tab-${index + 1}")
+                    .put("id", "${deviceId()}:tab-${ids.optInt(index, index + 1)}")
                     .put("url", url)
                     .put("title", title)
-                    .put("updatedAt", System.currentTimeMillis())
+                    .put("updatedAt", updated.optLong(index, 0L))
             )
         }
 
@@ -56,7 +59,7 @@ class PhormiSyncStore(context: Context) {
             .put("updatedAt", System.currentTimeMillis())
             .put("tabs", tabs)
             .put("activeTabIndex", prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, maxOf(0, count - 1)))
-            .put("searchProvider", prefs.getString(KEY_SEARCH_PROVIDER, "Phormi Search"))
+            .put("searchProvider", prefs.getString(KEY_SEARCH_PROVIDER, "Google"))
             .put("themeMode", prefs.getString(KEY_THEME_MODE, "system"))
             .put("dailyAccent", prefs.getBoolean(KEY_DAILY_ACCENT, false))
             .put("wallpaperReference", prefs.getString(KEY_WALLPAPER_URI, null) ?: JSONObject.NULL)
@@ -64,7 +67,8 @@ class PhormiSyncStore(context: Context) {
             .put("customShortcuts", parseShortcuts(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]")))
     }
 
-    /** Import after authenticating the same Phormi account. */
+    /** Replace local metadata only. A future caller must separately authenticate, authorize,
+     * merge conflicts and ask the user before invoking this; this method performs no networking. */
     fun importSnapshot(snapshot: JSONObject): Boolean {
         if (snapshot.optInt("schema", -1) != 1 || snapshot.optString("product") != "Phormi") {
             return false
@@ -73,11 +77,13 @@ class PhormiSyncStore(context: Context) {
         val tabs = snapshot.optJSONArray("tabs") ?: JSONArray()
         val urls = JSONArray()
         val titles = JSONArray()
-        val count = minOf(tabs.length(), MAX_TABS)
+        if (tabs.length() > MAX_TABS) return false
+        val count = tabs.length()
 
         for (i in 0 until count) {
             val tab = tabs.optJSONObject(i) ?: continue
-            val url = tab.optString("url", NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
+            val raw = tab.optString("url", NEW_TAB_URL).trim().ifBlank { NEW_TAB_URL }
+            val url = if (raw == NEW_TAB_URL) raw else PhormiNavigationInput.webUrl(raw) ?: return false
             urls.put(url)
             titles.put(tab.optString("title", ""))
         }
@@ -90,14 +96,17 @@ class PhormiSyncStore(context: Context) {
         val editor = prefs.edit()
             .putString(KEY_TAB_URLS, urls.toString())
             .putString(KEY_TAB_TITLES, titles.toString())
+            // Never attach old profile/history/lock IDs by array position to imported URLs.
+            .remove("tab_ids").remove("tab_profiles").remove("tab_webview_states")
+            .remove("tab_search_queries").remove("tab_created_at").remove("tab_last_used")
             .putInt(KEY_ACTIVE_INDEX, active)
-            .putString(KEY_SEARCH_PROVIDER, snapshot.optString("searchProvider", "Phormi Search"))
+            .putString(KEY_SEARCH_PROVIDER, snapshot.optString("searchProvider", "Google"))
             .putString(KEY_THEME_MODE, snapshot.optString("themeMode", "system"))
             .putBoolean(KEY_DAILY_ACCENT, snapshot.optBoolean("dailyAccent", false))
             .putBoolean(KEY_KEEP_SCREEN_ON, snapshot.optBoolean("keepScreenOn", false))
             .putString(KEY_CUSTOM_SHORTCUTS, parseShortcuts(snapshot.opt("customShortcuts")).toString())
 
-        if (snapshot.has("wallpaperReference") && !snapshot.isNull("wallpaperReference")) {
+        if (snapshot.optString("deviceId") == deviceId() && snapshot.has("wallpaperReference") && !snapshot.isNull("wallpaperReference")) {
             editor.putString(KEY_WALLPAPER_URI, snapshot.optString("wallpaperReference"))
         } else {
             editor.remove(KEY_WALLPAPER_URI)
@@ -132,6 +141,6 @@ class PhormiSyncStore(context: Context) {
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         private const val KEY_CUSTOM_SHORTCUTS = "custom_shortcuts"
         private const val NEW_TAB_URL = "about:blank"
-        private const val MAX_TABS = 5
+        private const val MAX_TABS = 500
     }
 }

@@ -1819,10 +1819,14 @@ class MainActivity : AppCompatActivity() {
         val page = activeWebView() ?: return
         val target = page.url.orEmpty()
         val origin = PhormiSitePermissions.secureOrigin(target)
+        val local = tabs.firstOrNull { it.webView === page }?.searchQuery != null
+        val description = when {
+            local -> "Results generated locally by Phormi. This page is not a website identity or TLS certificate."
+            origin != null && page.certificate != null -> "HTTPS certificate present. This does not guarantee that the website is trustworthy. Camera, microphone and location requests require approval for this page. Reload to end page access."
+            else -> "No verified HTTPS connection is shown for this page. Do not enter sensitive information over HTTP."
+        }
         AlertDialog.Builder(this).setTitle("Site information")
-            .setMessage((origin ?: target) + "\n\n" + if (origin != null)
-                "HTTPS connection. This does not guarantee that the website is trustworthy. Camera, microphone and location requests require approval for this page. Reload to end active page access."
-                else "This is not a verified HTTPS page. Do not enter sensitive information over HTTP.")
+            .setMessage((if (local) "Phormi Search" else origin ?: target) + "\n\n" + description)
             .setPositiveButton("Close", null)
             .setNegativeButton("Reload / end access") { _, _ -> sitePermissions.cancel(); page.reload() }
             .setNeutralButton("Privacy settings") { _, _ -> startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }.show()
@@ -1998,7 +2002,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val old = tab.webView
-        val url = old.url.orEmpty()
+        val url = (tab.deferredUrl ?: old.url).orEmpty()
+        sitePermissions.cancel(old)
         val newWebView = WebView(this)
         if (!PhormiEnvironmentManager.apply(newWebView, target)) {
             newWebView.destroy()
@@ -2020,6 +2025,13 @@ class MainActivity : AppCompatActivity() {
         parent?.addView(newWebView, 0, FrameLayout.LayoutParams(-1, -1))
         old.destroy()
         tab.webView = newWebView
+        tab.savedState = null
+        tab.deferredUrl = null
+        newWebView.webChromeClient = buildChromeClient(newWebView) { title ->
+            tab.title = title.orEmpty().ifBlank { "Tab" }
+            tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+            saveTabs()
+        }
         tab.profileName = target
         tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text =
             if (tab.title.isBlank()) target else "${tab.title} · $target"

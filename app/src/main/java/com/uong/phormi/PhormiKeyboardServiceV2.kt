@@ -308,6 +308,8 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         includeFontPadding=false
         minWidth=0
         minHeight=0
+        minimumWidth=0
+        minimumHeight=0
         isAllCaps=false
         stateListAnimator=null
         elevation=dp(if(special)1 else 2).toFloat()
@@ -679,7 +681,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             1 -> Color.rgb(124, 58, 237)
             else -> themeKey()
         }, dp(9))
-        key.setTextColor(Color.WHITE)
+        key.setTextColor(if (state == 0) themeText() else Color.WHITE)
         key.contentDescription = when (state) {
             2 -> "Caps lock — all letters uppercase"
             1 -> "Shift — next letter uppercase"

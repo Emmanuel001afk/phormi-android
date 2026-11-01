@@ -103,7 +103,7 @@ object PhormiKeyboardTextEngine {
         PhormiKeyboardDictionary.completions(context, locale, p).forEach(result::add)
         // fruit/common dictionary API boost (offline + remote cache)
         PhormiKeyboardDictionaryApi.suggestionsFor(p, locale).filter { !it.equals(p, true) }.forEach(result::add)
-        PhormiKeyboardDictionaryApi.loadDisk(context, p, locale).filter { !it.equals(p, true) }.forEach(result::add)
+        (if (PhormiKeyboardPreferences.onlineSuggestions(context)) PhormiKeyboardDictionaryApi.loadDisk(context, p, locale) else emptyList()).filter { !it.equals(p, true) }.forEach(result::add)
         correctionsByLanguage[locale.language]?.get(p)?.takeIf { it.isNotBlank() && !it.equals(p, true) }?.let(result::add)
         PhormiKeyboardSystemSpellChecker.cached(p, locale).filter { it.isNotBlank() && !it.equals(p, true) }.forEach(result::add)
         PhormiKeyboardSystemSpellChecker.request(context, p, locale)
