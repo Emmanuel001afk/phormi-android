@@ -56,7 +56,39 @@ jobs:
       - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Android lint
-        run: gradle lintDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle lintDebug --no-daemon --stacktrace > /tmp/phormi-gradle-lint.log 2>&1
+          result=$?
+          cat /tmp/phormi-gradle-lint.log
+          exit "$result"
+      # Downloadable job logs are not always available to reviewers. Mirror the
+      # lint findings into check annotations so a red build is diagnosable.
+      - name: Annotate Android lint findings
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, re, xml.etree.ElementTree as ET
+          messages = []
+          for path in glob.glob('/tmp/phormi-gradle-lint.log'):
+              with open(path, errors='replace') as handle:
+                  for line in handle:
+                      if re.search(r'Error: |Lint found|^\* What went wrong|FAILED', line):
+                          messages.append(line.strip())
+          for path in glob.glob('app/build/reports/lint-results-debug.xml'):
+              root = ET.parse(path).getroot()
+              for issue in root.findall('issue'):
+                  if issue.get('severity') in ('Error', 'Fatal'):
+                      loc = issue.find('location')
+                      where = (loc.get('file') if loc is not None else 'app') or 'app'
+                      line = (loc.get('line') if loc is not None else '') or '1'
+                      messages.append(f"{where}:{line} {issue.get('id')}: {issue.get('message')}")
+          print(f"Lint annotations: {len(messages)} finding(s)")
+          for message in messages[:10]:
+              print("::error title=Android lint::" + message.replace('\n', ' '))
+          if len(messages) > 10:
+              print(f"::error title=Android lint::... and {len(messages) - 10} more finding(s); see the job log.")
+          PY
       - name: Publish debug APK
         uses: actions/upload-artifact@v4
         with:
