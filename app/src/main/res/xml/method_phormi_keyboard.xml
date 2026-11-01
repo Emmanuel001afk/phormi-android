@@ -17,19 +17,7 @@
     <subtype android:label="Phormi Keyboard - Hausa (Nigeria)" android:imeSubtypeLocale="ha_NG" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - Kiswahili" android:imeSubtypeLocale="sw_KE" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - العربية" android:imeSubtypeLocale="ar_SA" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - हिन्दी" android:imeSubtypeLocale="hi_IN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - বাংলা" android:imeSubtypeLocale="bn_BD" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - اردو" android:imeSubtypeLocale="ur_PK" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - ਪੰਜਾਬੀ" android:imeSubtypeLocale="pa_IN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - ગુજરાતી" android:imeSubtypeLocale="gu_IN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - தமிழ்" android:imeSubtypeLocale="ta_IN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - తెలుగు" android:imeSubtypeLocale="te_IN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - മലയാളം" android:imeSubtypeLocale="ml_IN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - ไทย" android:imeSubtypeLocale="th_TH" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - Tiếng Việt" android:imeSubtypeLocale="vi_VN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - 中文" android:imeSubtypeLocale="zh_CN" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - 日本語" android:imeSubtypeLocale="ja_JP" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
-    <subtype android:label="Phormi Keyboard - 한국어" android:imeSubtypeLocale="ko_KR" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - Русский" android:imeSubtypeLocale="ru_RU" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - Українська" android:imeSubtypeLocale="uk_UA" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />
     <subtype android:label="Phormi Keyboard - Polski" android:imeSubtypeLocale="pl_PL" android:imeSubtypeMode="keyboard" android:isAsciiCapable="false" />

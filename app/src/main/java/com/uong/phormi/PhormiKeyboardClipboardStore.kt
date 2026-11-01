@@ -26,7 +26,7 @@ object PhormiKeyboardClipboardStore {
                     val text = o.optString("text", "")
                     val uri = o.optString("uri", "").takeIf { it.isNotBlank() }
                     val createdAt = o.optLong("createdAt", 0L)
-                    if (text.isNotEmpty() && !looksSensitive(text) && (createdAt <= 0L || now - createdAt < AUTO_CLEAR_MS)) {
+                    if (text.isNotEmpty() && !looksSensitive(text) && (o.optBoolean("pinned", false) || createdAt <= 0L || now - createdAt < AUTO_CLEAR_MS)) {
                         add(Item(text, o.optBoolean("pinned", false), createdAt, uri, o.optString("mime", "").takeIf { it.isNotBlank() }))
                     }
                 }
@@ -84,11 +84,10 @@ object PhormiKeyboardClipboardStore {
     }
 
     private fun shouldCaptureForActiveEditor(): Boolean = runCatching {
-        val field = PhormiKeyboardServiceV2::class.java.getDeclaredField("instance").apply { isAccessible = true }
-        val service = field.get(null) as? PhormiKeyboardServiceV2
+        val service = PhormiKeyboardServiceV2.activeInstance()
         val info = service?.currentInputEditorInfo
         info != null && !PhormiKeyboardTextEngine.isPassword(info) && !PhormiKeyboardTextEngine.isNoPersonalizedLearning(info)
-    }.getOrDefault(true)
+    }.getOrDefault(false)
 
     private fun isSensitive(description: ClipDescription?): Boolean {
         if (description == null) return false

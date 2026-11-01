@@ -45,7 +45,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Languages"))
         content.addView(TextView(this).apply{
-            text="Built-in language layers: English, French, Spanish, Portuguese, German, Italian, Indonesian, Turkish, Yoruba, Igbo, Hausa, Swahili, Arabic, Hindi, Bengali, Urdu, Punjabi, Gujarati, Tamil, Telugu, Malayalam, Thai, Vietnamese, Chinese, Japanese, Korean, Russian, Ukrainian, Polish, Dutch, Swedish, Norwegian, Danish, Finnish, Czech, Romanian, Hungarian, Greek and Hebrew."
+            text="Character layouts: " + PhormiKeyboardLayouts.supported.joinToString(", ") { java.util.Locale(it).displayLanguage } + ". CJK and Indic composition and glide typing are not available yet."
             textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
         })
         content.addView(Button(this).apply{text="Choose Phormi language";isAllCaps=false;setOnClickListener{runCatching{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS))}.onFailure{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))}}})
@@ -53,7 +53,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{
-            text="Use the Move and Size controls on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
+            text="Use the Floating and Resize controls in Tools on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
             textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
         })
         content.addView(Button(this).apply{
@@ -66,9 +66,18 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Appearance"))
         val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Rose","Sand")
-        val themeRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
-        themes.forEachIndexed{index,name->themeRow.addView(Button(this).apply{text=name;isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity,index);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"$name appearance saved")}},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(2),0,dp(2),0)})}
-        content.addView(themeRow)
+        themes.toList().chunked(2).forEachIndexed { rowIndex, names ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            names.forEachIndexed { column, name ->
+                val index = rowIndex * 2 + column
+                row.addView(Button(this).apply {
+                    text = (if (PhormiKeyboardPreferences.theme(this@PhormiKeyboardSettingsActivity) == index) "✓ " else "") + name
+                    isAllCaps = false
+                    setOnClickListener { PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity, index); render() }
+                }, LinearLayout.LayoutParams(0, dp(52), 1f))
+            }
+            content.addView(row)
+        }
         content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
         content.addView(Button(this).apply{text="Choose keyboard wallpaper";isAllCaps=false;setOnClickListener{wallpaperPicker.launch(arrayOf("image/*"))}})
         content.addView(Button(this).apply{text="Remove keyboard wallpaper";isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setWallpaperUri(this@PhormiKeyboardSettingsActivity,null);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard wallpaper removed")}})
@@ -76,6 +85,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Keyboard behavior"))
         option(content,"Suggestions","Show word suggestions when the editor does not provide its own completions.",PhormiKeyboardPreferences.suggestions(this),PhormiKeyboardPreferences.KEY_SUGGESTIONS)
+        option(content,"Online English suggestions (optional)","Off by default. When enabled, ordinary English word prefixes are sent to Datamuse. Password and private fields are excluded. Voice typing uses your device’s speech provider separately.",PhormiKeyboardPreferences.onlineSuggestions(this),PhormiKeyboardPreferences.KEY_ONLINE_SUGGESTIONS)
         option(content,"Autocorrect","Apply conservative local corrections for common typing mistakes.",PhormiKeyboardPreferences.autocorrect(this),PhormiKeyboardPreferences.KEY_AUTOCORRECT)
         option(content,"Auto-capitalization","Capitalize sentence starts and the first word in a text field.",PhormiKeyboardPreferences.autoCaps(this),PhormiKeyboardPreferences.KEY_AUTO_CAPS)
         option(content,"Contextual emoji","Suggest Unicode emoji from typed context, on-device (not image stickers).",PhormiKeyboardPreferences.aiEmoji(this),PhormiKeyboardPreferences.KEY_AI_EMOJI)

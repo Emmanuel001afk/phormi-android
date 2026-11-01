@@ -22,6 +22,9 @@ object PhormiKeyboardPreferences {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    const val KEY_ONLINE_SUGGESTIONS = "online_suggestions"
+    fun onlineSuggestions(context: Context) = prefs(context).getBoolean(KEY_ONLINE_SUGGESTIONS, false)
+
     fun suggestions(context: Context) = prefs(context).getBoolean(SUGGESTIONS, true)
     fun autocorrect(context: Context) = prefs(context).getBoolean(AUTOCORRECT, true)
     fun autoCaps(context: Context) = prefs(context).getBoolean(AUTO_CAPS, true)

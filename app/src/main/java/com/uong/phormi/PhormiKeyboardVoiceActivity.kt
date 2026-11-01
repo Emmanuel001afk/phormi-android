@@ -29,7 +29,7 @@ class PhormiKeyboardVoiceActivity : Activity() {
     }
 
     private fun startRecognitionAndFinish() {
-        PhormiKeyboardServiceV2.startIntegratedVoiceRecognitionFromContext(this, localeTag)
+        android.widget.Toast.makeText(this, "Microphone enabled. Return to your text field and tap Mic to begin.", android.widget.Toast.LENGTH_LONG).show()
         finish()
     }
 
