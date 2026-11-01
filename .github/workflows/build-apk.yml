@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - round12-keyboard-completion-multilingual
+      - arena/d4887026-phormi-android
   workflow_dispatch: {}
 
 permissions:
@@ -42,7 +43,22 @@ jobs:
       - name: Audit source and resources
         run: python3 tools/audit_project.py
       - name: Run unit tests
-        run: gradle testDebugUnitTest --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-tests.log
+      - name: Annotate test and compiler failures
+        if: failure()
+        run: |
+          grep -E '^e: |^> Task .*FAILED|^FAILURE:|^Caused by:|^.* > .*FAILED' /tmp/phormi-tests.log | head -60 | while IFS= read -r line; do
+            echo "::error title=Validation::$line"
+          done
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phormi-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
       - name: Build debug and release APKs
         env:
           PHORMI_VERSION_CODE: ${{ steps.version.outputs.version_code }}
