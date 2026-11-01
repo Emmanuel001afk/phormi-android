@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit
 @RunWith(AndroidJUnit4::class)
 class TabMemoryTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+    private fun value(owner: Any, name: String): Any? = owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
+    private fun live(tab: Any) = value(tab, "webView") as? WebView
     @Before fun reset() {
         context.getSharedPreferences("phormi_tabs", Context.MODE_PRIVATE).edit().clear().commit()
     }
@@ -38,18 +40,18 @@ class TabMemoryTest {
             scenario.onActivity { activity ->
                 val field = MainActivity::class.java.getDeclaredField("tabs").apply { isAccessible = true }
                 @Suppress("UNCHECKED_CAST")
-                val tabs = field.get(activity) as List<MainActivity.Tab>
+                val tabs = field.get(activity) as List<Any>
                 repeat(7) { activity.handleCentralHubCommand(JSONObject().put("command", "new_tab")) }
                 val first = tabs.first()
-                val original = first.webView
+                val original = live(first)
                 assertNotNull(original)
                 activity.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
                 assertEquals(1, activity.tabMemoryDiagnostics().getInt("live"))
-                assertNull(first.webView)
+                assertNull(live(first))
                 assertNull(original!!.parent)
-                first.chipView.performClick()
-                assertNotNull(first.webView)
-                assertNotSame(original, first.webView)
+                (value(first, "chipView") as android.view.View).performClick()
+                assertNotNull(live(first))
+                assertNotSame(original, live(first))
             }
         }
     }
@@ -59,7 +61,7 @@ class TabMemoryTest {
             scenario.onActivity { activity ->
                 val field = MainActivity::class.java.getDeclaredField("tabs").apply { isAccessible = true }
                 @Suppress("UNCHECKED_CAST")
-                view = (field.get(activity) as List<MainActivity.Tab>).first().webView!!
+                view = live((field.get(activity) as List<Any>).first())!!
                 view.loadDataWithBaseURL(null, "<html><body><input id='draft'></body></html>", "text/html", "UTF-8", null)
             }
             fun js(script: String): String {
