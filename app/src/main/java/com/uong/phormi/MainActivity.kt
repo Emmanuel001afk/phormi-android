@@ -3271,7 +3271,8 @@ class MainActivity : AppCompatActivity() {
             ) {
                 // Take the safe action immediately, then explain it with real detail
                 // instead of a transient toast.
-                callback?.backToSafety(true)
+                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)
+                else view?.stopLoading()
                 val threat = when (threatType) {
                     WebViewClient.SAFE_BROWSING_THREAT_MALWARE -> "malware"
                     WebViewClient.SAFE_BROWSING_THREAT_PHISHING -> "phishing"
