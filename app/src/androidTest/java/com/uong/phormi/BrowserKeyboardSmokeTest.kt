@@ -128,8 +128,8 @@ class BrowserKeyboardSmokeTest {
             device.findObject(By.res("com.uong.phormi", "btn_select_all_tabs")).click()
             assertTrue(device.wait(Until.hasObject(By.text("Close (2)")), 3000))
             device.findObject(By.res("com.uong.phormi", "btn_close_selected")).click()
-            assertTrue(device.wait(Until.hasObject(By.text("Close 2")), 3000))
-            device.findObject(By.text("Close 2")).click()
+            assertTrue(device.wait(Until.hasObject(By.res("android", "button1")), 3000))
+            device.findObject(By.res("android", "button1")).click()
             val result = scenario.result
             assertEquals(android.app.Activity.RESULT_OK, result.resultCode)
             assertEquals("close_many", result.resultData?.getStringExtra("action"))
