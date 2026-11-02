@@ -86,7 +86,7 @@ object PhormiKeyboardClipboardStore {
     private fun shouldCaptureForActiveEditor(): Boolean = runCatching {
         val service = PhormiKeyboardServiceV2.activeInstance()
         val info = service?.currentInputEditorInfo
-        service?.isInputViewShown == true && info != null && !PhormiKeyboardTextEngine.isPassword(info) && !PhormiKeyboardTextEngine.isNoPersonalizedLearning(info)
+        service?.isInputViewShown == true && info != null && !PhormiKeyboardTextEngine.isPassword(info) && !PhormiKeyboardTextEngine.isNoPersonalizedLearning(info) && !PhormiKeyboardTextEngine.isUriLike(info)
     }.getOrDefault(false)
 
     private fun isSensitive(description: ClipDescription?): Boolean {

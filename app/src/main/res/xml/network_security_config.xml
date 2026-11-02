@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App-owned requests and WebView navigation require TLS, except on-device loopback
+     development/test endpoints. WebView on supported Android versions honours this
+     policy: ordinary cleartext HTTP sites are blocked, not silently upgraded. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain>127.0.0.1</domain>
+        <domain>::1</domain>
+    </domain-config>
+</network-security-config>

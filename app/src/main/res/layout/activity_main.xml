@@ -76,7 +76,8 @@
                 android:textColor="@color/phormi_accent"
                 android:textSize="16sp"
                 android:clickable="true"
-                android:focusable="true" />
+                android:focusable="true"
+                android:contentDescription="Go to the address or search" />
         </LinearLayout>
 
         <HorizontalScrollView

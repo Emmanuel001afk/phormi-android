@@ -23,16 +23,33 @@ open class BookmarksActivity : AppCompatActivity() {
     private lateinit var search: EditText
 
     companion object {
-        /** The saved-page library is never filtered by who called it. */
-        fun getAll(context: android.content.Context): List<Bookmark> =
-            PhormiFavorites.getAll(context).map { Bookmark(it.title, it.url, it.addedAt) }
+        /**
+         * Returns the canonical favorites. Quick Access gets a filtered view so a
+         * Quick Access hide never makes the Favorite disappear from the Favorites UI.
+         */
+        /**
+         * Behaviour is chosen by an explicit flag, never by inspecting the caller's
+         * stack trace. A Quick Access "hide" must never delete the underlying favorite.
+         */
+        fun getAll(context: android.content.Context, hideQuickAccessRemovals: Boolean = false): List<Bookmark> {
+            val all = PhormiFavorites.getAll(context).map { Bookmark(it.title, it.url, it.addedAt) }
+            return if (hideQuickAccessRemovals) {
+                all.filterNot { PhormiQuickAccessState.isFavoriteHidden(context, it.url) }
+            } else all
+        }
 
         fun add(context: android.content.Context, title: String, url: String) {
             PhormiFavorites.add(context, title, url)
         }
 
-        fun remove(context: android.content.Context, url: String) = PhormiFavorites.remove(context, url)
-
+        /** [hideOnly] is set explicitly by the Quick Access removal path. */
+        fun remove(context: android.content.Context, url: String, hideOnly: Boolean = false) {
+            if (hideOnly) {
+                PhormiQuickAccessState.hideFavorite(context, url)
+            } else {
+                PhormiFavorites.remove(context, url)
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

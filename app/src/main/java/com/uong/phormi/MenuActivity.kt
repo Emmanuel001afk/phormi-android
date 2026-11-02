@@ -81,6 +81,8 @@ class MenuActivity : AppCompatActivity() {
             finish() // Return to the browser when the queued AI command is submitted.
         }
         wire(R.id.menu_disposable_email) { startActivity(Intent(this, PhormiDisposableEmailActivity::class.java)) }
+        wire(R.id.menu_news) { startActivity(Intent(this, NewsActivity::class.java)) }
+        wire(R.id.menu_stickers) { startActivity(Intent(this, PhormiKeyboardStickerActivity::class.java)) }
         wire(R.id.menu_keyboard) { startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java)) }
         wire(R.id.menu_capsule) { startActivity(Intent(this, PhormiCapsuleActivity::class.java)) }
         wire(R.id.menu_default_browser) { PhormiDefaultBrowserController.request(this) }

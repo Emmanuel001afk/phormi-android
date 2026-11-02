@@ -1,6 +1,8 @@
 # Reopened feature work — not merge-ready
 
-PR #11 remains **draft**. The original application baseline is
+On 2026-11-02 the user explicitly requested merging PR #11 despite the outstanding
+feature limitations below. The earlier draft hold is superseded; the merged tree
+must pass validation before merging. The original application baseline is
 `d2436ad06f6e2ef4240d9bf08c667a6273a8d92b`; the earlier repair milestone was
 `d0f87b5`. The previous 15 JVM / 6 emulator passes do not validate these new changes.
 
@@ -67,8 +69,8 @@ PR #11 remains **draft**. The original application baseline is
    remains required, its service/account/security design must be agreed explicitly.
 
 “All general languages” is the requested goal, not a verified support claim. Native
-speaker review and broader test coverage are still needed. Do not merge, release, or
-label this PR complete on the strength of source audits or narrow smoke tests alone.
+speaker review and broader test coverage are still needed. Merge authorization does not mean the outstanding feature work is complete.
+Do not label these features complete on the strength of narrow smoke tests alone.
 
 ## Validation record
 
@@ -99,4 +101,21 @@ failure is hidden by disabling tests. The final 12-test run includes both new in
 features and all prior smoke tests. No main-branch merge or store publication occurred.
 
 No broad physical-device, native-language-quality, recognition-accuracy, memory/RSS,
-Web Audio, or Chrome/Gboard comparison benchmark has been performed. Keep the PR draft.
+Web Audio, or Chrome/Gboard comparison benchmark has been performed. The user has now authorized merging this limited scope after validation.
+
+## Merge integration with main (PR #12)
+
+`main` advanced while PR #11 was in draft, with overlapping browser/keyboard repairs.
+The merge keeps PR #11's tested nullable-WebView lifecycle, gesture decoder, Hangul
+composer, private-editor guards and Ghost fail-closed isolation. It retains main's
+VPN/service cleanup, News/sticker entry points, origin-only favicon requests, equal
+search-provider weighting, cached search refresh, find navigation, network-error UI,
+fullscreen orientation behavior, disabled backup and HTTPS/loopback network policy.
+Normal location permission persistence/reset is combined with PR #11's active exact-
+HTTPS-origin validation; private-mode permissions are never persisted. SSL exceptions
+remain blocked. Both opt-in online dictionary settings now address a single preference.
+The subtype audit now checks the actual expanded layouts rather than assuming all
+keyboards are Latin-only. Main's historical audit/fix documentation remains available.
+
+Fresh build/unit/emulator validation is required for this combined tree; earlier
+results above describe the pre-merge application and are not substituted for it.

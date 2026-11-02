@@ -47,6 +47,8 @@
         <TextView style="@style/PhormiMenuSection" android:text="ASSIST &amp; CREATE" />
         <TextView android:id="@+id/menu_ai" style="@style/PhormiMenuItem" android:text="✦  Browser AI · tasks &amp; updates" />
         <TextView android:id="@+id/menu_keyboard" style="@style/PhormiMenuItem" android:text="⌨  Phormi Keyboard" />
+        <TextView android:id="@+id/menu_stickers" style="@style/PhormiMenuItem" android:text="✿  Sticker studio" />
+        <TextView android:id="@+id/menu_news" style="@style/PhormiMenuItem" android:text="▤  News" />
         <TextView android:id="@+id/menu_capsule" style="@style/PhormiMenuItem" android:text="◈  Phormi Capsule · saved collections" />
         <TextView style="@style/PhormiMenuSection" android:text="PAGE TOOLS" />
         <TextView android:id="@+id/menu_navigation_lens" style="@style/PhormiMenuItem" android:text="⌖  Navigation Lens · page outline" />

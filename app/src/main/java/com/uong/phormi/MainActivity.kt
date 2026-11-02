@@ -41,15 +41,20 @@ import android.webkit.WebView
 import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ListPopupWindow
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.Button
 import android.widget.Space
 import android.os.Looper
+import android.text.Editable
 import android.text.Html
+import android.text.TextWatcher
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -85,6 +90,7 @@ class MainActivity : AppCompatActivity() {
         var createdAt: Long = System.currentTimeMillis(),
         var profileName: String = DEFAULT_PROFILE_NAME,
         var searchQuery: String? = null,
+        var lastSearchHtml: String? = null,
         var deferredUrl: String? = null,
         var savedState: String? = null,
         var savedScrollY: Int = 0,
@@ -124,7 +130,8 @@ class MainActivity : AppCompatActivity() {
 
     private val sitePermissions by lazy { PhormiSitePermissions(this,
         isActive = { it === activeWebView() },
-        onAccessGranted = { view -> tabs.firstOrNull { it.webView === view }?.hasDeviceAccess = true }) }
+        onAccessGranted = { view -> tabs.firstOrNull { it.webView === view }?.hasDeviceAccess = true }, locationStore = sitePermissionStore) }
+    private val sitePermissionStore by lazy { PhormiSitePermissions.SharedPreferencesStore(this) }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var fileChooserOwner: Int = -1
     private var fullscreenOwner: Int = -1
@@ -179,7 +186,6 @@ class MainActivity : AppCompatActivity() {
         private const val REQ_MEDIA_PERMISSIONS = 1001
         private const val REQ_FILE_CHOOSER = 1002
         private const val REQ_GEOLOCATION = 1006
-        private const val REQ_STARTUP_PERMISSIONS = 1003
         private const val REQ_TABS_OVERVIEW = 1004
         private const val REQ_MENU = 1007
         private const val MENU_OPEN = 1
@@ -187,25 +193,10 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_DOWNLOAD = 3
         private const val REQ_NEWS = 1008
 
-        private val STARTUP_PERMISSIONS = buildList {
-            add(Manifest.permission.CAMERA)
-            add(Manifest.permission.RECORD_AUDIO)
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-                add(Manifest.permission.READ_MEDIA_IMAGES)
-                add(Manifest.permission.READ_MEDIA_VIDEO)
-                add(Manifest.permission.READ_MEDIA_AUDIO)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-                add(Manifest.permission.BLUETOOTH_SCAN)
-            }
-            if (android.os.Build.VERSION.SDK_INT <= 28) {
-                add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        }
+        // Sensitive permissions are deliberately requested at the moment a feature
+        // needs them (camera/mic for WebView, location for a site prompt, media for
+        // picker/notification flows), not as one alarming startup prompt. The
+        // previous STARTUP_PERMISSIONS list was dead code that was never requested.
     }
 
     private val downloadBadgeHandler = Handler(Looper.getMainLooper())
@@ -585,7 +576,7 @@ class MainActivity : AppCompatActivity() {
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
         urlBar = findViewById(R.id.url_bar)
         configureOmnibox()
-        findViewById<View>(R.id.btn_site_info).setOnClickListener { showSiteInformation() }
+        findViewById<View>(R.id.btn_site_info).setOnClickListener { showSiteInfo() }
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
         tabCountView = findViewById(R.id.tab_count)
@@ -789,7 +780,7 @@ class MainActivity : AppCompatActivity() {
         val modes = arrayOf("System", "Light", "Dark")
         val current = prefs.getString(KEY_THEME_MODE, "System") ?: "System"
         val checked = modes.indexOf(current).coerceAtLeast(0)
-        val daily = prefs.getBoolean(KEY_DAILY_ACCENT, true)
+        val daily = prefs.getBoolean(KEY_DAILY_ACCENT, false)
         val labels = modes.map { mode ->
             if (mode == current && daily) "$mode  • Daily accent" else mode
         }.toTypedArray()
@@ -860,7 +851,7 @@ class MainActivity : AppCompatActivity() {
         val background = if (dark) Color.rgb(11, 18, 32) else Color.rgb(250, 247, 245)
         val primary = if (dark) Color.rgb(248, 250, 252) else Color.rgb(31, 31, 31)
         val secondary = if (dark) Color.rgb(148, 163, 184) else Color.rgb(92, 82, 78)
-        val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)
+        val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)
 
         root.setBackgroundColor(background)
         findViewById<TextView>(R.id.start_page_title)?.setTextColor(primary)
@@ -918,17 +909,17 @@ class MainActivity : AppCompatActivity() {
             R.id.btn_back, R.id.btn_forward, R.id.btn_top_back, R.id.btn_top_forward,
             R.id.btn_top_ai, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai || id == R.id.btn_top_ai)
-                (if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
+                (if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
         }
         findViewById<TextView>(R.id.tab_count)?.setTextColor(
-            if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)
+            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)
         )
         findViewById<EditText>(R.id.url_bar)?.apply {
             setTextColor(text)
             setHintTextColor(secondary)
         }
         findViewById<TextView>(R.id.btn_go)?.setTextColor(
-            if (prefs.getBoolean(KEY_DAILY_ACCENT, true)) dailyAccent() else Color.rgb(56, 189, 248)
+            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)
         )
     }
 
@@ -947,7 +938,7 @@ class MainActivity : AppCompatActivity() {
     private fun searchUrlForProvider(query: String): String {
         val encoded = URLEncoder.encode(query, "UTF-8")
         return when (prefs.getString(KEY_SEARCH_PROVIDER, "Google")) {
-            PHORMI_SEARCH -> "phormi-unified://search?q=$encoded"
+            PHORMI_SEARCH -> SEARCH_URL + encoded
             "Bing" -> "https://www.bing.com/search?q=$encoded"
             "DuckDuckGo" -> "https://duckduckgo.com/?q=$encoded"
             "YouTube" -> "https://www.youtube.com/results?search_query=$encoded"
@@ -1112,10 +1103,10 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val host = URL(url).host
-                val candidates = listOf(
-                    "https://$host/favicon.ico",
-                    "https://www.google.com/s2/favicons?sz=64&domain_url=${URLEncoder.encode(url, "UTF-8")}"
-                )
+                // Fetch the icon only from the site itself. Sending every shortcut host
+                // to Google's s2 favicon service leaked browsing interests to a third
+                // party; there is no reason a browser needs a favicon proxy.
+                val candidates = listOf("https://$host/favicon.ico")
                 var bitmap: Bitmap? = null
                 for (iconUrl in candidates) {
                     try {
@@ -1231,6 +1222,10 @@ class MainActivity : AppCompatActivity() {
         val all = java.util.Collections.synchronizedList(mutableListOf<UnifiedResult>())
         val successfulEngines = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         val finishedEngines = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        // The old code reloaded the whole document after every provider finished (up to
+        // 11 times), resetting scroll position and in-page state each time. Render one
+        // interim result set as soon as anything arrives, then once at the end.
+        val renderedInterim = java.util.concurrent.atomic.AtomicBoolean(false)
 
         providers.forEach { provider ->
             val future = unifiedSearchExecutor.submit {
@@ -1247,22 +1242,16 @@ class MainActivity : AppCompatActivity() {
                 val mergedSnapshot = mergeUnifiedResults(snapshot, query)
                 runOnUiThread {
                     if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@runOnUiThread
-                    if (done == providers.size) webView.loadDataWithBaseURL(
-                            "https://phormi.local/",
-                            unifiedSearchHtml(
-                                query,
-                                mergedSnapshot,
-                                done < providers.size,
-                                done,
-                                providers.size,
-                                successfulSnapshot,
-                                finishedSnapshot
-                            ),
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
-                    if (done == providers.size && mergedSnapshot.isNotEmpty() && aiController.isActive()) {
+                    val finalPass = done == providers.size
+                    val firstResults = mergedSnapshot.isNotEmpty() && renderedInterim.compareAndSet(false, true)
+                    if (!finalPass && !firstResults) return@runOnUiThread
+                    val html = unifiedSearchHtml(
+                        query, mergedSnapshot, !finalPass, done, providers.size,
+                        successfulSnapshot, finishedSnapshot
+                    )
+                    tab.lastSearchHtml = html
+                    webView.loadDataWithBaseURL("https://phormi.local/", html, "text/html", "UTF-8", null)
+                    if (finalPass && mergedSnapshot.isNotEmpty() && aiController.isActive()) {
                         lifecycleScope.launch {
                             val evidence = mergedSnapshot.take(12).joinToString("\n") {
                                 "${it.title}\n${it.url}\n${it.snippet}\nSources: ${it.source}"
@@ -1270,6 +1259,7 @@ class MainActivity : AppCompatActivity() {
                             val answer = aiController.synthesizeSearchAnswer(query, evidence)
                             if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@launch
                             if (answer != null) {
+                                tab.lastSearchHtml = unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer)
                                 webView.evaluateJavascript("""
                                     (function(){var el=document.getElementById('ai-answer');if(el){el.textContent=${JSONObject.quote(answer)};el.style.display='block';}})();
                                 """.trimIndent(), null)
@@ -1501,22 +1491,11 @@ class MainActivity : AppCompatActivity() {
                 // signal that the page is broadly relevant. No single engine is authoritative.
                 val best = group.minByOrNull { it.rank } ?: group.first()
                 val sourceNames = group.map { it.source }.distinct()
+                // Every responding provider contributes equally. Hardcoded brand weights
+                // (Google 100, Bing 92, ...) contradicted the "independent evidence"
+                // claim: several of these providers syndicate the same upstream index.
                 val engineContribution = group.sumOf { result ->
-                    val sourceWeight = when (result.source) {
-                        "Google" -> 100
-                        "Bing" -> 92
-                        "Brave" -> 88
-                        "DuckDuckGo" -> 84
-                        "Startpage" -> 82
-                        "Yahoo" -> 78
-                        "Ecosia" -> 76
-                        "Qwant" -> 74
-                        "Mojeek" -> 70
-                        "Yandex" -> 68
-                        "Swisscows" -> 66
-                        else -> 60
-                    }
-                    (sourceWeight - (result.rank * 7)).coerceAtLeast(15)
+                    (80 - (result.rank * 7)).coerceAtLeast(15)
                 }
                 val agreementBonus = ((sourceNames.size - 1) * 24)
                 val queryTokens = query.lowercase(Locale.US)
@@ -1531,9 +1510,9 @@ class MainActivity : AppCompatActivity() {
                         else -> 0
                     }
                 }
-                // Search relevance is influenced by source quality and actual query terms.
-                // Google/Bing/Brave receive a stronger baseline, while cross-engine agreement
-                // remains useful. This prevents unrelated pages outranking direct matches.
+                // Ranking uses result position, cross-provider agreement and actual query
+                // terms. No provider is treated as authoritative; this prevents unrelated
+                // pages outranking direct matches.
                 val domain = try {
                     URL(best.url).host.lowercase(Locale.US).removePrefix("www.")
                 } catch (_: Exception) { "" }
@@ -1611,7 +1590,8 @@ class MainActivity : AppCompatActivity() {
             $body
             <section id='ai-answer' class='ai' style='display:none' aria-live='polite'></section>
             <div class='footer'>
-              Phormi queries all available independent search indexes together, merges matching pages, removes duplicates, and ranks results using the combined evidence from every engine that responds. No single engine is treated as a fallback or as the only authority.<br><br>
+              Phormi fetches public search-result pages from several providers, merges matching pages, removes duplicates and ranks them by position, cross-provider agreement and your search terms. This is client-side aggregation of result pages, not an independent search index or a licensed search API; results can be incomplete when a provider blocks automated requests.<br><br>
+              <a class='engine' href='https://phormi.local/refresh?q=${URLEncoder.encode(query, "UTF-8")}'>↻ Refresh results</a><br><br>
               <a class='engine' href='https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Google</a>
               <a class='engine' href='https://www.bing.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Bing</a>
               <a class='engine' href='https://duckduckgo.com/?q=${URLEncoder.encode(query, "UTF-8")}'>DuckDuckGo</a>
@@ -1704,9 +1684,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshActivePage() {
-        val query = tabs.firstOrNull { it.id == activeTabId }?.searchQuery
-        if (query != null) runUnifiedSearch(query) else {
-            val page = activeWebView()
+        val tab = tabs.firstOrNull { it.id == activeTabId }
+        val query = tab?.searchQuery
+        val page = activeWebView()
+        if (query != null) {
+            // Reloading the cached result document keeps the user's scroll position
+            // and avoids firing the whole provider fan-out again for a simple refresh.
+            // The in-page "Refresh results" link explicitly requests new network data.
+            val cached = tab.lastSearchHtml
+            if (cached != null && page != null) {
+                page.loadDataWithBaseURL("https://phormi.local/", cached, "text/html", "UTF-8", null)
+            } else runUnifiedSearch(query)
+        } else {
             if (page == null || page.url.isNullOrBlank() || page.url == NEW_TAB_URL) {
                 swipeRefresh.isRefreshing = false
             } else page.reload()
@@ -1831,23 +1820,6 @@ class MainActivity : AppCompatActivity() {
             contentDescription = if (progress in 1..99) "Stop loading" else "Refresh page"
         }
     }
-    private fun showSiteInformation() {
-        val page = activeWebView() ?: return
-        val target = page.url.orEmpty()
-        val origin = PhormiSitePermissions.secureOrigin(target)
-        val local = tabs.firstOrNull { it.webView === page }?.searchQuery != null
-        val description = when {
-            local -> "Results generated locally by Phormi. This page is not a website identity or TLS certificate."
-            origin != null && page.certificate != null -> "HTTPS certificate present. This does not guarantee that the website is trustworthy. Camera, microphone and location requests require approval for this page. Reload to end page access."
-            else -> "No verified HTTPS connection is shown for this page. Do not enter sensitive information over HTTP."
-        }
-        AlertDialog.Builder(this).setTitle("Site information")
-            .setMessage((if (local) "Phormi Search" else origin ?: target) + "\n\n" + description)
-            .setPositiveButton("Close", null)
-            .setNegativeButton("Reload / end access") { _, _ -> sitePermissions.cancel(); page.reload() }
-            .setNeutralButton("Privacy settings") { _, _ -> startActivity(Intent(this, PhormiSecurityCenterActivity::class.java)) }.show()
-    }
-
     private fun navigateFromUrlBar() {
         val raw = urlBar.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
@@ -1858,7 +1830,7 @@ class MainActivity : AppCompatActivity() {
         }
         val url = direct ?: searchUrlForProvider(raw)
         val webView = activeWebView()
-        tabs.firstOrNull { it.id == activeTabId }?.searchQuery = null
+        tabs.firstOrNull { it.id == activeTabId }?.let { it.searchQuery = null; it.lastSearchHtml = null }
         if (webView != null) {
             // Desktop/normal mode resolved before load to prevent flicker/reload loop
             val desktopBefore = isDesktopModeFor(url)
@@ -2235,6 +2207,7 @@ class MainActivity : AppCompatActivity() {
         updateNavButtons()
         updateFavoriteButton()
         scheduleTabBudget()
+        updateSiteSecurityIndicator()
         updatePageProgress(activeWebView(), activeWebView()?.progress ?: 100)
         val current = tabs.find { it.id == id }?.webView?.url
         val query = tabs.firstOrNull { it.id == id }?.searchQuery
@@ -3017,16 +2990,6 @@ class MainActivity : AppCompatActivity() {
         root.isFocusable = false
     }
 
-    private fun requestStartupPermissions() {
-        val needed = STARTUP_PERMISSIONS.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (needed.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, needed.toTypedArray(), REQ_STARTUP_PERMISSIONS)
-        }
-    }
-
-
     override fun onPause() {
         browserAiForeground = false
         downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
@@ -3177,8 +3140,23 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 val scheme = targetUri.scheme?.lowercase(Locale.US).orEmpty()
+                // The generated Phormi Search document uses a local origin. A "Refresh
+                // results" link is an explicit request for fresh provider data; it must
+                // not be handed to WebView as a real (and non-existent) navigation.
+                if (targetUri.host == "phormi.local" && targetUri.path?.startsWith("/refresh") == true) {
+                    val q = runCatching { targetUri.getQueryParameter("q") }.getOrNull().orEmpty()
+                    if (q.isNotBlank()) runUnifiedSearch(q)
+                    return true
+                }
+                // File access is disabled in WebSettings, so allowing file: navigation
+                // was contradictory. javascript: navigation is never a legitimate page
+                // URL. data:/blob: are kept because web apps use them for downloads.
+                if (scheme == "javascript" || scheme == "file") {
+                    Toast.makeText(this@MainActivity, "Blocked unsafe $scheme link", Toast.LENGTH_SHORT).show()
+                    return true
+                }
                 if (scheme.isBlank() || scheme == "http" || scheme == "https" ||
-                    scheme == "javascript" || scheme == "data" || scheme == "blob" || scheme == "file") return false
+                    scheme == "data" || scheme == "blob") return false
 
                 // Browser schemes such as mailto:, tel:, geo:, intent:, and custom
                 // app links belong to Android's external intent system, not WebView.
@@ -3204,11 +3182,14 @@ class MainActivity : AppCompatActivity() {
                 error: android.webkit.WebResourceError?
             ) {
                 super.onReceivedError(view, request, error)
-                if (request?.isForMainFrame == true && view == activeWebView()) {
+                if (request?.isForMainFrame == true && view != null && view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                     val description = error?.description?.toString()?.trim().orEmpty()
-                    if (description.isNotBlank()) {
-                        Toast.makeText(this@MainActivity, "Page could not load: $description", Toast.LENGTH_SHORT).show()
+                    val failedUrl = request.url?.toString().orEmpty()
+                    if (failedUrl.startsWith("http", true)) {
+                        // A full-page error surface with a retry action, not a toast
+                        // over a blank white screen.
+                        showNetworkErrorPage(view, failedUrl, description.ifBlank { "The page could not be loaded." })
                     }
                     updateNavButtons()
                 }
@@ -3220,7 +3201,7 @@ class MainActivity : AppCompatActivity() {
                 errorResponse: android.webkit.WebResourceResponse?
             ) {
                 super.onReceivedHttpError(view, request, errorResponse)
-                if (request?.isForMainFrame == true && view == activeWebView()) {
+                if (request?.isForMainFrame == true && view != null && view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                     val code = errorResponse?.statusCode ?: 0
                     if (code >= 400) {
@@ -3260,6 +3241,7 @@ class MainActivity : AppCompatActivity() {
                 if (view === activeWebView() && !urlBar.hasFocus() && url != NEW_TAB_URL && !url.orEmpty().startsWith("https://phormi.local/")) urlBar.setText(url.orEmpty())
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
+                if (view == activeWebView()) updateSiteSecurityIndicator()
                 val target = url.orEmpty()
                 if (view != null && target.startsWith("http", true) &&
                     !target.startsWith("https://phormi.local/")) {
@@ -3287,9 +3269,22 @@ class MainActivity : AppCompatActivity() {
                 threatType: Int,
                 callback: android.webkit.SafeBrowsingResponse?
             ) {
-                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)
+                // Take the safe action immediately, then explain it with real detail
+                // instead of a transient toast.
+                callback?.backToSafety(true)
+                val threat = when (threatType) {
+                    WebViewClient.SAFE_BROWSING_THREAT_MALWARE -> "malware"
+                    WebViewClient.SAFE_BROWSING_THREAT_PHISHING -> "phishing"
+                    WebViewClient.SAFE_BROWSING_THREAT_UNWANTED_SOFTWARE -> "unwanted software"
+                    else -> "an unsafe site"
+                }
                 runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Phormi blocked an unsafe page.", Toast.LENGTH_LONG).show()
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Unsafe page blocked")
+                        .setMessage("Google Safe Browsing reports $threat on this page, so Phormi returned you to safety.\n\n${request?.url?.toString().orEmpty()}")
+                        .setPositiveButton("OK", null)
+                        .setCancelable(false)
+                        .show()
                 }
             }
 
@@ -3380,6 +3375,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     updateNavButtons()
                     updateFavoriteButton()
+                    updateSiteSecurityIndicator()
                 }
                 tabs.find { it.webView === view }?.let { finished ->
                     PhormiBrowserPerformance.finish(finished.id, u)
@@ -3405,6 +3401,8 @@ class MainActivity : AppCompatActivity() {
                 super.onReceivedTitle(view, title)
                 onTitleChanged(title)
             }
+
+            /** Thin horizontal load indicator under the omnibox. */
 
             override fun onCreateWindow(
                 view: WebView?,
@@ -3484,7 +3482,8 @@ class MainActivity : AppCompatActivity() {
                     )
                 )
                 window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                // Do not force landscape: onShowCustomView is also used for non-video
+                // HTML fullscreen content, and rotating the whole activity was disruptive.
                 findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
                 findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
                 swipeRefresh.visibility = View.GONE
@@ -3644,7 +3643,7 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_THEME -> showAppearanceChooser()
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
-                MenuActivity.ACTION_SETTINGS -> showAppearanceChooser()
+                MenuActivity.ACTION_SETTINGS -> startActivity(Intent(this, PhormiBrowserSettingsActivity::class.java))
                 MenuActivity.ACTION_KEYBOARD -> startActivity(Intent(this, PhormiKeyboardSettingsActivity::class.java))
                 MenuActivity.ACTION_DEFAULT_BROWSER -> PhormiDefaultBrowserController.request(this)
                 MenuActivity.ACTION_TAB_GROUPS -> startActivity(Intent(this, TabGroupsActivity::class.java))
@@ -3921,17 +3920,116 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Full-page network error surface with a real retry action. */
+    private fun showNetworkErrorPage(view: WebView, url: String, detail: String) {
+        val safeUrl = Html.escapeHtml(url).replace("'", "&#39;")
+        val safeDetail = Html.escapeHtml(detail)
+        val page = """
+            <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
+            <style>body{margin:0;background:#0b1220;color:#e5e7eb;font-family:sans-serif;padding:28px}
+            h1{font-size:20px;color:#f8fafc}p{font-size:14px;line-height:1.5;color:#cbd5e1}
+            .url{font-size:12px;color:#64748b;word-break:break-all;margin:12px 0}
+            a{display:inline-block;margin-top:18px;padding:11px 16px;border-radius:12px;background:#1d4ed8;color:#fff;text-decoration:none;font-size:14px}</style>
+            </head><body><h1>This page isn't available</h1><p>$safeDetail</p>
+            <div class='url'>$safeUrl</div><p>Check your connection, then try again.</p>
+            <a href='$safeUrl'>Try again</a></body></html>
+        """.trimIndent()
+        view.loadDataWithBaseURL(url, page, "text/html", "UTF-8", null)
+    }
+
+    private fun updateSiteSecurityIndicator() {
+        val indicator = findViewById<TextView>(R.id.btn_site_info) ?: return
+        val page = activeWebView()
+        val url = page?.url.orEmpty()
+        when {
+            url.startsWith("https://") && page?.certificate != null -> {
+                indicator.text = "🔒"
+                indicator.contentDescription = "Secure HTTPS connection. Tap for site information."
+                indicator.setTextColor(Color.rgb(134, 239, 172))
+            }
+            url.startsWith("http://") -> {
+                indicator.text = "⚠"
+                indicator.contentDescription = "Not secure HTTP connection. Tap for site information."
+                indicator.setTextColor(Color.rgb(251, 191, 36))
+            }
+            else -> {
+                indicator.text = "ⓘ"
+                indicator.contentDescription = "Site information and connection security"
+                indicator.setTextColor(Color.rgb(148, 163, 184))
+            }
+        }
+    }
+
+    /** Chrome-style site information: URL, connection security and per-site choices. */
+    private fun showSiteInfo() {
+        val view = activeWebView()
+        val url = view?.url.orEmpty()
+        val secure = url.startsWith("https://") && view?.certificate != null
+        val host = runCatching { Uri.parse(url).host }.getOrNull().orEmpty().ifBlank { "New tab" }
+        val origin = PhormiSitePermissions.secureOrigin(url) ?: PhormiSitePermissions.normalizeOrigin(url)
+        val geo = PhormiSitePermissions.decision(sitePermissionStore.read(origin))
+        val geoLabel = when (geo) { true -> "Allowed"; false -> "Blocked"; else -> "Ask every time" }
+        val message = buildString {
+            append(if (url.isBlank()) "No page loaded." else url)
+            append("\n\nConnection: ")
+            append(if (url.isBlank()) "—" else if (secure) "HTTPS (encrypted)" else "Not secure (HTTP or local content)")
+            append("\nLocation for this site: ").append(geoLabel)
+            append("\n\nSite permission decisions are stored on this device only.")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Site information · $host")
+            .setMessage(message)
+            .setPositiveButton("Close", null)
+            .setNegativeButton("Reload / end access") { _, _ -> sitePermissions.cancel(); view?.reload() }
+            .setNeutralButton("Reset site permissions") { _, _ ->
+                if (origin.isNotBlank()) {
+                    PhormiSitePermissions.forget(origin, sitePermissionStore)
+                    sitePermissions.cancel(); view?.reload()
+                    Toast.makeText(this, "Site permissions reset for $host", Toast.LENGTH_SHORT).show()
+                    updateSiteSecurityIndicator()
+                }
+            }
+            .show()
+    }
+
     private fun showFindInPage() {
         val view = activeWebView() ?: return
         val input = EditText(this).apply { hint = "Find text"; setSingleLine(true) }
-        AlertDialog.Builder(this)
+        val counter = TextView(this).apply {
+            text = "Enter text to search this page"
+            setPadding(24, 8, 24, 8)
+            setTextColor(Color.rgb(148, 163, 184))
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(input)
+            addView(counter)
+        }
+        view.setFindListener { activeMatchOrdinal, numberOfMatches, _ ->
+            counter.text = if (numberOfMatches == 0) "No matches"
+            else "${activeMatchOrdinal + 1} of $numberOfMatches matches"
+        }
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Find in page")
-            .setView(input)
-            .setNegativeButton("Close") { _, _ -> view.clearMatches() }
+            .setView(panel)
             .setPositiveButton("Find") { _, _ ->
                 val q = input.text.toString()
                 if (q.isNotBlank()) view.findAllAsync(q)
-            }.show()
+            }
+            .setNegativeButton("Close") { _, _ -> view.clearMatches(); view.setFindListener(null) }
+            .setNeutralButton("Next", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val q = input.text.toString()
+                if (q.isNotBlank()) view.findNext(true)
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val q = input.text.toString()
+                if (q.isNotBlank()) view.findAllAsync(q)
+            }
+        }
+        dialog.show()
     }
 
     private fun shareCurrentPage() {

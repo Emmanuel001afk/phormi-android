@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.inputmethodservice.InputMethodService.Insets
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -284,6 +285,16 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         super.onCurrentInputMethodSubtypeChanged(newSubtype)
         lastPredictionWord = ""; lastPredictionPrevious = ""
         if (isInputViewShown) setInputView(render())
+    }
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        finishGlide(); finishHangul()
+        super.onConfigurationChanged(newConfig)
+        applyKeyboardWindowSize()
+        if (isInputViewShown) setInputView(render())
+    }
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        if (outInsets.contentTopInsets < outInsets.visibleTopInsets) outInsets.contentTopInsets = outInsets.visibleTopInsets
     }
     override fun onEvaluateFullscreenMode(): Boolean = false
     override fun onCreateInputView(): View = render().also { applyKeyboardWindowSize() }
@@ -1040,7 +1051,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         },LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
         if (!PhormiKeyboardPreferences.wallpaperUri(this).isNullOrBlank()) list.addView(pill("Remove wallpaper"){PhormiKeyboardPreferences.setWallpaperUri(this@PhormiKeyboardServiceV2,null);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
         list.addView(pill(if(PhormiKeyboardPreferences.pollinationsKey(this).isBlank())"Set sticker generation key"else"Sticker generation key ✓"){startActivity(Intent(this,PhormiAiEmojiActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiAiEmojiActivity.EXTRA_CONFIG_ONLY,true)})},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Rose","Sand").getOrElse(value) { "Midnight" }
+    private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Midnight" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
     private fun render():View{
         if (panel != Panel.KEYBOARD || page != KeyboardPage.LETTERS) { finishGlide(); finishHangul() }

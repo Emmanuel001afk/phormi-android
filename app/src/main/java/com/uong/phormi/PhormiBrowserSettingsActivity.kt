@@ -79,7 +79,7 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
 
         section(content, "Controls")
         option(content, "Show bottom navigation bar", "Hide it to give websites more room. AI, Back and Forward remain in the browser menu.",
-            PhormiBrowserPreferences.BOTTOM_TOOLBAR, true)
+            PhormiBrowserPreferences.BOTTOM_TOOLBAR, false)
         option(content, "Pull to refresh", "Off by default to avoid reloading while scrolling. If enabled, use a long deliberate pull at the top of a page.",
             PhormiBrowserPreferences.PULL_TO_REFRESH, false)
         description(content, "The top-bar button stops a loading page or refreshes a completed page.")

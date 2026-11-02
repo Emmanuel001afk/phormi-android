@@ -76,7 +76,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         })
 
         content.addView(sectionTitle("Appearance"))
-        val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Rose","Sand")
+        val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand")
         themes.toList().chunked(2).forEachIndexed { rowIndex, names ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             names.forEachIndexed { column, name ->
