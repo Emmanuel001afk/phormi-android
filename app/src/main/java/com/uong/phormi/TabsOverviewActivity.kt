@@ -1,6 +1,7 @@
 package com.uong.phormi
 
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -8,6 +9,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -25,7 +27,15 @@ class TabsOverviewActivity : AppCompatActivity() {
     private lateinit var tabsGrid: LinearLayout
     private lateinit var tabCount: TextView
     private lateinit var modeButton: TextView
+    private lateinit var selectButton: TextView
+    private lateinit var selectAllButton: TextView
+    private lateinit var closeSelectedButton: TextView
     private var mode = "vertical"
+    private var query = ""
+    // Bulk selection is explicit: entering select mode changes what a tap means,
+    // so no tab is ever closed by an ordinary tap on a card.
+    private var selectionMode = false
+    private val selectedIds = mutableSetOf<Int>()
 
     companion object { private const val PREFS = "phormi_tabs"; private const val KEY_MODE = "tab_view_mode" }
 
@@ -50,21 +60,75 @@ class TabsOverviewActivity : AppCompatActivity() {
         tabsHorizontal = findViewById(R.id.tabs_horizontal)
         tabsGrid = findViewById(R.id.tabs_grid)
         tabCount = findViewById(R.id.tab_count)
-        loadTabs(); renderTabs(allTabs)
+        selectButton = findViewById(R.id.btn_select_tabs)
+        selectAllButton = findViewById(R.id.btn_select_all_tabs)
+        closeSelectedButton = findViewById(R.id.btn_close_selected)
+
+        selectButton.setOnClickListener {
+            selectionMode = !selectionMode
+            if (!selectionMode) selectedIds.clear()
+            updateSelectionUi()
+            applyFilter()
+        }
+        selectAllButton.setOnClickListener {
+            if (selectedIds.size == allTabs.size) selectedIds.clear()
+            else allTabs.forEach { selectedIds.add(it.id) }
+            updateSelectionUi()
+            applyFilter()
+        }
+        closeSelectedButton.setOnClickListener { confirmCloseSelected() }
+
+        loadTabs()
+        updateSelectionUi()
+        applyFilter()
         findViewById<EditText>(R.id.search_tabs).addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { val q = s?.toString()?.trim()?.lowercase().orEmpty(); renderTabs(allTabs.filter { it.title.lowercase().contains(q) || it.url.lowercase().contains(q) }) }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                query = s?.toString()?.trim()?.lowercase().orEmpty()
+                applyFilter()
+            }
             override fun afterTextChanged(s: Editable?) = Unit
         })
     }
 
     override fun onResume() {
         super.onResume()
-        if (::tabsVertical.isInitialized) { loadTabs(); filterTabs() }
+        if (::tabsVertical.isInitialized) {
+            loadTabs(); selectedIds.retainAll(allTabs.map { it.id }.toSet()); updateSelectionUi(); applyFilter()
+        }
     }
-    private fun filterTabs() {
-        val query = findViewById<EditText>(R.id.search_tabs).text.toString().trim().lowercase()
-        renderTabs(allTabs.filter { it.title.lowercase().contains(query) || it.url.lowercase().contains(query) })
+    private fun filterTabs() = applyFilter()
+    private fun applyFilter() {
+        val items = if (query.isBlank()) allTabs
+        else allTabs.filter { it.title.lowercase().contains(query) || it.url.lowercase().contains(query) }
+        renderTabs(items)
+    }
+
+    private fun updateSelectionUi() {
+        selectButton.text = if (selectionMode) "Cancel" else "Select"
+        val visible = if (selectionMode) View.VISIBLE else View.GONE
+        selectAllButton.visibility = visible
+        closeSelectedButton.visibility = visible
+        selectAllButton.text = if (selectedIds.size == allTabs.size && allTabs.isNotEmpty()) "None" else "All"
+        closeSelectedButton.text = "Close (${selectedIds.size})"
+        closeSelectedButton.isEnabled = selectedIds.isNotEmpty()
+        closeSelectedButton.alpha = if (selectedIds.isEmpty()) 0.5f else 1f
+    }
+
+    private fun confirmCloseSelected() {
+        if (selectedIds.isEmpty()) return
+        val count = selectedIds.size
+        AlertDialog.Builder(this)
+            .setTitle("Close $count tab${if (count == 1) "" else "s"}?")
+            .setMessage("The selected tabs will be removed from this browser session.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Close $count") { _, _ ->
+                setResult(RESULT_OK, Intent().apply {
+                    putExtra("action", "close_many")
+                    putExtra("tab_ids", selectedIds.toIntArray())
+                })
+                finish()
+            }.show()
     }
 
     private fun renderTabs(items: List<TabInfo>) {
@@ -103,10 +167,31 @@ class TabsOverviewActivity : AppCompatActivity() {
         }
         val open = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; minimumHeight = 88.dp(); isClickable = true; isFocusable = true
-            contentDescription = "Open ${item.title}"
-            setOnClickListener { setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id)); finish() }
-            setOnLongClickListener { showEnvironmentChooser(item); true }
+            contentDescription = if (selectionMode) "${if (item.id in selectedIds) "Deselect" else "Select"} ${item.title}" else "Open ${item.title}"
+            setOnClickListener {
+                if (selectionMode) {
+                    if (item.id in selectedIds) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                    updateSelectionUi(); applyFilter()
+                } else {
+                    setResult(RESULT_OK, Intent().putExtra("action", "select").putExtra("tab_id", item.id)); finish()
+                }
+            }
+            setOnLongClickListener {
+                AlertDialog.Builder(this@TabsOverviewActivity).setTitle(item.title)
+                    .setItems(arrayOf("Environment", "Assign to group", "Select multiple tabs")) { _, which ->
+                        when (which) {
+                            0 -> showEnvironmentChooser(item)
+                            1 -> showGroupChooser(item)
+                            else -> { selectionMode = true; selectedIds.add(item.id); updateSelectionUi(); applyFilter() }
+                        }
+                    }.show()
+                true
+            }
         }
+        if (selectionMode) open.addView(TextView(this).apply {
+            text = if (item.id in selectedIds) "☑ Selected" else "☐ Select"
+            setTextColor(PhormiUiColors.accent(this@TabsOverviewActivity)); textSize = 16f
+        })
         open.addView(TextView(this).apply { text = item.title; textSize = 16f; setTextColor(PhormiUiColors.text(this@TabsOverviewActivity)); maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END })
         open.addView(TextView(this).apply {
             text = (if (item.url == "about:blank") "New tab" else item.url) +
@@ -127,7 +212,7 @@ class TabsOverviewActivity : AppCompatActivity() {
         return card
     }
 
-    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun loadTabs() {
         allTabs.clear(); val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -137,12 +222,12 @@ class TabsOverviewActivity : AppCompatActivity() {
             val profiles = org.json.JSONArray(prefs.getString("tab_profiles", "[]") ?: "[]")
             val ids = org.json.JSONArray(prefs.getString("tab_ids", "[]") ?: "[]")
             val groups = TabGroupManager(this).list()
-        val groupByTab = mutableMapOf<Int, String>()
-        groups.forEach { group -> group.tabIds.forEach { id -> groupByTab[id] = group.name } }
-        for (i in 0 until urls.length()) {
-            val id = ids.optInt(i, i + 1)
-            allTabs.add(TabInfo(i, id, titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }, groupByTab[id].orEmpty()))
-        }
+            val groupByTab = mutableMapOf<Int, String>()
+            groups.forEach { group -> group.tabIds.forEach { id -> groupByTab[id] = group.name } }
+            for (i in 0 until urls.length()) {
+                val id = ids.optInt(i, i + 1)
+                allTabs.add(TabInfo(i, id, titles.optString(i, "Tab ${i + 1}").ifBlank { "Tab ${i + 1}" }, urls.optString(i, "about:blank"), profiles.optString(i, "Default").ifBlank { "Default" }, groupByTab[id].orEmpty()))
+            }
         }
     }
 

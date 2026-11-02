@@ -117,6 +117,25 @@ class BrowserKeyboardSmokeTest {
             """[{"text":"Keep me","pinned":true,"createdAt":$old},{"text":"Expire me","pinned":false,"createdAt":$old}]""").commit()
         assertEquals(listOf("Keep me"), PhormiKeyboardClipboardStore.list(context).map { it.text })
     }
+    @Test fun bulkTabSelectionReturnsOnlyTheSelectedIds() {
+        context.getSharedPreferences("phormi_tabs", Context.MODE_PRIVATE).edit().clear()
+            .putString("tab_urls", "[\"about:blank\",\"about:blank\"]")
+            .putString("tab_titles", "[\"First\",\"Second\"]")
+            .putString("tab_ids", "[11,12]").putString("tab_view_mode", "vertical").commit()
+        ActivityScenario.launchActivityForResult<TabsOverviewActivity>(Intent(context, TabsOverviewActivity::class.java)).use { scenario ->
+            assertTrue(device.wait(Until.hasObject(By.res("com.uong.phormi", "btn_select_tabs")), 7000))
+            device.findObject(By.res("com.uong.phormi", "btn_select_tabs")).click()
+            device.findObject(By.res("com.uong.phormi", "btn_select_all_tabs")).click()
+            assertTrue(device.wait(Until.hasObject(By.text("Close (2)")), 3000))
+            device.findObject(By.res("com.uong.phormi", "btn_close_selected")).click()
+            assertTrue(device.wait(Until.hasObject(By.text("Close 2")), 3000))
+            device.findObject(By.text("Close 2")).click()
+            val result = scenario.result
+            assertEquals(android.app.Activity.RESULT_OK, result.resultCode)
+            assertEquals("close_many", result.resultData?.getStringExtra("action"))
+            assertArrayEquals(intArrayOf(11, 12), result.resultData?.getIntArrayExtra("tab_ids")?.sortedArray())
+        }
+    }
     @Test fun tabGroupingControlIsActuallyAttached() {
         context.getSharedPreferences("phormi_tabs", Context.MODE_PRIVATE).edit()
             .putString("tab_urls", "[\"https://example.com\"]").putString("tab_titles", "[\"Fixture tab\"]")

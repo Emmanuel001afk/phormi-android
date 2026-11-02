@@ -123,3 +123,11 @@ results above describe the pre-merge application and are not substituted for it.
 The loopback TLS exceptions explicitly disable subdomain matching as required by
 Android lint. The media viewer retains MODIFY_AUDIO_SETTINGS for its volume controls;
 other unnecessary permissions removed by main remain removed.
+
+PR #13 landed during the final merge checks, so its changes were also integrated:
+global/per-site desktop settings (without waking dormant WebViews), context-menu
+link destinations, suggestion/autocorrect fixes, and normal/Ghost bulk-tab selection.
+The responsive themed tab cards and Ghost isolation/private-editor flags are retained.
+Ghost title updates share the same WebChromeClient as permission/file/fullscreen
+handling, rather than replacing that security-aware client. A bulk-selection result
+regression test was added; the combined tree requires a new validation run.

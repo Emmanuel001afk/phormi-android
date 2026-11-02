@@ -191,6 +191,11 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_OPEN = 1
         private const val MENU_COPY = 2
         private const val MENU_DOWNLOAD = 3
+        private const val MENU_OPEN_NEW_TAB = 4
+        private const val MENU_OPEN_BACKGROUND_TAB = 5
+        private const val MENU_OPEN_GHOST_TAB = 6
+        private const val KEY_DESKTOP_ALL = "desktop_mode_all"
+        private const val KEY_DESKTOP_SITES_OFF = "desktop_sites_off"
         private const val REQ_NEWS = 1008
 
         // Sensitive permissions are deliberately requested at the moment a feature
@@ -2006,7 +2011,7 @@ class MainActivity : AppCompatActivity() {
         newWebView.isClickable = true
         newWebView.isFocusable = true
         newWebView.isFocusableInTouchMode = true
-        newWebView.setBackgroundColor(Color.TRANSPARENT)
+        newWebView.setBackgroundColor(Color.WHITE)
         registerForContextMenu(newWebView)
         val parent = old?.parent as? ViewGroup ?: webViewContainer
         old?.let { parent.removeView(it) }
@@ -2095,7 +2100,7 @@ class MainActivity : AppCompatActivity() {
             configureWebView(created)
             applyLiveWebSettings(created)
             created.isClickable = true; created.isFocusable = true; created.isFocusableInTouchMode = true
-            created.setBackgroundColor(Color.TRANSPARENT)
+            created.setBackgroundColor(Color.WHITE)
             registerForContextMenu(created)
             webViewContainer.addView(created, FrameLayout.LayoutParams(-1, -1))
             created.webChromeClient = buildChromeClient(created) { title ->
@@ -2801,17 +2806,23 @@ class MainActivity : AppCompatActivity() {
             WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
                 contextMenuUrl = result.extra
                 menu.setHeaderTitle(contextMenuUrl?.take(50) ?: "Link")
-                menu.add(0, MENU_OPEN, 0, "Open")
-                menu.add(0, MENU_COPY, 1, "Copy link")
-                menu.add(0, MENU_DOWNLOAD, 2, "Download")
+                menu.add(0, MENU_OPEN, 0, "Open here")
+                menu.add(0, MENU_OPEN_NEW_TAB, 1, "Open in new tab")
+                menu.add(0, MENU_OPEN_BACKGROUND_TAB, 2, "Open in background tab")
+                menu.add(0, MENU_OPEN_GHOST_TAB, 3, "Open in Ghost tab")
+                menu.add(0, MENU_COPY, 4, "Copy link")
+                menu.add(0, MENU_DOWNLOAD, 5, "Download link")
             }
             WebView.HitTestResult.IMAGE_TYPE -> {
                 contextMenuUrl = result.extra
                 contextMenuIsImage = true
                 menu.setHeaderTitle("Image")
-                menu.add(0, MENU_OPEN, 0, "Open")
-                menu.add(0, MENU_COPY, 1, "Copy URL")
-                menu.add(0, MENU_DOWNLOAD, 2, "Download image")
+                menu.add(0, MENU_OPEN, 0, "Open image here")
+                menu.add(0, MENU_OPEN_NEW_TAB, 1, "Open image in new tab")
+                menu.add(0, MENU_OPEN_BACKGROUND_TAB, 2, "Open image in background tab")
+                menu.add(0, MENU_OPEN_GHOST_TAB, 3, "Open image in Ghost tab")
+                menu.add(0, MENU_COPY, 4, "Copy image URL")
+                menu.add(0, MENU_DOWNLOAD, 5, "Download image")
             }
         }
     }
@@ -2820,7 +2831,20 @@ class MainActivity : AppCompatActivity() {
         val url = contextMenuUrl ?: return super.onContextItemSelected(item)
         when (item.itemId) {
             MENU_OPEN -> {
+                activeWebView()?.loadUrl(url)
+                return true
+            }
+            MENU_OPEN_NEW_TAB -> {
                 createNewTab(url)
+                return true
+            }
+            MENU_OPEN_BACKGROUND_TAB -> {
+                createNewTab(url, activate = false)
+                Toast.makeText(this, "Opened in a background tab", Toast.LENGTH_SHORT).show()
+                return true
+            }
+            MENU_OPEN_GHOST_TAB -> {
+                createGhostTab(url)
                 return true
             }
             MENU_COPY -> {
@@ -3108,8 +3132,12 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             val desktop = isDesktopModeFor(webView.url.orEmpty())
             userAgentString = desktopUserAgent(desktop)
-            loadWithOverviewMode = desktop
-            useWideViewPort = desktop
+            // A mobile browser still honours the viewport meta tag; overview
+            // scaling is what shrinks a desktop-width page to the screen.
+            useWideViewPort = true
+            loadWithOverviewMode = !desktop
+            layoutAlgorithm = if (desktop) WebSettings.LayoutAlgorithm.NORMAL
+            else WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             applyDesktopUserAgentMetadata(this, desktop)
         }
 
@@ -3263,12 +3291,18 @@ class MainActivity : AppCompatActivity() {
                     .setPositiveButton("Close", null).show()
             }
 
+            // SafeBrowsingResponse and the threat constants arrived in API 27,
+            // while the app still supports API 26. WebView only invokes this
+            // callback on 27+, so the guard makes the older platform safe and
+            // the annotation tells lint the API-27 references are intentional.
+            @SuppressLint("NewApi")
             override fun onSafeBrowsingHit(
                 view: WebView?,
                 request: WebResourceRequest?,
                 threatType: Int,
                 callback: android.webkit.SafeBrowsingResponse?
             ) {
+                if (android.os.Build.VERSION.SDK_INT < 27) return
                 // Take the safe action immediately, then explain it with real detail
                 // instead of a transient toast.
                 if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)
@@ -3672,6 +3706,14 @@ class MainActivity : AppCompatActivity() {
                     val tabId = data.getIntExtra("tab_id", -1)
                     tabs.firstOrNull { it.id == tabId }?.let { closeTab(it.id) }
                 }
+                "close_many" -> {
+                    // Resolve each id at the moment it is closed: closeTab() mutates
+                    // the list and can spawn a replacement tab when it empties.
+                    val ids = data.getIntArrayExtra("tab_ids") ?: intArrayOf()
+                    ids.distinct().forEach { id ->
+                        if (tabs.any { it.id == id }) closeTab(id)
+                    }
+                }
                 "toggle_split" -> setSplitMode(!splitMode)
                 "assign_group" -> {
                     val groupId = data.getStringExtra("group_id").orEmpty()
@@ -3935,7 +3977,7 @@ class MainActivity : AppCompatActivity() {
             <div class='url'>$safeUrl</div><p>Check your connection, then try again.</p>
             <a href='$safeUrl'>Try again</a></body></html>
         """.trimIndent()
-        view.loadDataWithBaseURL(url, page, "text/html", "UTF-8", null)
+        view?.loadDataWithBaseURL(url, page, "text/html", "UTF-8", null)
     }
 
     private fun updateSiteSecurityIndicator() {
@@ -4068,16 +4110,42 @@ class MainActivity : AppCompatActivity() {
         runCatching { Uri.parse(url).host?.lowercase(Locale.US)?.removePrefix("www.") }
             .getOrNull()?.takeIf { it.isNotBlank() }
 
+    /**
+     * Desktop mode is no longer restricted to a hand-picked site list. There is a
+     * global default plus explicit per-host overrides in both directions, so a
+     * site can opt out of a global desktop setting (or opt in on its own).
+     */
     private fun isDesktopModeFor(url: String): Boolean {
-        val host = desktopHost(url)
-        val sites = prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty()
-        return if (host != null) host in sites else prefs.getBoolean("desktop_mode", false)
+        val all = prefs.getBoolean(KEY_DESKTOP_ALL, false)
+        val host = desktopHost(url) ?: return all
+        if (host in prefs.getStringSet(KEY_DESKTOP_SITES_OFF, emptySet()).orEmpty()) return false
+        if (host in prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty()) return true
+        return all
     }
 
     private fun setDesktopModeForHost(host: String, enabled: Boolean) {
-        val sites = prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty().toMutableSet()
-        if (enabled) sites += host else sites -= host
-        prefs.edit().putStringSet(KEY_DESKTOP_SITES, sites).apply()
+        val on = prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty().toMutableSet()
+        val off = prefs.getStringSet(KEY_DESKTOP_SITES_OFF, emptySet()).orEmpty().toMutableSet()
+        if (enabled) { on += host; off -= host } else { off += host; on -= host }
+        prefs.edit()
+            .putStringSet(KEY_DESKTOP_SITES, on)
+            .putStringSet(KEY_DESKTOP_SITES_OFF, off)
+            .apply()
+    }
+
+    private fun setDesktopModeForAll(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_DESKTOP_ALL, enabled)
+            .putStringSet(KEY_DESKTOP_SITES, emptySet())
+            .putStringSet(KEY_DESKTOP_SITES_OFF, emptySet())
+            .apply()
+    }
+
+    /** Push the UA/viewport setting to every open tab; only the active tab is reloaded. */
+    private fun applyDesktopModeToAllTabs() {
+        tabs.forEach { tab ->
+            tab.webView?.let { view -> runCatching { applyDesktopMode(view, isDesktopModeFor(tab.currentUrl)) } }
+        }
     }
 
     private fun applyDesktopUserAgentMetadata(settings: WebSettings, enabled: Boolean) {
@@ -4107,12 +4175,15 @@ class MainActivity : AppCompatActivity() {
         val settings = webView.settings
         settings.userAgentString = desktopUserAgent(enabled)
         settings.useWideViewPort = true
-        settings.loadWithOverviewMode = true
+        // Desktop layouts should render at their intended CSS width instead of
+        // being shrunk to fit the phone; mobile layouts keep overview scaling.
+        settings.loadWithOverviewMode = !enabled
         settings.textZoom = PhormiBrowserPreferences.textZoom(this)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
-        webView.setInitialScale(if (enabled) 0 else 0)
+        settings.layoutAlgorithm = if (enabled) WebSettings.LayoutAlgorithm.NORMAL
+        else WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+        webView.setInitialScale(0)
         applyDesktopUserAgentMetadata(settings, enabled)
     }
 
@@ -4239,16 +4310,40 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleDesktopMode() {
         val view = activeWebView() ?: return
-        val host = desktopHost(view.url.orEmpty())
-        if (host == null) {
-            Toast.makeText(this, "Open a website first.", Toast.LENGTH_SHORT).show()
-            return
+        val currentUrl = view.url.orEmpty()
+        val host = desktopHost(currentUrl)
+        val currentDesktop = isDesktopModeFor(currentUrl)
+        val allSites = prefs.getBoolean(KEY_DESKTOP_ALL, false)
+        val choices = mutableListOf<Pair<String, () -> Unit>>()
+
+        if (host != null) {
+            val next = !currentDesktop
+            val label = if (next) "Desktop layout on $host only" else "Mobile layout on $host only"
+            choices += label to {
+                setDesktopModeForHost(host, next)
+                applyDesktopMode(view, next)
+                view.reload()
+                Toast.makeText(this, "$label · applied", Toast.LENGTH_SHORT).show()
+            }
         }
-        val desktop = !isDesktopModeFor(view.url.orEmpty())
-        setDesktopModeForHost(host, desktop)
-        applyDesktopMode(view, desktop)
-        view.reload()
-        Toast.makeText(this, if (desktop) "Desktop site: on for $host" else "Desktop site: off for $host", Toast.LENGTH_SHORT).show()
+        val globalNext = !allSites
+        val globalLabel = if (globalNext) "Desktop layout on every site" else "Mobile layout on every site"
+        choices += globalLabel to {
+            setDesktopModeForAll(globalNext)
+            applyDesktopModeToAllTabs()
+            view.reload()
+            Toast.makeText(this, "$globalLabel · applied to ${tabs.size} tab${if (tabs.size == 1) "" else "s"}", Toast.LENGTH_SHORT).show()
+        }
+
+        val state = if (currentDesktop) "desktop" else "mobile"
+        AlertDialog.Builder(this)
+            .setTitle("Desktop mode")
+            .setMessage("This tab is using the $state layout. Scope: ${if (allSites) "all sites" else "per site"}.")
+            .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
+                choices.getOrNull(which)?.second?.invoke()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     fun handleCentralHubCommand(command: JSONObject): JSONObject {

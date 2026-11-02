@@ -56,10 +56,45 @@ jobs:
       - name: Build committed source for CodeQL extraction
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Android lint
-        run: gradle lintDebug --no-daemon --stacktrace
-      - name: Report lint failures
-        if: failure()
-        run: python3 tools/report_lint.py
+        run: |
+          set +e
+          gradle lintDebug --no-daemon --stacktrace > /tmp/phormi-gradle-lint.log 2>&1
+          result=$?
+          cat /tmp/phormi-gradle-lint.log
+          exit "$result"
+      # Downloadable job logs are not always available to reviewers. Mirror the
+      # lint findings into check annotations so a red build is diagnosable.
+      - name: Annotate Android lint findings
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, re, xml.etree.ElementTree as ET
+          xml_issues, log_lines = [], []
+          def add(target, message):
+              text = " ".join(str(message).split())
+              if text and text not in target:
+                  target.append(text)
+          # The XML report is precise, so list its errors first.
+          for path in glob.glob('app/build/reports/lint-results-debug.xml'):
+              root = ET.parse(path).getroot()
+              for issue in root.findall('issue'):
+                  if issue.get('severity') in ('Error', 'Fatal'):
+                      loc = issue.find('location')
+                      where = (loc.get('file') if loc is not None else 'app') or 'app'
+                      line = (loc.get('line') if loc is not None else '') or '1'
+                      add(xml_issues, f"{where}:{line} [{issue.get('id')}] {issue.get('message')}")
+          for path in glob.glob('/tmp/phormi-gradle-lint.log'):
+              with open(path, errors='replace') as handle:
+                  for line in handle:
+                      if re.search(r'Error: |Lint found|^\* What went wrong|FAILED', line):
+                          add(log_lines, line.strip())
+          messages = xml_issues + log_lines
+          print(f"::notice title=Android lint::{len(xml_issues)} error(s) in the XML report")
+          for message in messages[:10]:
+              print("::error title=Android lint::" + message)
+          if len(messages) > 10:
+              print(f"::error title=Android lint::... and {len(messages) - 10} more finding(s); see the job log.")
+          PY
       - name: Publish debug APK
         uses: actions/upload-artifact@v4
         with:
