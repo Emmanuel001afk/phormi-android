@@ -82,7 +82,7 @@ class MainActivity : AppCompatActivity() {
 
     private data class Tab(
         val id: Int,
-        var webView: WebView,
+        var webView: WebView?,
         var title: String,
         val chipView: View,
         val isGhost: Boolean = false,
@@ -90,9 +90,17 @@ class MainActivity : AppCompatActivity() {
         var createdAt: Long = System.currentTimeMillis(),
         var profileName: String = DEFAULT_PROFILE_NAME,
         var searchQuery: String? = null,
-        /** Last rendered result document, so Refresh does not re-hit 11 providers. */
-        var lastSearchHtml: String? = null
-    )
+        var lastSearchHtml: String? = null,
+        var deferredUrl: String? = null,
+        var savedState: String? = null,
+        var savedScrollY: Int = 0,
+        var lastKnownUrl: String = NEW_TAB_URL,
+        var documentEpoch: Long = 0,
+        var hasDeviceAccess: Boolean = false,
+        var discardReason: String? = null
+    ) {
+        val currentUrl: String get() = deferredUrl ?: webView?.url ?: lastKnownUrl
+    }
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var webViewContainer: FrameLayout
@@ -120,15 +128,13 @@ class MainActivity : AppCompatActivity() {
     private var splitChromeLocked = false
     private var splitRatio = 0.5f
 
-    private var pendingPermissionRequest: PermissionRequest? = null
-    private var pendingPermissionPermissions: Array<out String> = emptyArray()
-    /** Only the filtered WebView resources, never the full request.resources array. */
-    private var pendingPermissionResources: Array<String> = emptyArray()
-    private val sitePermissionStore: PhormiSitePermissions.Store by lazy {
-        PhormiSitePermissions.SharedPreferencesStore(this)
-    }
-    private var omniboxPopup: ListPopupWindow? = null
+    private val sitePermissions by lazy { PhormiSitePermissions(this,
+        isActive = { it === activeWebView() },
+        onAccessGranted = { view -> tabs.firstOrNull { it.webView === view }?.hasDeviceAccess = true }, locationStore = sitePermissionStore) }
+    private val sitePermissionStore by lazy { PhormiSitePermissions.SharedPreferencesStore(this) }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var fileChooserOwner: Int = -1
+    private var fullscreenOwner: Int = -1
     private var contextMenuUrl: String? = null
     private var contextMenuIsImage: Boolean = false
     private var pendingLockedNavigationUrl: String? = null
@@ -198,8 +204,6 @@ class MainActivity : AppCompatActivity() {
         // previous STARTUP_PERMISSIONS list was dead code that was never requested.
     }
 
-    private var pendingGeoOrigin: String? = null
-    private var pendingGeoCallback: android.webkit.GeolocationPermissions.Callback? = null
     private val downloadBadgeHandler = Handler(Looper.getMainLooper())
     private val downloadBadgePoll = object : Runnable {
         override fun run() {
@@ -235,7 +239,8 @@ class MainActivity : AppCompatActivity() {
         if (::prefs.isInitialized) {
             applyStartPageAppearance()
             applyBrowserChromeAppearance()
-            tabs.forEach { it.webView.settings.textZoom = PhormiBrowserPreferences.textZoom(this) }
+            scheduleTabBudget()
+            tabs.forEach { it.webView?.let(::applyLiveWebSettings) }
             updateHomeChromeVisibility()
             downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
             downloadBadgeHandler.post(downloadBadgePoll)
@@ -424,12 +429,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun readAiTabCatalog(): String = tabs.filterNot { it.isGhost }.take(20).joinToString("\n") { tab ->
         // Keep other tabs' page contents and URL query tokens out of the planner prompt.
-        val host = Uri.parse(tab.webView.url.orEmpty()).host.orEmpty()
+        val host = Uri.parse(tab.currentUrl).host.orEmpty()
         "TAB ${tab.id} | title=${tab.title.take(90)} | host=$host"
     }
 
     private suspend fun readAiTabScreen(tabId: Int): String {
-        val view = tabs.firstOrNull { it.id == tabId && !it.isGhost }?.webView ?: return "TAB_NOT_FOUND"
+        val tab = tabs.firstOrNull { it.id == tabId && !it.isGhost } ?: return "TAB_NOT_FOUND"
+        if (tab.deferredUrl != null) { resumeDeferredTab(tab); return "TAB_LOADING: retry reading after the page has loaded" }
+        val view = tab.webView ?: return "TAB_LOADING"
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             view.onResume()
             view.evaluateJavascript(
@@ -456,7 +463,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun executeAiBrowserAction(tabId: Int, action: JSONObject): Boolean {
-        val view = tabs.firstOrNull { it.id == tabId && !it.isGhost }?.webView ?: return false
+        val tab = tabs.firstOrNull { it.id == tabId && !it.isGhost } ?: return false
+        if (tab.deferredUrl != null) { resumeDeferredTab(tab); return false }
+        val view = tab.webView ?: return false
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             val script = when (action.optString("action").lowercase(Locale.US)) {
                 "navigate" -> {
@@ -529,11 +538,13 @@ class MainActivity : AppCompatActivity() {
         tabs.forEach { tab ->
             val background = tab.id in aiBackgroundTabIds && tab.id !in visible
             val live = tab.id in visible || background
-            tab.webView.visibility = if (live) View.VISIBLE else View.GONE
-            tab.webView.alpha = if (background) 0f else 1f
-            tab.webView.isClickable = !background
-            tab.webView.isFocusable = tab.id == activeTabId
-            if (live) tab.webView.onResume() else tab.webView.onPause()
+            if (live) resumeDeferredTab(tab)
+            val view = tab.webView ?: return@forEach
+            view.visibility = if (live) View.VISIBLE else View.GONE
+            view.alpha = if (background) 0f else 1f
+            view.isClickable = !background
+            view.isFocusable = tab.id == activeTabId
+            if (live) view.onResume() else view.onPause()
         }
         // An invisible background WebView must never cover the user's current tab.
         activeWebView()?.takeIf { it.parent === webViewContainer }?.bringToFront()
@@ -569,7 +580,8 @@ class MainActivity : AppCompatActivity() {
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
         urlBar = findViewById(R.id.url_bar)
-        installOmniboxSuggestions()
+        configureOmnibox()
+        findViewById<View>(R.id.btn_site_info).setOnClickListener { showSiteInfo() }
         startPageContainer = findViewById(R.id.start_page_container)
         startPageSearch = findViewById(R.id.start_page_search)
         tabCountView = findViewById(R.id.tab_count)
@@ -590,7 +602,7 @@ class MainActivity : AppCompatActivity() {
         applyStartPageAppearance()
         applyBrowserChromeAppearance()
 
-        val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
+        val selectedProvider = prefs.getString(KEY_SEARCH_PROVIDER, "Google") ?: "Google"
         findViewById<TextView>(R.id.start_page_engine).text = "$selectedProvider  ▾"
 
 
@@ -672,12 +684,14 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
 
-        findViewById<TextView>(R.id.btn_refresh).setOnClickListener { refreshActivePage() }
+        findViewById<TextView>(R.id.btn_refresh).setOnClickListener {
+            val page = activeWebView()
+            if (page != null && page.progress < 100) { page.stopLoading(); updatePageProgress(page, 100) } else refreshActivePage()
+        }
         findViewById<TextView>(R.id.btn_favorite).setOnClickListener { addCurrentPageToBookmarks() }
         splitLockButton.setOnClickListener { setSplitChromeLocked(!splitChromeLocked) }
         installSplitDividerResize()
         findViewById<TextView>(R.id.btn_go).setOnClickListener { navigateFromUrlBar() }
-        findViewById<TextView>(R.id.btn_site_info).setOnClickListener { showSiteInfo() }
         urlBar.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO ||
                 actionId == EditorInfo.IME_ACTION_DONE ||
@@ -928,9 +942,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun searchUrlForProvider(query: String): String {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        return when (prefs.getString(KEY_SEARCH_PROVIDER, "Phormi Search")) {
-            // Unified search is handled by runUnifiedSearch(); never hand WebView a
-            // fake phormi-unified:// scheme. Keep a real URL as a defensive fallback.
+        return when (prefs.getString(KEY_SEARCH_PROVIDER, "Google")) {
             PHORMI_SEARCH -> SEARCH_URL + encoded
             "Bing" -> "https://www.bing.com/search?q=$encoded"
             "DuckDuckGo" -> "https://duckduckgo.com/?q=$encoded"
@@ -1032,7 +1044,7 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this).setTitle("Remove from Quick access?").setMessage(site.name)
             .setNegativeButton("Cancel", null).setPositiveButton("Remove") { _, _ ->
                 when (site.tag) {
-                    "◇" -> BookmarksActivity.remove(this, site.url, hideOnly = true)
+                    "◇" -> PhormiQuickAccessState.hideFavorite(this, site.url)
                     "•" -> HistoryActivity.removeUrl(this, site.url)
                     else -> {
                         val list = runCatching { JSONArray(prefs.getString(KEY_CUSTOM_SHORTCUTS, "[]") ?: "[]") }.getOrElse { JSONArray() }
@@ -1137,7 +1149,7 @@ class MainActivity : AppCompatActivity() {
             "Swisscows",
             "YouTube"
         )
-        val current = prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH
+        val current = prefs.getString(KEY_SEARCH_PROVIDER, "Google") ?: "Google"
         val checked = options.indexOf(current).coerceAtLeast(0)
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Search")
@@ -1163,9 +1175,21 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun runUnifiedSearch(query: String) {
+        if (!prefs.getBoolean("multi_engine_consent_v1", false)) {
+            AlertDialog.Builder(this).setTitle("Use multi-engine search?")
+                .setMessage("Phormi Search sends your query to 11 providers, including Google, Bing and DuckDuckGo. This uses more data and providers may block automated results. You can change engines from the home search selector.")
+                .setNegativeButton("Use Google") { _, _ ->
+                    prefs.edit().putString(KEY_SEARCH_PROVIDER, "Google").apply()
+                    findViewById<TextView>(R.id.start_page_engine).text = "Google  ▾"
+                    urlBar.setText(query); navigateFromUrlBar()
+                }
+                .setPositiveButton("Use Phormi Search") { _, _ -> prefs.edit().putBoolean("multi_engine_consent_v1", true).apply(); runUnifiedSearch(query) }.show()
+            return
+        }
         if (activeWebView() == null) createNewTab(NEW_TAB_URL)
         val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
-        val webView = tab.webView
+        resumeDeferredTab(tab)
+        val webView = tab.webView ?: return
         tab.searchQuery = query
         val generation = unifiedSearchGeneration.incrementAndGet()
         // Each tab owns its own search and results. Starting another search in a new tab
@@ -1240,12 +1264,10 @@ class MainActivity : AppCompatActivity() {
                             val answer = aiController.synthesizeSearchAnswer(query, evidence)
                             if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@launch
                             if (answer != null) {
-                                val withAnswer = unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer)
-                                tab.lastSearchHtml = withAnswer
-                                webView.loadDataWithBaseURL(
-                                    "https://phormi.local/", withAnswer,
-                                    "text/html", "UTF-8", null
-                                )
+                                tab.lastSearchHtml = unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer)
+                                webView.evaluateJavascript("""
+                                    (function(){var el=document.getElementById('ai-answer');if(el){el.textContent=${JSONObject.quote(answer)};el.style.display='block';}})();
+                                """.trimIndent(), null)
                             }
                         }
                     }
@@ -1571,6 +1593,7 @@ class MainActivity : AppCompatActivity() {
             <div class='top'><div class='brand'>Phormi Search</div><div class='query'>$q</div><div class='query'>${if (loading) "Collecting $completed/$total engines…" else "Unified results · $total engines"}</div></div>
             <div class='coverage'>${if (loading) "${finishedEngines.size}/$total answered" else "${successfulEngines.size}/$total answered"}</div>
             $body
+            <section id='ai-answer' class='ai' style='display:none' aria-live='polite'></section>
             <div class='footer'>
               Phormi fetches public search-result pages from several providers, merges matching pages, removes duplicates and ranks them by position, cross-provider agreement and your search terms. This is client-side aggregation of result pages, not an independent search index or a licensed search API; results can be incomplete when a provider blocks automated requests.<br><br>
               <a class='engine' href='https://phormi.local/refresh?q=${URLEncoder.encode(query, "UTF-8")}'>↻ Refresh results</a><br><br>
@@ -1595,70 +1618,18 @@ class MainActivity : AppCompatActivity() {
         createNewTab(url)
     }
 
-    /** Local history + favorites autocomplete. Nothing is sent to a search provider. */
-    private fun installOmniboxSuggestions() {
-        urlBar.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) =
-                showOmniboxSuggestions(s?.toString().orEmpty())
-            override fun afterTextChanged(s: Editable?) = Unit
-        })
-        urlBar.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) omniboxPopup?.dismiss() }
-    }
-
-    private fun showOmniboxSuggestions(input: String) {
-        val q = input.trim()
-        if (q.length < 2 || !urlBar.hasFocus()) { omniboxPopup?.dismiss(); return }
-        val matches = linkedMapOf<String, String>()
-        PhormiFavorites.getAll(this).forEach { matches[it.url] = it.title }
-        HistoryActivity.recent(this, 80).forEach { matches.putIfAbsent(it.url, it.title) }
-        val filtered = matches.filter { (url, title) ->
-            url.contains(q, ignoreCase = true) || title.contains(q, ignoreCase = true)
-        }.entries.take(6).toList()
-        if (filtered.isEmpty()) { omniboxPopup?.dismiss(); return }
-        val labels = filtered.map { (url, title) ->
-            if (title.isBlank() || title == url) url else "$title — ${url.take(70)}"
-        }
-        val popup = omniboxPopup ?: ListPopupWindow(this).apply {
-            anchorView = urlBar
-            isModal = false
-        }
-        omniboxPopup = popup
-        popup.setOnItemClickListener { _, _, position, _ ->
-            val url = filtered.getOrNull(position)?.key ?: return@setOnItemClickListener
-            urlBar.setText(url)
-            popup.dismiss()
-            navigateFromUrlBar()
-        }
-        popup.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
-        popup.width = urlBar.width.coerceAtLeast(200)
-        if (!popup.isShowing) popup.show()
-    }
-
-    private fun navigateFromStartPage() = navigateTo(startPageSearch.text?.toString().orEmpty())
-
-    /** One navigation heuristic for both the omnibox and the new-tab search field. */
-    private fun navigateTo(input: String) {
-        omniboxPopup?.dismiss()
-        val raw = input.trim()
-        if (raw.isEmpty()) return
-        val unified = (prefs.getString(KEY_SEARCH_PROVIDER, PHORMI_SEARCH) ?: PHORMI_SEARCH) == PHORMI_SEARCH
-        val target = PhormiNavigation.resolve(raw) ?: return
-        if (target.kind == PhormiNavigation.Kind.SEARCH && unified) {
-            runUnifiedSearch(target.value)
-            return
-        }
-        val url = if (target.kind == PhormiNavigation.Kind.SEARCH)
-            searchUrlForProvider(target.value) else target.value
-        if (urlBar.text?.toString()?.trim() != raw) urlBar.setText(raw)
-        loadResolvedUrl(url)
+    private fun navigateFromStartPage() {
+        val raw = startPageSearch.text?.toString()?.trim().orEmpty()
+        if (raw.isBlank()) return
+        urlBar.setText(raw)
+        navigateFromUrlBar()
     }
 
     /** Keep the browser chrome to one horizontal layer. Phones use the tab overview button;
      * wide screens may expose the compact tab strip inside that same layer. */
     private fun updateResponsiveChrome() {
         val tabStrip = findViewById<View>(R.id.tab_strip) ?: return
-        val wide = resources.configuration.screenWidthDp >= 600
+        val wide = resources.configuration.screenWidthDp >= 900
         tabStrip.visibility = if (wide) View.VISIBLE else View.GONE
     }
 
@@ -1677,19 +1648,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateHomeChromeVisibility() {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
+        val wide = resources.configuration.screenWidthDp >= 900
+        findViewById<View>(R.id.home_toolbar_spacer)?.visibility = if (onHome) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_new_tab)?.visibility = if (wide || onHome) View.VISIBLE else View.GONE
         val fullscreen = customView != null || isInPictureInPictureMode
         findViewById<View>(R.id.top_toolbar)?.visibility = if (fullscreen || splitChromeLocked) View.GONE else View.VISIBLE
         findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_home)?.visibility = if (onHome || !wide) View.GONE else View.VISIBLE
         findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
         val bottom = PhormiBrowserPreferences.showBottomToolbar(this)
         // Favorite remains in the Browse menu; reserve more width for the address field.
-        findViewById<View>(R.id.btn_favorite)?.visibility = if (onHome || !bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_favorite)?.visibility = if (onHome || !bottom || !wide) View.GONE else View.VISIBLE
         findViewById<View>(R.id.bottom_toolbar)?.visibility =
             if (onHome || !bottom || splitChromeLocked || fullscreen) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_ai)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_back)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_forward)?.visibility = if (onHome || bottom) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_ai)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_back)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_top_forward)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
         updateDownloadBadge()
         swipeRefresh.isEnabled = !onHome && PhormiBrowserPreferences.pullToRefresh(this)
     }
@@ -1764,10 +1738,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btn_bottom_downloads)?.apply {
             text = if (count == 0) "↓" else "↓ $count"
             contentDescription = if (count == 0) "Downloads" else "$count downloads in progress"
-            setTextColor(if (count == 0) Color.rgb(203, 213, 225) else Color.rgb(56, 189, 248))
+            setTextColor(if (count == 0) PhormiUiColors.text(this@MainActivity) else PhormiUiColors.accent(this@MainActivity))
         }
         findViewById<TextView>(R.id.btn_top_downloads)?.apply {
-            visibility = if (count > 0 && (startPageContainer.visibility == View.VISIBLE ||
+            visibility = if (resources.configuration.screenWidthDp >= 900 && count > 0 && (startPageContainer.visibility == View.VISIBLE ||
                 !PhormiBrowserPreferences.showBottomToolbar(this@MainActivity)) &&
                 customView == null && !isInPictureInPictureMode) View.VISIBLE else View.GONE
             contentDescription = "$count downloads in progress"
@@ -1815,9 +1789,51 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    private fun navigateFromUrlBar() = navigateTo(urlBar.text?.toString().orEmpty())
-
-    private fun loadResolvedUrl(url: String) {
+    private data class AddressSuggestion(val title: String, val url: String) {
+        override fun toString() = "$title\n$url"
+    }
+    private fun configureOmnibox() {
+        val input = urlBar as? android.widget.AutoCompleteTextView ?: return
+        input.threshold = 1
+        input.setSelectAllOnFocus(true)
+        input.setOnFocusChangeListener { _, focused ->
+            if (focused) {
+                val saved = PhormiFavorites.getAll(this).map { AddressSuggestion(it.title, it.url) }
+                val recent = runCatching {
+                    val array = JSONArray(getSharedPreferences("phormi_history", MODE_PRIVATE).getString("items", "[]"))
+                    (array.length() - 1 downTo maxOf(0, array.length() - 100)).mapNotNull { index ->
+                        array.optJSONObject(index)?.let { AddressSuggestion(it.optString("title"), it.optString("url")) }
+                    }
+                }.getOrDefault(emptyList())
+                input.setAdapter(android.widget.ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, (saved + recent).distinctBy { it.url }))
+            }
+        }
+        input.setOnItemClickListener { parent, _, position, _ ->
+            val suggestion = parent.getItemAtPosition(position) as? AddressSuggestion ?: return@setOnItemClickListener
+            input.setText(suggestion.url, false)
+            navigateFromUrlBar()
+        }
+    }
+    private fun updatePageProgress(view: WebView?, progress: Int) {
+        if (view !== activeWebView()) return
+        findViewById<android.widget.ProgressBar>(R.id.page_progress)?.apply {
+            this.progress = progress
+            visibility = if (progress in 1..99 && startPageContainer.visibility != View.VISIBLE) View.VISIBLE else View.GONE
+        }
+        findViewById<TextView>(R.id.btn_refresh)?.apply {
+            text = if (progress in 1..99) "×" else "↻"
+            contentDescription = if (progress in 1..99) "Stop loading" else "Refresh page"
+        }
+    }
+    private fun navigateFromUrlBar() {
+        val raw = urlBar.text?.toString()?.trim().orEmpty()
+        if (raw.isEmpty()) return
+        val direct = PhormiNavigationInput.webUrl(raw)
+        if (direct == null && (prefs.getString(KEY_SEARCH_PROVIDER, "Google") == PHORMI_SEARCH)) {
+            runUnifiedSearch(raw)
+            return
+        }
+        val url = direct ?: searchUrlForProvider(raw)
         val webView = activeWebView()
         tabs.firstOrNull { it.id == activeTabId }?.let { it.searchQuery = null; it.lastSearchHtml = null }
         if (webView != null) {
@@ -1894,7 +1910,7 @@ class MainActivity : AppCompatActivity() {
         tabs.find { it.id == tabId }?.lastUsed = System.currentTimeMillis()
         updateNavButtons()
         updateFavoriteButton()
-        val url = tabs.find { it.id == tabId }?.webView?.url.orEmpty()
+        val url = tabs.find { it.id == tabId }?.currentUrl.orEmpty()
         urlBar.setText(url.takeIf { it.isNotBlank() && it != NEW_TAB_URL } ?: "")
         tabs.forEach { it.chipView.alpha = if (it.id == tabId) 1f else 0.55f }
     }
@@ -1947,7 +1963,7 @@ class MainActivity : AppCompatActivity() {
             if (splitTopTabId == -1 || splitBottomTabId == -1 || splitBottomTabId == splitTopTabId) { splitMode = false; return }
             moveTabWebViewToHost(splitTopTabId, splitTopHost)
             moveTabWebViewToHost(splitBottomTabId, splitBottomHost)
-            tabs.filter { it.id == splitTopTabId || it.id == splitBottomTabId }.forEach { it.webView.onResume() }
+            tabs.filter { it.id == splitTopTabId || it.id == splitBottomTabId }.forEach { it.webView?.onResume() }
             setActiveSplitPane(splitTopTabId)
             splitContainer.visibility = View.VISIBLE
             startPageContainer.visibility = View.GONE
@@ -1958,7 +1974,7 @@ class MainActivity : AppCompatActivity() {
             splitMode = false
             listOf(splitTopTabId, splitBottomTabId).filter { it >= 0 }.forEach { moveTabWebViewToHost(it, webViewContainer) }
             splitTopTabId = -1; splitBottomTabId = -1
-            tabs.filter { it.id != activeTabId }.forEach { it.webView.onPause(); it.webView.visibility = View.GONE }
+            tabs.filter { it.id != activeTabId }.forEach { it.webView?.apply { onPause(); visibility = View.GONE } }
             splitRatio = 0.5f
             splitContainer.visibility = View.GONE
             updateStartPageVisibility()
@@ -1979,7 +1995,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val old = tab.webView
-        val url = old.url.orEmpty()
+        val url = tab.currentUrl
+        old?.let { sitePermissions.cancel(it) }
         val newWebView = WebView(this)
         if (!PhormiEnvironmentManager.apply(newWebView, target)) {
             newWebView.destroy()
@@ -1994,13 +2011,22 @@ class MainActivity : AppCompatActivity() {
         newWebView.isClickable = true
         newWebView.isFocusable = true
         newWebView.isFocusableInTouchMode = true
-        newWebView.setBackgroundColor(Color.TRANSPARENT)
+        newWebView.setBackgroundColor(Color.WHITE)
         registerForContextMenu(newWebView)
-        val parent = old.parent as? ViewGroup
-        parent?.removeView(old)
-        parent?.addView(newWebView, 0, FrameLayout.LayoutParams(-1, -1))
-        old.destroy()
+        val parent = old?.parent as? ViewGroup ?: webViewContainer
+        old?.let { parent.removeView(it) }
+        parent.addView(newWebView, 0, FrameLayout.LayoutParams(-1, -1))
+        old?.destroy()
         tab.webView = newWebView
+        tab.savedState = null
+        tab.deferredUrl = null
+        tab.hasDeviceAccess = false
+        tab.documentEpoch++
+        newWebView.webChromeClient = buildChromeClient(newWebView) { title ->
+            tab.title = title.orEmpty().ifBlank { "Tab" }
+            tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+            saveTabs()
+        }
         tab.profileName = target
         tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text =
             if (tab.title.isBlank()) target else "${tab.title} · $target"
@@ -2013,9 +2039,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun moveTabWebViewToHost(tabId: Int, host: FrameLayout) {
+        tabs.firstOrNull { it.id == tabId }?.let { resumeDeferredTab(it) }
         val webView = tabs.find { it.id == tabId }?.webView ?: return
         (webView.parent as? ViewGroup)?.removeView(webView)
-        host.removeAllViews()
+        if (host !== webViewContainer) host.removeAllViews()
         host.addView(webView, FrameLayout.LayoutParams(-1, -1))
         webView.visibility = View.VISIBLE
     }
@@ -2037,97 +2064,105 @@ class MainActivity : AppCompatActivity() {
 
     private fun activeWebView(): WebView? = tabs.find { it.id == activeTabId }?.webView
 
-    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null, restoredStateBase64: String? = null, activate: Boolean = true) {
+    private fun createNewTab(url: String, requestedProfile: String? = null, forceGhost: Boolean = false, requestedId: Int? = null, requestedCreatedAt: Long? = null, restoredStateBase64: String? = null, activate: Boolean = true, deferLoad: Boolean = false) {
         val ghostRequested = forceGhost || prefs.getBoolean("ghost_next_tab", false)
-        if (ghostRequested) {
-            prefs.edit().putBoolean("ghost_next_tab", false).apply()
-            if (!isMultiProfileSupported()) {
-                // The in-activity Ghost path previously fell back to the default
-                // WebView profile without telling the user, which is not private.
-                Toast.makeText(this, "Ghost isolation is unavailable on this WebView; this tab is not private.", Toast.LENGTH_LONG).show()
-            }
-        }
+        if (ghostRequested) { prefs.edit().putBoolean("ghost_next_tab", false).apply(); createGhostTab(url); return }
         val id = requestedId?.takeIf { it > 0 } ?: nextTabId++
         if (id >= nextTabId) nextTabId = id + 1
         val requested = requestedProfile?.trim().takeIf { !it.isNullOrBlank() }
             ?: if (ghostRequested) GHOST_PROFILE_NAME else selectedTabEnvironment()
-        val webView = WebView(this)
-        var effectiveProfile = DEFAULT_PROFILE_NAME
-        if (requested != DEFAULT_PROFILE_NAME && isMultiProfileSupported()) {
-            if (PhormiEnvironmentManager.apply(webView, requested)) effectiveProfile = requested
-        }
-        val isGhost = ghostRequested && effectiveProfile == GHOST_PROFILE_NAME
-        CookieManager.getInstance().setAcceptThirdPartyCookies(
-            webView,
-            prefs.getBoolean("security_third_party_cookies", true)
-        )
-
-        webViewContainer.addView(
-            webView,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
-        configureWebView(webView)
-        webView.isClickable = true
-        webView.isFocusable = true
-        webView.isFocusableInTouchMode = true
-        // The app theme's window background is #0F172A. A transparent WebView
-        // over it made pages that do not declare a background render dark text
-        // on a dark surface (effectively unreadable). Pin a light content base;
-        // pages with their own background still paint over it normally.
-        webView.setBackgroundColor(Color.WHITE)
-        registerForContextMenu(webView)
-
         val chip = LayoutInflater.from(this).inflate(R.layout.tab_chip, tabStripContainer, false)
-        val chipTitle = chip.findViewById<TextView>(R.id.tab_chip_title)
-        val chipClose = chip.findViewById<TextView>(R.id.tab_chip_close)
-        val chipIcon = chip.findViewById<android.widget.ImageView>(R.id.tab_chip_icon)
-
-        val now = System.currentTimeMillis()
-        val tab = Tab(id, webView, if (isGhost) "Ghost" else getString(R.string.new_tab), chip, isGhost = isGhost, lastUsed = now, createdAt = requestedCreatedAt ?: now, profileName = effectiveProfile)
-        if (isGhost) {
-            chipIcon.setImageResource(R.drawable.ic_phormi_ghost)
-            chipIcon.visibility = View.VISIBLE
-        }
-        tabs.add(tab)
-        tabStripContainer.addView(chip)
-
+        val tab = Tab(id, null, getString(R.string.new_tab), chip,
+            isGhost = ghostRequested, createdAt = requestedCreatedAt ?: System.currentTimeMillis(),
+            profileName = if (isMultiProfileSupported()) requested else DEFAULT_PROFILE_NAME,
+            deferredUrl = url, savedState = restoredStateBase64, lastKnownUrl = url)
+        tabs.add(tab); tabStripContainer.addView(chip)
         chip.setOnClickListener { switchToTab(id) }
-        chipClose.setOnClickListener { closeTab(id) }
-
-        webView.webChromeClient = buildChromeClient { newTitle ->
-            val t = if (newTitle.isNullOrBlank()) getString(R.string.new_tab) else newTitle
-            chipTitle.text = t
-            tabs.find { it.id == id }?.title = t
-            saveTabs()
+        chip.findViewById<TextView>(R.id.tab_chip_close).setOnClickListener { closeTab(id) }
+        if (activate) switchToTab(id) else if (!deferLoad) {
+            resumeDeferredTab(tab)
+            tab.webView?.apply { visibility = View.GONE; onPause() }
         }
+        updateTabCount(); saveTabs(); scheduleTabBudget()
+    }
 
-        // Apply desktop mode deterministically *before* navigation to avoid onPageStarted flicker
-        if (!restoredStateBase64.isNullOrBlank() || url == NEW_TAB_URL) {
-            // restored or blank — configure already has UA for about:blank
-        } else {
-            val desktopBefore = isDesktopModeFor(url)
-            if (webView.settings.userAgentString != desktopUserAgent(desktopBefore)) {
-                applyDesktopMode(webView, desktopBefore)
+    /** Recreate an evicted renderer on demand; dormant tabs contain metadata only. */
+    private fun resumeDeferredTab(tab: Tab) {
+        if (tab.webView != null && tab.deferredUrl == null) return
+        val target = tab.deferredUrl ?: NEW_TAB_URL
+        val view = tab.webView ?: WebView(this).also { created ->
+            if (tab.profileName != DEFAULT_PROFILE_NAME && !PhormiEnvironmentManager.apply(created, tab.profileName)) {
+                created.destroy()
+                Toast.makeText(this, "Could not restore this browsing environment. Tab kept suspended.", Toast.LENGTH_LONG).show()
+                return
+            }
+            tab.webView = created
+            configureWebView(created)
+            applyLiveWebSettings(created)
+            created.isClickable = true; created.isFocusable = true; created.isFocusableInTouchMode = true
+            created.setBackgroundColor(Color.WHITE)
+            registerForContextMenu(created)
+            webViewContainer.addView(created, FrameLayout.LayoutParams(-1, -1))
+            created.webChromeClient = buildChromeClient(created) { title ->
+                if (tab.webView !== created) return@buildChromeClient
+                tab.title = title.orEmpty().ifBlank { getString(R.string.new_tab) }
+                tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+                saveTabs()
             }
         }
-        var restored = false
-        if (!restoredStateBase64.isNullOrBlank() && WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
-            restored = runCatching {
-                restoreWebViewState(webView, restoredStateBase64)
-            }.getOrDefault(false)
-        }
-        if (!restored && url != NEW_TAB_URL) webView.loadUrl(url)
-        if (activate) switchToTab(id) else {
-            // AI-created work tabs must not steal the page, address bar or keyboard.
-            webView.visibility = View.GONE
-            webView.onPause()
-        }
-        updateTabCount()
-        saveTabs()
+        tab.deferredUrl = null; tab.discardReason = null; tab.lastKnownUrl = target
+        applyDesktopMode(view, isDesktopModeFor(target))
+        val restored = tab.savedState?.let { restoreWebViewState(view, it) } == true
+        if (!restored && target != NEW_TAB_URL) view.loadUrl(target)
     }
+
+    private val memoryHandler = Handler(Looper.getMainLooper())
+    private val discardChecks = mutableSetOf<Int>()
+    private var budgetWork: Runnable? = null
+    private fun protectedTabIds(): Set<Int> = setOf(activeTabId, splitTopTabId, splitBottomTabId,
+        if (filePathCallback != null) fileChooserOwner else -1,
+        if (customView != null) fullscreenOwner else -1) + aiBackgroundTabIds
+    private fun scheduleTabBudget() {
+        budgetWork?.let(memoryHandler::removeCallbacks)
+        budgetWork = Runnable { enforceTabBudget() }.also { memoryHandler.postDelayed(it, 800) }
+    }
+    private fun enforceTabBudget(limit: Int = PhormiBrowserPreferences.liveTabBudget(this)) {
+        val keep = protectedTabIds()
+        val candidates = PhormiTabMemoryPolicy.candidates(tabs.map {
+            PhormiTabMemoryPolicy.Entry(it.id, it.webView != null, it.lastUsed,
+                it.id in keep || it.hasDeviceAccess || it.isGhost || it.searchQuery != null)
+        }, limit)
+        candidates.forEach { id ->
+            val tab = tabs.firstOrNull { it.id == id } ?: return@forEach
+            val view = tab.webView ?: return@forEach
+            if (!discardChecks.add(id)) return@forEach
+            val epoch = tab.documentEpoch
+            fun finish(safe: Boolean) {
+                discardChecks.remove(id)
+                if (tabs.none { it === tab } || tab.webView !== view || tab.documentEpoch != epoch || id in protectedTabIds() || tab.hasDeviceAccess) return
+                if (!safe) { tab.discardReason = "Protected: loading, playing media or unsaved edits"; return }
+                if (tabs.count { it.webView != null } <= limit) return
+                val target = tab.currentUrl
+                val snapshot = saveWebViewState(view)
+                if (snapshot == null && target != NEW_TAB_URL) { tab.discardReason = "Protected: navigation snapshot unavailable"; return }
+                tab.savedState = snapshot; tab.savedScrollY = view.scrollY; tab.deferredUrl = target
+                sitePermissions.cancel(view)
+                tab.webView = null // Detach ownership before callbacks from stop/destroy.
+                (view.parent as? ViewGroup)?.removeView(view)
+                unregisterForContextMenu(view)
+                view.stopLoading(); view.destroy()
+                tab.discardReason = "Suspended to release page memory"
+                saveTabs()
+            }
+            if (tab.currentUrl == NEW_TAB_URL) finish(true)
+            else view.evaluateJavascript(PhormiTabMemoryPolicy.CAN_DISCARD_SCRIPT) { finish(it == "true") }
+        }
+    }
+
+    fun tabMemoryDiagnostics(): JSONObject = JSONObject()
+        .put("total", tabs.size).put("live", tabs.count { it.webView != null })
+        .put("budget", PhormiBrowserPreferences.liveTabBudget(this))
+        .put("tabs", JSONArray().apply { tabs.forEach { put(JSONObject().put("id", it.id).put("live", it.webView != null).put("reason", it.discardReason.orEmpty())) } })
 
     private fun createGhostTab(url: String = NEW_TAB_URL) {
         val intent = Intent(this, GhostActivity::class.java)
@@ -2137,14 +2172,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchToTab(id: Int) {
         val candidate = tabs.find { it.id == id }
-        if (candidate != null && candidate.id != activeTabId && isSiteLocked(candidate.webView.url, candidate.id)) {
-            requestSiteUnlock(candidate.webView.url.orEmpty()) { switchToTabUnlocked(id) }
+        if (candidate != null && candidate.id != activeTabId && isSiteLocked(candidate.currentUrl, candidate.id)) {
+            requestSiteUnlock((candidate.currentUrl).orEmpty()) { switchToTabUnlocked(id) }
             return
         }
         switchToTabUnlocked(id)
     }
 
     private fun switchToTabUnlocked(id: Int) {
+        if (id != activeTabId) sitePermissions.cancel()
         activeTabId = id
         tabs.find { it.id == id }?.lastUsed = System.currentTimeMillis()
         val liveIds = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(id)
@@ -2152,17 +2188,21 @@ class MainActivity : AppCompatActivity() {
             val isActive = tab.id == id
             val isBackgroundAi = tab.id in aiBackgroundTabIds && !isActive
             val isLive = tab.id in liveIds || isBackgroundAi
-            tab.webView.visibility = if (isLive) View.VISIBLE else View.GONE
+            if (isLive) resumeDeferredTab(tab)
+            val view = tab.webView
+            if (view != null) {
+            view.visibility = if (isLive) View.VISIBLE else View.GONE
             if (isBackgroundAi) {
-                tab.webView.alpha = 0f
-                tab.webView.isClickable = false
-                tab.webView.isFocusable = false
-                tab.webView.onResume()
+                view.alpha = 0f
+                view.isClickable = false
+                view.isFocusable = false
+                view.onResume()
             } else {
-                tab.webView.alpha = 1f
-                tab.webView.isClickable = true
-                tab.webView.isFocusable = isActive
-                if (isLive) tab.webView.onResume() else tab.webView.onPause()
+                view.alpha = 1f
+                view.isClickable = true
+                view.isFocusable = isActive
+                if (isLive) view.onResume() else view.onPause()
+            }
             }
             tab.chipView.alpha = if (isActive) 1f else 0.55f
         }
@@ -2171,6 +2211,9 @@ class MainActivity : AppCompatActivity() {
         updateTabCount()
         updateNavButtons()
         updateFavoriteButton()
+        scheduleTabBudget()
+        updateSiteSecurityIndicator()
+        updatePageProgress(activeWebView(), activeWebView()?.progress ?: 100)
         val current = tabs.find { it.id == id }?.webView?.url
         val query = tabs.firstOrNull { it.id == id }?.searchQuery
         if (query != null) urlBar.setText(query)
@@ -2178,7 +2221,7 @@ class MainActivity : AppCompatActivity() {
         else urlBar.setText("")
         saveTabs()
         val searchTab = tabs.firstOrNull { it.id == id }
-        if (searchTab?.searchQuery != null && searchTab.webView.url.orEmpty() == NEW_TAB_URL) {
+        if (searchTab?.searchQuery != null && (searchTab.webView?.url ?: NEW_TAB_URL) == NEW_TAB_URL) {
             runUnifiedSearch(searchTab.searchQuery.orEmpty())
         }
     }
@@ -2217,6 +2260,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeTab(id: Int) {
+        tabs.firstOrNull { it.id == id }?.webView?.let { sitePermissions.cancel(it) }
         if (splitMode && (id == splitTopTabId || id == splitBottomTabId)) setSplitMode(false)
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
@@ -2225,11 +2269,13 @@ class MainActivity : AppCompatActivity() {
             unifiedSearchFutures.remove(tab.id)?.forEach { it.cancel(true) }
             unifiedSearchGenerations.remove(tab.id)
         }
-        unregisterForContextMenu(tab.webView)
-        webViewContainer.removeView(tab.webView)
+        tab.webView?.let { view ->
+            unregisterForContextMenu(view)
+            (view.parent as? ViewGroup)?.removeView(view)
+            view.destroy()
+        }
         tabStripContainer.removeView(tab.chipView)
         PhormiBrowserPerformance.clear(tab.id)
-        tab.webView.destroy()
         tabs.removeAt(index)
         if (tab.isGhost && tabs.none { it.isGhost }) {
             PhormiEnvironmentManager.delete(GHOST_PROFILE_NAME)
@@ -2263,16 +2309,21 @@ class MainActivity : AppCompatActivity() {
         val profiles = JSONArray()
         val ids = JSONArray()
         val webViewStates = JSONArray()
+        val scrollPositions = JSONArray()
         val searchQueries = JSONArray()
         persistTabs.forEach { tab ->
-            val u = if (tab.searchQuery != null) NEW_TAB_URL else tab.webView.url?.takeIf { it.isNotBlank() } ?: NEW_TAB_URL
+            val u = if (tab.searchQuery != null) NEW_TAB_URL else tab.currentUrl
             urls.put(u)
             titles.put(tab.title.ifBlank { "Tab" })
             lastUsed.put(tab.lastUsed)
             createdAt.put(tab.createdAt)
             profiles.put(tab.profileName)
             ids.put(tab.id)
-            webViewStates.put(if (captureWebViewState && tab.searchQuery == null) (saveWebViewState(tab.webView) ?: "") else "")
+            if (captureWebViewState && tab.searchQuery == null && tab.deferredUrl == null) {
+                tab.webView?.let(::saveWebViewState)?.let { tab.savedState = it }
+            }
+            webViewStates.put(if (tab.searchQuery == null) tab.savedState.orEmpty() else "")
+            scrollPositions.put(tab.webView?.scrollY ?: tab.savedScrollY)
             searchQueries.put(tab.searchQuery.orEmpty())
         }
         if (urls.length() == 0) {
@@ -2287,6 +2338,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_TAB_PROFILES, profiles.toString())
             .putString(KEY_TAB_IDS, ids.toString())
             .putString(KEY_TAB_WEBVIEW_STATES, webViewStates.toString())
+            .putString("tab_scroll_positions", scrollPositions.toString())
             .putString(KEY_TAB_SEARCH_QUERIES, searchQueries.toString())
             .putString(KEY_TAB_RETENTION, prefs.getString(KEY_TAB_RETENTION, RETENTION_NEVER) ?: RETENTION_NEVER)
             .putString(KEY_TAB_ENVIRONMENT, selectedTabEnvironment())
@@ -2371,6 +2423,7 @@ class MainActivity : AppCompatActivity() {
             val ids = runCatching { JSONArray(prefs.getString(KEY_TAB_IDS, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val webViewStates = runCatching { JSONArray(prefs.getString(KEY_TAB_WEBVIEW_STATES, "[]") ?: "[]") }.getOrElse { JSONArray() }
             val searchQueries = runCatching { JSONArray(prefs.getString(KEY_TAB_SEARCH_QUERIES, "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val scrollPositions = runCatching { JSONArray(prefs.getString("tab_scroll_positions", "[]")) }.getOrElse { JSONArray() }
             val count = arr.length()
             val activeIndex = prefs.getInt(KEY_ACTIVE_INDEX, 0).coerceIn(0, (count - 1).coerceAtLeast(0))
             for (i in 0 until count) {
@@ -2379,7 +2432,8 @@ class MainActivity : AppCompatActivity() {
                 val restoredId = ids.optInt(i, 0).takeIf { it > 0 }
                 val restoredCreatedAt = createdAt.optLong(i, 0L).takeIf { it > 0L } ?: lastUsed.optLong(i, System.currentTimeMillis()).takeIf { it > 0L }
                 val restoredState = webViewStates.optString(i, "").trim().takeIf { it.isNotBlank() }
-                createNewTab(restoredUrl, restoredProfile, requestedId = restoredId, requestedCreatedAt = restoredCreatedAt, restoredStateBase64 = restoredState)
+                createNewTab(restoredUrl, restoredProfile, requestedId = restoredId, requestedCreatedAt = restoredCreatedAt, restoredStateBase64 = restoredState, activate = false, deferLoad = true)
+                tabs.getOrNull(i)?.savedScrollY = scrollPositions.optInt(i, 0)
                 tabs.getOrNull(i)?.searchQuery = searchQueries.optString(i).takeIf { it.isNotBlank() }
                 if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
@@ -2402,14 +2456,16 @@ class MainActivity : AppCompatActivity() {
     // enforcing a hard size limit. The serialized Bundle is stored per tab so the
     // browser can rebuild WebViews after process death instead of only reloading URLs.
     private fun saveWebViewState(webView: WebView): String? {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) return null
         return runCatching {
             val state = Bundle()
-            WebViewCompat.saveState(webView, state, WEBVIEW_STATE_MAX_BYTES, false)
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) WebViewCompat.saveState(webView, state, WEBVIEW_STATE_MAX_BYTES, false)
+            else webView.saveState(state) ?: return null
             val parcel = android.os.Parcel.obtain()
             try {
                 state.writeToParcel(parcel, 0)
-                android.util.Base64.encodeToString(parcel.marshall(), android.util.Base64.NO_WRAP)
+                val bytes = parcel.marshall()
+                if (bytes.size > WEBVIEW_STATE_MAX_BYTES) return null
+                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             } finally {
                 parcel.recycle()
             }
@@ -2993,17 +3049,12 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        val keep = if (splitMode) setOf(splitTopTabId, splitBottomTabId) else setOf(activeTabId)
-        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            tabs.filter { it.id !in keep }.forEach { tab ->
-                // Hiding inactive WebViews reduces view work without pretending that
-                // onPause() stops page JavaScript; renderer recovery remains authoritative.
-                tab.webView.visibility = View.GONE
-            }
-        }
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) enforceTabBudget(1)
     }
 
     override fun onDestroy() {
+        budgetWork?.let(memoryHandler::removeCallbacks)
+        discardChecks.clear()
         tabSaveRunnable?.let(tabSaveHandler::removeCallbacks)
         tabSaveRunnable = null
         synchronized(unifiedSearchLock) {
@@ -3015,17 +3066,15 @@ class MainActivity : AppCompatActivity() {
         unifiedSearchExecutor.shutdownNow()
         rendererCrashCounts.clear()
         rendererCrashTimes.clear()
-        pendingPermissionRequest?.deny()
-        pendingPermissionRequest = null
-        pendingGeoCallback?.invoke(pendingGeoOrigin, false, false)
-        pendingGeoCallback = null
+        sitePermissions.cancel()
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         runCatching { exitFullscreenVideo() }
         tabs.toList().forEach { tab ->
-            (tab.webView.parent as? ViewGroup)?.removeView(tab.webView)
-            runCatching { unregisterForContextMenu(tab.webView) }
-            runCatching { tab.webView.stopLoading(); tab.webView.destroy() }
+            tab.webView?.let { view ->
+                (view.parent as? ViewGroup)?.removeView(view)
+                runCatching { unregisterForContextMenu(view); view.stopLoading(); view.destroy() }
+            }
         }
         tabs.clear()
         PhormiBrowserPerformance.clearAll()
@@ -3033,8 +3082,21 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun applyLiveWebSettings(webView: WebView) {
+        webView.settings.apply {
+            textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
+            javaScriptEnabled = prefs.getBoolean("security_javascript", true)
+            mixedContentMode = if (prefs.getBoolean("security_mixed_content", false))
+                WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        }
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean("security_third_party_cookies", true))
+    }
+
     @SuppressLint("WrongConstant")
     private fun configureWebView(webView: WebView) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, PhormiTabMemoryPolicy.INSTALL_DIRTY_TRACKER, setOf("*"))
+        }
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             webView.setRendererPriorityPolicy(
                 WebView.RENDERER_PRIORITY_IMPORTANT,
@@ -3148,7 +3210,7 @@ class MainActivity : AppCompatActivity() {
                 error: android.webkit.WebResourceError?
             ) {
                 super.onReceivedError(view, request, error)
-                if (request?.isForMainFrame == true && view == activeWebView()) {
+                if (request?.isForMainFrame == true && view != null && view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                     val description = error?.description?.toString()?.trim().orEmpty()
                     val failedUrl = request.url?.toString().orEmpty()
@@ -3167,7 +3229,7 @@ class MainActivity : AppCompatActivity() {
                 errorResponse: android.webkit.WebResourceResponse?
             ) {
                 super.onReceivedHttpError(view, request, errorResponse)
-                if (request?.isForMainFrame == true && view == activeWebView()) {
+                if (request?.isForMainFrame == true && view != null && view == activeWebView()) {
                     swipeRefresh.isRefreshing = false
                     val code = errorResponse?.statusCode ?: 0
                     if (code >= 400) {
@@ -3197,6 +3259,14 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                val owner = tabs.firstOrNull { it.webView === view }
+                if (owner?.deferredUrl != null) return
+                owner?.savedState = null
+                if (!url.isNullOrBlank()) owner?.lastKnownUrl = url
+                owner?.documentEpoch = (owner?.documentEpoch ?: 0) + 1
+                owner?.hasDeviceAccess = false
+                view?.let { sitePermissions.cancel(it) }
+                if (view === activeWebView() && !urlBar.hasFocus() && url != NEW_TAB_URL && !url.orEmpty().startsWith("https://phormi.local/")) urlBar.setText(url.orEmpty())
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
                 super.onPageStarted(view, url, favicon)
                 if (view == activeWebView()) updateSiteSecurityIndicator()
@@ -3214,38 +3284,11 @@ class MainActivity : AppCompatActivity() {
                 handler: android.webkit.SslErrorHandler?,
                 error: android.net.http.SslError?
             ) {
-                val sslHandler = handler ?: return
-                if (view != activeWebView()) { sslHandler.cancel(); return }
-                val detail = when (error?.primaryError) {
-                    android.net.http.SslError.SSL_UNTRUSTED -> "The certificate authority is not trusted."
-                    android.net.http.SslError.SSL_EXPIRED -> "The site's certificate has expired."
-                    android.net.http.SslError.SSL_IDMISMATCH -> "The certificate does not match this site's name."
-                    android.net.http.SslError.SSL_NOTYETVALID -> "The site's certificate is not valid yet."
-                    android.net.http.SslError.SSL_DATE_INVALID -> "The certificate date is invalid."
-                    android.net.http.SslError.SSL_INVALID -> "The certificate is invalid."
-                    else -> "The secure connection could not be verified."
-                }
-                val target = error?.url?.takeIf { it.isNotBlank() } ?: view?.url.orEmpty()
-                val dialog = AlertDialog.Builder(this@MainActivity)
-                    .setTitle("This connection is not private")
-                    .setMessage("$detail\n\n$target\n\nAn attacker could intercept anything you send. Phormi will not remember an exception.")
-                    .setNegativeButton("Back to safety") { _, _ -> sslHandler.cancel() }
-                    .setNeutralButton("Advanced", null)
-                    .setCancelable(false)
-                    .create()
-                dialog.setOnShowListener {
-                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                        dialog.dismiss()
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle("Continue anyway?")
-                            .setMessage("Only continue if you fully understand the risk. This one-time choice is not saved and Phormi cannot verify the site's identity.")
-                            .setNegativeButton("Go back") { _, _ -> sslHandler.cancel() }
-                            .setPositiveButton("Continue (unsafe)") { _, _ -> sslHandler.proceed() }
-                            .setCancelable(false)
-                            .show()
-                    }
-                }
-                dialog.show()
+                handler?.cancel()
+                if (view == activeWebView()) AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Connection blocked")
+                    .setMessage("The certificate for ${error?.url ?: view?.url.orEmpty()} could not be verified. No insecure exception was allowed. Check the address and your device clock, or contact the website owner.")
+                    .setPositiveButton("Close", null).show()
             }
 
             // SafeBrowsingResponse and the threat constants arrived in API 27,
@@ -3262,7 +3305,8 @@ class MainActivity : AppCompatActivity() {
                 if (android.os.Build.VERSION.SDK_INT < 27) return
                 // Take the safe action immediately, then explain it with real detail
                 // instead of a transient toast.
-                callback?.backToSafety(true)
+                if (android.os.Build.VERSION.SDK_INT >= 27) callback?.backToSafety(true)
+                else view?.stopLoading()
                 val threat = when (threatType) {
                     WebViewClient.SAFE_BROWSING_THREAT_MALWARE -> "malware"
                     WebViewClient.SAFE_BROWSING_THREAT_PHISHING -> "phishing"
@@ -3332,6 +3376,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                    if (tabs.firstOrNull { it.webView === view }?.deferredUrl != null) return
                     val t = view?.title ?: ""
                     val u = view?.url ?: url ?: ""
                     val tab = tabs.find { it.webView === view }
@@ -3367,8 +3412,15 @@ class MainActivity : AppCompatActivity() {
                     updateFavoriteButton()
                     updateSiteSecurityIndicator()
                 }
-                tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.finish(it.id, u) }
-                saveTabs()
+                tabs.find { it.webView === view }?.let { finished ->
+                    PhormiBrowserPerformance.finish(finished.id, u)
+                    view?.evaluateJavascript(PhormiTabMemoryPolicy.INSTALL_DIRTY_TRACKER, null)
+                    if (finished.savedScrollY > 0) {
+                        val y = finished.savedScrollY; finished.savedScrollY = 0
+                        view?.post { view.scrollTo(0, y) }
+                    }
+                }
+                saveTabs(); scheduleTabBudget()
             }
         }
 
@@ -3377,26 +3429,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildChromeClient(onTitleChanged: (String?) -> Unit): WebChromeClient {
+    private fun buildChromeClient(source: WebView, onTitleChanged: (String?) -> Unit): WebChromeClient {
         return object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) { updatePageProgress(view, newProgress) }
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 super.onReceivedTitle(view, title)
                 onTitleChanged(title)
             }
 
             /** Thin horizontal load indicator under the omnibox. */
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                super.onProgressChanged(view, newProgress)
-                if (view != activeWebView()) return
-                val bar = findViewById<ProgressBar>(R.id.page_progress) ?: return
-                if (newProgress in 1..99) {
-                    bar.visibility = View.VISIBLE
-                    bar.progress = newProgress
-                } else {
-                    bar.progress = 100
-                    bar.visibility = View.GONE
-                }
-            }
 
             override fun onCreateWindow(
                 view: WebView?,
@@ -3423,7 +3464,8 @@ class MainActivity : AppCompatActivity() {
                 // invisibly in the normal host or stealing the other pane.
                 createNewTab(NEW_TAB_URL, requestedProfile = tabs.firstOrNull { it.id == sourceTabId }?.profileName)
                 val newTab = tabs.lastOrNull() ?: return false
-                val newWebView = newTab.webView
+                resumeDeferredTab(newTab)
+                val newWebView = newTab.webView ?: return false
 
                 if (wasSplit && targetPane != null && oldPaneTabId > 0) {
                     val oldPaneWebView = tabs.firstOrNull { it.id == oldPaneTabId }?.webView
@@ -3451,6 +3493,7 @@ class MainActivity : AppCompatActivity() {
                     callback?.onCustomViewHidden()
                     return
                 }
+                fullscreenOwner = tabs.firstOrNull { it.webView === source }?.id ?: -1
                 customView = view
                 customViewCallback = callback
                 originalOrientation = requestedOrientation
@@ -3490,67 +3533,15 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-                val allowed = request.resources.filter {
-                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
-                }.toTypedArray()
-                if (allowed.isEmpty()) { request.deny(); return }
-                pendingPermissionRequest?.deny()
-                pendingPermissionRequest = request
-                pendingPermissionResources = allowed
-                val needed = mutableListOf<String>()
-                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in allowed &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    needed.add(Manifest.permission.CAMERA)
-                }
-                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in allowed &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    needed.add(Manifest.permission.RECORD_AUDIO)
-                }
-                if (needed.isEmpty()) {
-                    request.grant(allowed)
-                    pendingPermissionRequest = null
-                } else {
-                    pendingPermissionPermissions = needed.toTypedArray()
-                    ActivityCompat.requestPermissions(this@MainActivity, pendingPermissionPermissions, REQ_MEDIA_PERMISSIONS)
-                }
+                sitePermissions.requestMedia(source, request)
             }
-
-            override fun onGeolocationPermissionsShowPrompt(
-                origin: String?,
-                callback: android.webkit.GeolocationPermissions.Callback?
-            ) {
-                pendingGeoCallback?.invoke(pendingGeoOrigin, false, false)
-                pendingGeoCallback = null
-                pendingGeoOrigin = null
-                val normalized = PhormiSitePermissions.normalizeOrigin(origin)
-                if (normalized.isBlank()) {
-                    callback?.invoke(origin, false, false)
-                    return
-                }
-                // A remembered per-site decision short-circuits the prompt.
-                val remembered = PhormiSitePermissions.decision(sitePermissionStore.read(normalized))
-                if (remembered != null) {
-                    callback?.invoke(origin, remembered, false)
-                    return
-                }
-                if (ContextCompat.checkSelfPermission(
-                        this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    // Ask for the app-level permission first, then still ask the user
-                    // about this specific origin. Holding the OS permission is not
-                    // consent for every website.
-                    pendingGeoOrigin = normalized
-                    pendingGeoCallback = callback
-                    ActivityCompat.requestPermissions(
-                        this@MainActivity,
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                        REQ_GEOLOCATION
-                    )
-                    return
-                }
-                showGeolocationPrompt(normalized, callback)
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                sitePermissions.cancelled(request)
             }
+            override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) {
+                sitePermissions.requestLocation(source, origin, callback)
+            }
+            override fun onGeolocationPermissionsHidePrompt() { sitePermissions.cancel(source) }
 
             override fun onShowFileChooser(
                 webViewParam: WebView?,
@@ -3559,6 +3550,7 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
+                fileChooserOwner = tabs.firstOrNull { it.webView === source }?.id ?: -1
                 val params = fileChooserParams ?: run {
                     this@MainActivity.filePathCallback = null
                     return false
@@ -3588,34 +3580,7 @@ class MainActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            REQ_MEDIA_PERMISSIONS -> {
-                val request = pendingPermissionRequest
-                if (request != null) {
-                    val granted = grantResults.isNotEmpty() &&
-                        grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-                    // Grant only the audio/video resources we filtered earlier.
-                    // request.grant(request.resources) could over-grant if WebView ever
-                    // adds a new resource type to the same request.
-                    val resources = pendingPermissionResources
-                    if (granted && resources.isNotEmpty()) request.grant(resources) else request.deny()
-                }
-                pendingPermissionRequest = null
-                pendingPermissionPermissions = emptyArray()
-                pendingPermissionResources = emptyArray()
-            }
-            REQ_GEOLOCATION -> {
-                val granted = grantResults.isNotEmpty() &&
-                    grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-                val callback = pendingGeoCallback
-                val origin = pendingGeoOrigin
-                pendingGeoCallback = null
-                pendingGeoOrigin = null
-                if (!granted) callback?.invoke(origin, false, false)
-                else if (origin != null) showGeolocationPrompt(origin, callback)
-                else callback?.invoke(origin, false, false)
-            }
-        }
+        sitePermissions.onResult(requestCode)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -3675,6 +3640,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 MenuActivity.ACTION_TAB_ENVIRONMENT -> showTabEnvironmentChooser()
                 MenuActivity.ACTION_TABS_RESULT -> data?.let(::handleTabsOverviewResult)
+                MenuActivity.ACTION_HOME -> showStartPage()
                 MenuActivity.ACTION_BACK -> activeWebView()?.let { if (it.canGoBack()) it.goBack() }
                 MenuActivity.ACTION_FORWARD -> activeWebView()?.let { if (it.canGoForward()) it.goForward() }
                 MenuActivity.ACTION_REFRESH -> refreshActivePage()
@@ -3753,7 +3719,7 @@ class MainActivity : AppCompatActivity() {
                     val groupId = data.getStringExtra("group_id").orEmpty()
                     val tabId = data.getIntExtra("tab_id", -1)
                     if (groupId.isNotBlank() && tabId > 0) {
-                        TabGroupManager(this).assignTab(groupId, tabId, tabs.find { it.id == tabId }?.webView?.url.orEmpty())
+                        TabGroupManager(this).assignTab(groupId, tabId, tabs.find { it.id == tabId }?.currentUrl.orEmpty())
                     }
                 }
                 "reassign_env" -> {
@@ -3908,7 +3874,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val source = tabs.find { it.id == activeTabId } ?: return
-        val currentUrl = source.webView.url?.takeIf { it.startsWith("http") } ?: return
+        val currentUrl = source.currentUrl.takeIf { it.startsWith("http") } ?: return
         val originalId = source.id
         createNewTab(currentUrl, source.profileName, forceGhost = false)
         val duplicateId = activeTabId
@@ -3920,7 +3886,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSiteLockDialog() {
         val tab = tabs.firstOrNull { it.id == activeTabId } ?: return
-        val view = tab.webView
+        val view = tab.webView ?: return
         val url = view.url.orEmpty()
         if (!url.startsWith("http")) return
         val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
@@ -3998,8 +3964,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Full-page network error surface with a real retry action. */
-    private fun showNetworkErrorPage(view: WebView?, url: String, detail: String) {
-        val safeUrl = Html.escapeHtml(url)
+    private fun showNetworkErrorPage(view: WebView, url: String, detail: String) {
+        val safeUrl = Html.escapeHtml(url).replace("'", "&#39;")
         val safeDetail = Html.escapeHtml(detail)
         val page = """
             <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -4014,26 +3980,12 @@ class MainActivity : AppCompatActivity() {
         view?.loadDataWithBaseURL(url, page, "text/html", "UTF-8", null)
     }
 
-    private fun showGeolocationPrompt(origin: String, callback: android.webkit.GeolocationPermissions.Callback?) {
-        val choices = arrayOf("Allow once", "Always allow on this site", "Block")
-        AlertDialog.Builder(this)
-            .setTitle("Location access")
-            .setMessage("$origin wants to use your device location.")
-            .setItems(choices) { _, which ->
-                val (policy, args) = PhormiSitePermissions.grantFor(which)
-                if (policy.isNotEmpty()) sitePermissionStore.write(origin, policy)
-                callback?.invoke(origin, args.first, args.second)
-            }
-            .setOnCancelListener { callback?.invoke(origin, false, false) }
-            .show()
-    }
-
-    /** Visible, tappable connection state instead of an always-identical search glyph. */
     private fun updateSiteSecurityIndicator() {
         val indicator = findViewById<TextView>(R.id.btn_site_info) ?: return
-        val url = activeWebView()?.url.orEmpty()
+        val page = activeWebView()
+        val url = page?.url.orEmpty()
         when {
-            url.startsWith("https://") -> {
+            url.startsWith("https://") && page?.certificate != null -> {
                 indicator.text = "🔒"
                 indicator.contentDescription = "Secure HTTPS connection. Tap for site information."
                 indicator.setTextColor(Color.rgb(134, 239, 172))
@@ -4055,9 +4007,9 @@ class MainActivity : AppCompatActivity() {
     private fun showSiteInfo() {
         val view = activeWebView()
         val url = view?.url.orEmpty()
-        val secure = url.startsWith("https://")
+        val secure = url.startsWith("https://") && view?.certificate != null
         val host = runCatching { Uri.parse(url).host }.getOrNull().orEmpty().ifBlank { "New tab" }
-        val origin = PhormiSitePermissions.normalizeOrigin(url)
+        val origin = PhormiSitePermissions.secureOrigin(url) ?: PhormiSitePermissions.normalizeOrigin(url)
         val geo = PhormiSitePermissions.decision(sitePermissionStore.read(origin))
         val geoLabel = when (geo) { true -> "Allowed"; false -> "Blocked"; else -> "Ask every time" }
         val message = buildString {
@@ -4071,9 +4023,11 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Site information · $host")
             .setMessage(message)
             .setPositiveButton("Close", null)
+            .setNegativeButton("Reload / end access") { _, _ -> sitePermissions.cancel(); view?.reload() }
             .setNeutralButton("Reset site permissions") { _, _ ->
                 if (origin.isNotBlank()) {
                     PhormiSitePermissions.forget(origin, sitePermissionStore)
+                    sitePermissions.cancel(); view?.reload()
                     Toast.makeText(this, "Site permissions reset for $host", Toast.LENGTH_SHORT).show()
                     updateSiteSecurityIndicator()
                 }
@@ -4190,7 +4144,7 @@ class MainActivity : AppCompatActivity() {
     /** Push the UA/viewport setting to every open tab; only the active tab is reloaded. */
     private fun applyDesktopModeToAllTabs() {
         tabs.forEach { tab ->
-            runCatching { applyDesktopMode(tab.webView, isDesktopModeFor(tab.webView.url.orEmpty())) }
+            tab.webView?.let { view -> runCatching { applyDesktopMode(view, isDesktopModeFor(tab.currentUrl)) } }
         }
     }
 
@@ -4395,6 +4349,7 @@ class MainActivity : AppCompatActivity() {
     fun handleCentralHubCommand(command: JSONObject): JSONObject {
         return try {
             when (command.optString("command")) {
+                "memory_state" -> tabMemoryDiagnostics().put("ok", true)
                 "state" -> JSONObject().put("ok", true)
                     .put("tabs", tabs.size)
                     .put("ghostTabs", tabs.count { it.isGhost })

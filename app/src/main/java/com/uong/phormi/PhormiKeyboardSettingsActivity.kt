@@ -19,7 +19,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     private val wallpaperPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(uri, flags)
             }
             PhormiKeyboardPreferences.setWallpaperUri(this, uri.toString())
@@ -45,15 +45,26 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Languages"))
         content.addView(TextView(this).apply{
-            text="Latin-script typing is supported for English, French, Spanish, Portuguese, German, Italian, Indonesian, Turkish, Yoruba, Igbo, Hausa, Swahili, Vietnamese, Polish, Dutch, Swedish, Norwegian, Danish, Finnish, Czech, Romanian and Hungarian. QWERTY, AZERTY (French) and QWERTZ (German/Czech) layouts, locale long-press accents, glide typing, offline word lists and local correction follow the selected subtype."
+            text="Character layouts: " + PhormiKeyboardLayouts.supported.joinToString(", ") { java.util.Locale(it).displayLanguage } + ". Korean supports two-set Hangul composition. Offline glide: English, French, Spanish, Portuguese, German, Italian, Indonesian and Turkish. Chinese, Japanese and Indic composition are not yet available."
             textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
         })
-        content.addView(Button(this).apply{text="Choose Phormi language";isAllCaps=false;setOnClickListener{runCatching{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SUBTYPE_SETTINGS))}.onFailure{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))}}})
-        content.addView(TextView(this).apply{text="Android controls active IME subtypes. Scripts that need their own keyboard (Arabic, Devanagari, CJK, Cyrillic, Greek, Hebrew and others) are not advertised until a real layout and composition flow exist for them.";textSize=12f;setTextColor(Color.rgb(148,163,184));setPadding(0,dp(5),0,dp(8))})
+        content.addView(Button(this).apply {
+            text = "Choose Phormi language"; isAllCaps = false
+            setOnClickListener {
+                val languages = listOf("") + PhormiKeyboardLayouts.supported.toList()
+                val labels = languages.map { if (it.isBlank()) "Follow Android keyboard language" else java.util.Locale(it).getDisplayLanguage(java.util.Locale(it)) }
+                androidx.appcompat.app.AlertDialog.Builder(this@PhormiKeyboardSettingsActivity).setTitle("Keyboard language")
+                    .setSingleChoiceItems(labels.toTypedArray(), languages.indexOf(PhormiKeyboardPreferences.language(this@PhormiKeyboardSettingsActivity))) { dialog, index ->
+                        PhormiKeyboardPreferences.setLanguage(this@PhormiKeyboardSettingsActivity, languages[index])
+                        dialog.dismiss()
+                    }.show()
+            }
+        })
+        content.addView(TextView(this).apply { text = "Select a language here, or follow Android's active keyboard subtype. Korean uses two-set Hangul: vowels and final consonants combine while typing; Backspace reverses one key. Glide is disabled in passwords, addresses and private fields."; textSize=12f; setTextColor(Color.rgb(148,163,184)); setPadding(0,dp(5),0,dp(8)) })
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{
-            text="Use the Move and Size controls on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
+            text="Use the Floating and Resize controls in Tools on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
             textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
         })
         content.addView(Button(this).apply{
@@ -65,15 +76,19 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         })
 
         content.addView(sectionTitle("Appearance"))
-        // Two rows of four instead of eight buttons squeezed into one clipped row.
         val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand")
-        themes.asList().chunked(4).forEach{group->
-            val themeRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
-            group.forEach{name->
-                val index=themes.indexOf(name)
-                themeRow.addView(Button(this).apply{text=name;isAllCaps=false;textSize=11f;setOnClickListener{PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity,index);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"$name appearance saved")}},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(2),dp(2),dp(2),dp(2))})
+        themes.toList().chunked(2).forEachIndexed { rowIndex, names ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            names.forEachIndexed { column, name ->
+                val index = rowIndex * 2 + column
+                row.addView(Button(this).apply {
+                    text = (if (PhormiKeyboardPreferences.theme(this@PhormiKeyboardSettingsActivity) == index) "✓ " else "") + name
+                    isAllCaps = false
+                    minimumHeight = dp(52)
+                    setOnClickListener { PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardSettingsActivity, index); render() }
+                }, LinearLayout.LayoutParams(0, -2, 1f))
             }
-            content.addView(themeRow)
+            content.addView(row)
         }
         content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
         content.addView(Button(this).apply{text="Choose keyboard wallpaper";isAllCaps=false;setOnClickListener{wallpaperPicker.launch(arrayOf("image/*"))}})
@@ -82,10 +97,10 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Keyboard behavior"))
         option(content,"Suggestions","Show word suggestions when the editor does not provide its own completions.",PhormiKeyboardPreferences.suggestions(this),PhormiKeyboardPreferences.KEY_SUGGESTIONS)
+        option(content,"Online English suggestions (optional)","Off by default. When enabled, ordinary English word prefixes are sent to Datamuse. Password and private fields are excluded. Voice typing uses your device’s speech provider separately.",PhormiKeyboardPreferences.onlineSuggestions(this),PhormiKeyboardPreferences.KEY_ONLINE_SUGGESTIONS)
         option(content,"Autocorrect","Apply conservative local corrections for common typing mistakes.",PhormiKeyboardPreferences.autocorrect(this),PhormiKeyboardPreferences.KEY_AUTOCORRECT)
         option(content,"Auto-capitalization","Capitalize sentence starts and the first word in a text field.",PhormiKeyboardPreferences.autoCaps(this),PhormiKeyboardPreferences.KEY_AUTO_CAPS)
         option(content,"Contextual emoji","Suggest Unicode emoji from typed context, on-device (not image stickers).",PhormiKeyboardPreferences.aiEmoji(this),PhormiKeyboardPreferences.KEY_AI_EMOJI)
-        option(content,"Online word lookups","Off by default. When enabled, English word prefixes are sent to Datamuse/dictionaryapi.dev to enrich suggestions. Everything else stays on this device.",PhormiKeyboardPreferences.cloudSuggestions(this),PhormiKeyboardPreferences.KEY_CLOUD_SUGGESTIONS)
         option(content,"Key vibration","Use device haptic feedback for key presses.",PhormiKeyboardPreferences.haptic(this),PhormiKeyboardPreferences.KEY_HAPTIC)
         option(content,"Key sounds","Play a short key sound where the device allows it.",PhormiKeyboardPreferences.sound(this),PhormiKeyboardPreferences.KEY_SOUND)
 

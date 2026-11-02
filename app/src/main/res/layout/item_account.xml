@@ -8,7 +8,7 @@
     android:paddingTop="14dp"
     android:paddingBottom="14dp"
     android:layout_marginBottom="8dp"
-    android:background="#1E293B"
+    android:background="@color/phormi_surface"
     android:clickable="true"
     android:focusable="true">
 
@@ -16,7 +16,7 @@
         android:id="@+id/account_label"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#F1F5F9"
+        android:textColor="@color/phormi_text"
         android:textSize="15sp"
         android:textStyle="bold" />
 
@@ -25,6 +25,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="3dp"
-        android:textColor="#94A3B8"
+        android:textColor="@color/phormi_secondary"
         android:textSize="12sp" />
 </LinearLayout>

@@ -22,12 +22,12 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(11, 18, 32))
+            setBackgroundColor(PhormiUiColors.surface(this@PhormiBrowserSettingsActivity))
         }
         val header = TextView(this).apply {
             text = "‹    Browser settings"
             textSize = 21f
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.text(this@PhormiBrowserSettingsActivity))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(20), 0, dp(20), 0)
             setOnClickListener { finish() }
@@ -47,10 +47,10 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         val zoomLabel = description(content, "Website text size · ${PhormiBrowserPreferences.textZoom(this)}%")
         val preview = TextView(this).apply {
             text = "A more comfortable way to read the web."
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.text(this@PhormiBrowserSettingsActivity))
             setPadding(dp(18), dp(18), dp(18), dp(18))
             background = GradientDrawable().apply {
-                setColor(Color.rgb(23, 34, 53)); cornerRadius = dp(16).toFloat()
+                setColor(PhormiUiColors.surface(this@PhormiBrowserSettingsActivity)); cornerRadius = dp(16).toFloat()
             }
         }
         val slider = SeekBar(this).apply {
@@ -78,13 +78,22 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         button(content, "Reset text size") { slider.progress = 4; updateZoom(4) }
 
         section(content, "Controls")
-        option(content, "Show bottom navigation bar", "Hide it to give websites more room. AI, Back and Forward remain in the top bar / browser menu.",
-            PhormiBrowserPreferences.BOTTOM_TOOLBAR, true)
+        option(content, "Show bottom navigation bar", "Hide it to give websites more room. AI, Back and Forward remain in the browser menu.",
+            PhormiBrowserPreferences.BOTTOM_TOOLBAR, false)
         option(content, "Pull to refresh", "Off by default to avoid reloading while scrolling. If enabled, use a long deliberate pull at the top of a page.",
             PhormiBrowserPreferences.PULL_TO_REFRESH, false)
-        description(content, "The ↻ button in the top bar always refreshes the current page.")
+        description(content, "The top-bar button stops a loading page or refreshes a completed page.")
 
         section(content, "Tabs and sessions")
+        button(content, "Live page budget · ${PhormiBrowserPreferences.liveTabBudget(this)}") {
+            val choices = intArrayOf(2, 3, 4, 6, 8)
+            AlertDialog.Builder(this).setTitle("Live page budget")
+                .setItems(choices.map { "$it live pages" }.toTypedArray()) { _, index ->
+                    prefs.edit().putInt("live_tab_budget", choices[index]).apply()
+                    recreate()
+                }.show()
+        }
+        description(content, "Inactive pages are saved and their WebViews destroyed to release memory. Switching back recreates the page and its navigation history. Active/split tabs, AI tasks, device access, playing media and unsaved edits are protected; these may temporarily exceed the budget. Everything stays on this device.")
         button(content, "Tab retention · ${retentionLabel()}") { showRetentionChooser() }
         description(content, "Normal tabs have independent pages and navigation. Sign-ins are shared across tabs in the same browsing environment, as in other browsers. Use a separate environment for another account.")
         button(content, "Separate account environments") {
@@ -98,7 +107,7 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
     private fun section(root: LinearLayout, title: String) {
         root.addView(TextView(this).apply {
             text = title
-            setTextColor(Color.rgb(56, 189, 248))
+            setTextColor(PhormiUiColors.accent(this@PhormiBrowserSettingsActivity))
             textSize = 17f
             setPadding(0, dp(18), 0, dp(8))
         })
@@ -107,7 +116,7 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
     private fun description(root: LinearLayout, value: String): TextView = TextView(this).apply {
         text = value
         textSize = 13f
-        setTextColor(Color.rgb(148, 163, 184))
+        setTextColor(PhormiUiColors.secondary(this@PhormiBrowserSettingsActivity))
         setPadding(dp(4), dp(6), dp(4), dp(8))
         root.addView(this)
     }
@@ -123,7 +132,7 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
             text = title
             textSize = 16f
             minHeight = dp(48)
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.text(this@PhormiBrowserSettingsActivity))
             isChecked = prefs.getBoolean(key, default)
             setOnCheckedChangeListener { _, value -> prefs.edit().putBoolean(key, value).apply() }
         })

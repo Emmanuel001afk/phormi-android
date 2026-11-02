@@ -109,6 +109,7 @@ class PhormiKeyboardResizeOverlay(
                 if (handle == Handle.NONE || handle == Handle.DONE) return true
                 val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(1).toFloat()
                 val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(1).toFloat()
+                val keyboardBase = dp(312f)
                 val dx = event.rawX - startRawX
                 val dy = event.rawY - startRawY
                 var widthScale = startWidth
@@ -127,32 +128,32 @@ class PhormiKeyboardResizeOverlay(
                     }
                     Handle.RIGHT -> widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
                     Handle.TOP -> {
-                        heightScale = (startHeight - dy / screenH).coerceIn(0.60f, 1.40f)
+                        heightScale = (startHeight - dy / keyboardBase).coerceIn(0.60f, 1.40f)
                         // Height changes only; position remains independent.
                     }
-                    Handle.BOTTOM -> heightScale = (startHeight + dy / screenH).coerceIn(0.60f, 1.40f)
+                    Handle.BOTTOM -> heightScale = (startHeight + dy / keyboardBase).coerceIn(0.60f, 1.40f)
                     Handle.TOP_LEFT -> {
                         widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight - dy / screenH).coerceIn(0.60f, 1.40f)
+                        heightScale = (startHeight - dy / keyboardBase).coerceIn(0.60f, 1.40f)
                         val widthDeltaPx = (widthScale - startWidth) * screenW
-                        val heightDeltaPx = (heightScale - startHeight) * screenH
+                        val heightDeltaPx = (heightScale - startHeight) * keyboardBase
                         offsetX = (startOffsetX - widthDeltaPx / screenW * 1.8f).coerceIn(-0.9f, 0.9f)
                         if (allowMove) offsetY = (startOffsetY - heightDeltaPx / screenH * 1.8f).coerceIn(-0.9f, 0.9f)
                     }
                     Handle.TOP_RIGHT -> {
                         widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight - dy / screenH).coerceIn(0.60f, 1.40f)
-                        val heightDeltaPx = (heightScale - startHeight) * screenH
+                        heightScale = (startHeight - dy / keyboardBase).coerceIn(0.60f, 1.40f)
+                        val heightDeltaPx = (heightScale - startHeight) * keyboardBase
                         if (allowMove) offsetY = (startOffsetY - heightDeltaPx / screenH * 1.8f).coerceIn(-0.9f, 0.9f)
                     }
                     Handle.BOTTOM_LEFT -> {
                         widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight + dy / screenH).coerceIn(0.60f, 1.40f)
+                        heightScale = (startHeight + dy / keyboardBase).coerceIn(0.60f, 1.40f)
                         // Width changes only; position remains independent.
                     }
                     Handle.BOTTOM_RIGHT -> {
                         widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight + dy / screenH).coerceIn(0.60f, 1.40f)
+                        heightScale = (startHeight + dy / keyboardBase).coerceIn(0.60f, 1.40f)
                     }
                     else -> Unit
                 }

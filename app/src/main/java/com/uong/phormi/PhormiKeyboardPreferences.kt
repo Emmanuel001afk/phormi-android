@@ -16,12 +16,25 @@ object PhormiKeyboardPreferences {
     private const val OFFSET_Y = "keyboard_offset_y"
     private const val FLOATING = "keyboard_floating"
     private const val AI_EMOJI = "ai_emoji"
-    private const val CLOUD_SUGGESTIONS = "cloud_suggestions"
+    private const val CLOUD_SUGGESTIONS = "online_suggestions"
     private const val THEME = "keyboard_theme"
     private const val WALLPAPER_URI = "keyboard_wallpaper_uri"
     private const val POLLINATIONS_KEY = "pollinations_api_key"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    const val KEY_LANGUAGE = "selected_language"
+    fun language(context: Context): String = prefs(context).getString(KEY_LANGUAGE, "").orEmpty().takeIf { it in PhormiKeyboardLayouts.supported }.orEmpty()
+    fun setLanguage(context: Context, language: String) { prefs(context).edit().putString(KEY_LANGUAGE, language).apply() }
+
+    const val KEY_GLIDE = "offline_glide"
+    fun glide(context: Context) = prefs(context).getBoolean(KEY_GLIDE, true)
+
+    const val KEY_ONLINE_SUGGESTIONS = "online_suggestions"
+    fun onlineSuggestions(context: Context) = prefs(context).let {
+        if (it.contains(KEY_ONLINE_SUGGESTIONS)) it.getBoolean(KEY_ONLINE_SUGGESTIONS, false)
+        else it.getBoolean("cloud_suggestions", false)
+    }
 
     fun suggestions(context: Context) = prefs(context).getBoolean(SUGGESTIONS, true)
     fun autocorrect(context: Context) = prefs(context).getBoolean(AUTOCORRECT, true)
@@ -34,7 +47,7 @@ object PhormiKeyboardPreferences {
      * Sending typed prefixes to third-party dictionary services is opt-in and off by
      * default. The keyboard is offline-first unless the user explicitly enables this.
      */
-    fun cloudSuggestions(context: Context) = prefs(context).getBoolean(CLOUD_SUGGESTIONS, false)
+    fun cloudSuggestions(context: Context) = onlineSuggestions(context)
 
     fun pollinationsKey(context: Context): String =
         prefs(context).getString(POLLINATIONS_KEY, "").orEmpty()

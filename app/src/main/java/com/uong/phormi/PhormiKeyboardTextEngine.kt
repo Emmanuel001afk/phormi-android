@@ -4,6 +4,7 @@ import android.content.Context
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -72,31 +73,30 @@ object PhormiKeyboardTextEngine {
     fun shouldUsePredictions(info: EditorInfo?): Boolean = info != null && !isPrivateEditor(info) && !isUriLike(info) && (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0 && (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
 
     fun localeFor(info: EditorInfo?): Locale {
+        currentService()?.let { service ->
+            PhormiKeyboardPreferences.language(service).takeIf { it.isNotBlank() }?.let { return Locale.forLanguageTag(it) }
+        }
         val subtype = currentSubtype()
         val tag = subtype?.locale?.replace('_', '-')?.takeIf { it.isNotBlank() }
         return if (tag != null) Locale.forLanguageTag(tag) else info?.hintLocales?.get(0) ?: Locale.getDefault()
     }
 
-    /** Uses a public accessor; reflecting into a private Companion field was fragile
-     *  under R8 and returned null whenever the IME had not been created yet. */
-    private fun currentSubtype() = PhormiKeyboardServiceV2.activeInstance()?.currentInputSubtype()
+    private fun currentSubtype() = PhormiKeyboardServiceV2.activeInstance()
+        ?.getSystemService(InputMethodManager::class.java)?.currentInputMethodSubtype
 
     private fun currentService(): PhormiKeyboardServiceV2? = PhormiKeyboardServiceV2.activeInstance()
 
-    fun currentWord(ic: InputConnection?): String {
-        val before = ic?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
-        if (before.isEmpty() || (before.last().isLetter().not() && before.last() != '\'' && before.last() != '’')) return ""
-        return before.takeLastWhile { it.isLetter() || it == '\'' || it == '’' }.takeLast(48)
-    }
+    fun currentWord(ic: InputConnection?): String =
+        PhormiKeyboardInputRules.currentWord(ic?.getTextBeforeCursor(192, 0)?.toString().orEmpty())
 
     fun previousWord(ic: InputConnection?, locale: Locale = Locale.getDefault()): String {
         val before = ic?.getTextBeforeCursor(180, 0)?.toString().orEmpty()
-        val words = before.split(Regex("[^\\p{L}'’]+" )).filter(String::isNotBlank)
-        val currentIsWord = before.lastOrNull()?.let { it.isLetter() || it == '\'' || it == '’' } == true
+        val words = before.split(Regex("[^\\p{L}\\p{M}'’]+" )).filter(String::isNotBlank)
+        val currentIsWord = before.lastOrNull()?.let { PhormiKeyboardInputRules.isWordPart(it) } == true
         return (if (currentIsWord) words.dropLast(1).lastOrNull() else words.lastOrNull())
             .orEmpty().lowercase(locale)
     }
-    fun supportedLanguageLabels(): List<String> = PhormiKeyboardLanguageData.supportedLanguages().map { Locale(it).getDisplayLanguage(Locale.getDefault()).ifBlank { it } }
+    fun supportedLanguageLabels(): List<String> = PhormiKeyboardLayouts.supported.map { Locale(it).getDisplayLanguage(Locale.getDefault()).ifBlank { it } }
     fun languageName(locale: Locale): String = Locale(locale.language).getDisplayLanguage(Locale.getDefault()).ifBlank { locale.language }
 
     fun suggestions(context: Context, prefix: String, locale: Locale = activeLocale(context)): List<String> {
@@ -106,7 +106,7 @@ object PhormiKeyboardTextEngine {
         PhormiKeyboardDictionary.completions(context, locale, p).forEach(result::add)
         // fruit/common dictionary API boost (offline + remote cache)
         PhormiKeyboardDictionaryApi.suggestionsFor(p, locale).filter { !it.equals(p, true) }.forEach(result::add)
-        PhormiKeyboardDictionaryApi.loadDisk(context, p, locale).filter { !it.equals(p, true) }.forEach(result::add)
+        (if (PhormiKeyboardPreferences.onlineSuggestions(context)) PhormiKeyboardDictionaryApi.loadDisk(context, p, locale) else emptyList()).filter { !it.equals(p, true) }.forEach(result::add)
         correctionsByLanguage[locale.language]?.get(p)?.takeIf { it.isNotBlank() && !it.equals(p, true) }?.let(result::add)
         PhormiKeyboardSystemSpellChecker.cached(p, locale).filter { it.isNotBlank() && !it.equals(p, true) }.forEach(result::add)
         PhormiKeyboardSystemSpellChecker.request(context, p, locale)
@@ -130,6 +130,7 @@ object PhormiKeyboardTextEngine {
         if ("${locale.language}|$lower" in ignoredCorrections(context) ||
             loadLearned(context).any { it.equals(original, true) }) return null
         if (original.drop(1).any(Char::isUpperCase)) return null // don't rewrite acronyms/names
+        if (PhormiKeyboardDictionary.contains(context, locale, lower)) return null
         val candidate = correctionsByLanguage[locale.language]?.get(lower)
             ?: loadLearnedCorrections(context)[lower]
             ?: PhormiKeyboardSystemSpellChecker.cached(lower, locale).firstOrNull {
@@ -231,12 +232,10 @@ object PhormiKeyboardTextEngine {
     }
 
     fun autoCapitalize(ic: InputConnection?, info: EditorInfo?): Boolean {
-        if (ic == null || info == null || isPrivateEditor(info)) return false
-        val type = info.inputType
-        if (type and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 || type and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) return true
-        if (type and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0) return false
-        val before = ic.getTextBeforeCursor(80, 0)?.toString().orEmpty().trimEnd()
-        return before.isEmpty() || before.lastOrNull() in setOf('.', '!', '?', ':', ';', '\n')
+        if (ic == null || info == null || isPrivateEditor(info) || isUriLike(info)) return false
+        val modes = info.inputType and (InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or
+            InputType.TYPE_TEXT_FLAG_CAP_WORDS or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
+        return modes != 0 && ic.getCursorCapsMode(modes) != 0
     }
 
     fun contextBeforeCursor(ic: InputConnection?): String {

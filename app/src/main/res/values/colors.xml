@@ -1,0 +1,8 @@
+<resources>
+    <color name="phormi_background">#FAF7F5</color>
+    <color name="phormi_surface">#FFFFFF</color>
+    <color name="phormi_text">#172033</color>
+    <color name="phormi_secondary">#526173</color>
+    <color name="phormi_accent">#006A93</color>
+    <color name="phormi_border">#D4DDE7</color>
+</resources>

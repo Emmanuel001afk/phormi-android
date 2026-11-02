@@ -26,6 +26,8 @@ object PhormiKeyboardDictionary {
         Lexicon((bundled + fallback).distinct())
     }
 
+    fun glideWords(context: Context, locale: Locale): List<String> = lexicon(context, locale).words
+
     fun contains(context: Context, locale: Locale, word: String): Boolean =
         lexicon(context, locale).rank.containsKey(word.lowercase(locale))
 

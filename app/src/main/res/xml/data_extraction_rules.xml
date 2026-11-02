@@ -7,6 +7,7 @@
         <exclude domain="sharedpref" path="phormi_secure_secrets.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_dict_cache.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_emoji.xml" />
@@ -20,6 +21,7 @@
         <exclude domain="sharedpref" path="phormi_secure_secrets.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_clipboard.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_text.xml" />
+        <exclude domain="sharedpref" path="phormi_keyboard_dict_cache.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending_text.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_pending.xml" />
         <exclude domain="sharedpref" path="phormi_keyboard_emoji.xml" />

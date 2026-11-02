@@ -13,7 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 /** Local Favorites/Bookmarks screen backed by the canonical PhormiFavorites store. */
-class BookmarksActivity : AppCompatActivity() {
+open class BookmarksActivity : AppCompatActivity() {
 
     data class Bookmark(val title: String, val url: String, val addedAt: Long)
 
@@ -110,8 +110,6 @@ class BookmarksActivity : AppCompatActivity() {
     private fun promptAdd() {
         val input = EditText(this).apply {
             hint = "https://example.com"
-            setTextColor(0xFFF1F5F9.toInt())
-            setHintTextColor(0xFF64748B.toInt())
             setSingleLine()
         }
         AlertDialog.Builder(this)

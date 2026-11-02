@@ -21,12 +21,12 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 18, 18, 24)
-            setBackgroundColor(0xFF08101C.toInt())
+            setBackgroundColor(PhormiUiColors.surface(this@PhormiSecurityCenterActivity))
         }
         root.addView(TextView(this).apply {
             text = "Phormi Security & Privacy"
             textSize = 22f
-            setTextColor(0xFFF8FAFC.toInt())
+            setTextColor(PhormiUiColors.text(this@PhormiSecurityCenterActivity))
             setPadding(0, 0, 0, 16)
         })
 
@@ -40,7 +40,7 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
         }
         addSwitch(root, "JavaScript", prefs.getBoolean("security_javascript", true)) { checked ->
             prefs.edit().putBoolean("security_javascript", checked).apply()
-            Toast.makeText(this, "JavaScript setting saved; reload pages to apply.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "JavaScript setting saved. Open tabs update when you return; reload to reset page content.", Toast.LENGTH_SHORT).show()
         }
         // Keep normal browser compatibility by default. Users can explicitly harden this.
         addSwitch(root, "Third-party cookies", prefs.getBoolean("security_third_party_cookies", true)) { checked ->
@@ -62,18 +62,18 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
         }
         root.addView(TextView(this).apply {
             text = "Security controls apply to Phormi’s browser engine. JavaScript and third-party cookies can be disabled for stricter privacy, while mixed HTTP content stays blocked by default. Site locks and Browser Lock are managed separately."
-            setTextColor(0xFF94A3B8.toInt())
+            setTextColor(PhormiUiColors.secondary(this@PhormiSecurityCenterActivity))
             textSize = 13f
             setPadding(0, 18, 0, 0)
         })
         root.addView(Button(this).apply { text = "Close"; setOnClickListener { finish() } })
-        setContentView(root)
+        setContentView(ScrollView(this).apply { addView(root) })
     }
 
     private fun addSwitch(root: LinearLayout, label: String, checked: Boolean, action: (Boolean) -> Unit) {
         root.addView(Switch(this).apply {
             text = label
-            setTextColor(0xFFE2E8F0.toInt())
+            setTextColor(PhormiUiColors.text(this@PhormiSecurityCenterActivity))
             isChecked = checked
             setOnCheckedChangeListener { _, value -> action(value) }
         })
@@ -106,6 +106,19 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
                 CookieManager.getInstance().removeAllCookies(null)
                 CookieManager.getInstance().flush()
                 WebStorage.getInstance().deleteAllData()
+                android.webkit.WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword()
+                android.webkit.GeolocationPermissions.getInstance().clearAll()
+                if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.MULTI_PROFILE)) {
+                    val store = androidx.webkit.ProfileStore.getInstance()
+                    store.getAllProfileNames().forEach { name ->
+                        runCatching {
+                            val profile = store.getOrCreateProfile(name)
+                            profile.cookieManager.removeAllCookies(null)
+                            profile.webStorage.deleteAllData()
+                            profile.geolocationPermissions.clearAll()
+                        }
+                    }
+                }
                 runCatching { WebView(this).apply { clearCache(true); destroy() } }
                 Toast.makeText(this, "Browser site data cleared", Toast.LENGTH_LONG).show()
             }.show()

@@ -107,19 +107,19 @@ for path in kotlin_paths:
         if ref not in ids:
             errors.append(f"{path.name} references unknown R.id.{ref}")
 
-# IME subtypes must be Latin-script (the only layouts that exist) and ASCII capable.
+# Subtypes must match actual layouts/composers, including the new non-Latin engines.
 ime_path = RES / "xml/method_phormi_keyboard.xml"
-locales_path = SRC / "PhormiKeyboardLocales.kt"
-if ime_path.is_file() and locales_path.is_file():
-    block = re.search(r"latinLanguages[^=]*=\s*setOf\((.*?)\)", locales_path.read_text(), re.S)
-    latin = set(re.findall(r'"(\w+)"', block.group(1))) if block else set()
+layouts_path = SRC / "PhormiKeyboardLayouts.kt"
+if ime_path.is_file() and layouts_path.is_file():
+    block = re.search(r"supported[^=]*=\s*setOf\((.*?)\)", layouts_path.read_text(), re.S)
+    supported = set(re.findall(r'"(\w+)"', block.group(1))) if block else set()
     for subtype in ET.parse(ime_path).iter("subtype"):
         locale = subtype.get(android_ns + "imeSubtypeLocale", "")
         language = locale.split("_")[0].lower()
-        if language not in latin:
+        if language not in supported:
             errors.append(f"IME subtype advertises an unsupported script: {locale}")
-        if subtype.get(android_ns + "isAsciiCapable") != "true":
-            errors.append(f"IME subtype is not ASCII capable: {locale}")
+        if language in {"ar", "he", "el", "ru", "uk", "ko"} and subtype.get(android_ns + "isAsciiCapable") == "true":
+            errors.append(f"Non-Latin IME subtype incorrectly claims ASCII: {locale}")
 
 # App-owned network calls must use TLS (loopback development endpoints excepted).
 for path in kotlin_paths:

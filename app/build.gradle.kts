@@ -11,6 +11,7 @@ android {
         applicationId = "com.uong.phormi"
         minSdk = 26
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = providers.environmentVariable("PHORMI_VERSION_CODE").orNull?.toIntOrNull() ?: 1
         versionName = providers.environmentVariable("PHORMI_VERSION_NAME").orNull ?: "1.0"
     }
@@ -37,6 +38,10 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.biometric:biometric:1.1.0")

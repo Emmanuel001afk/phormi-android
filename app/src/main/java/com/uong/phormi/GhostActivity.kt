@@ -57,6 +57,11 @@ class GhostActivity : Activity() {
     private lateinit var selectAllButton: TextView
     private lateinit var closeSelectedButton: TextView
     private var ghostProfileName: String? = null
+    private val sitePermissions by lazy { PhormiSitePermissions(this, isActive = { it === active() }) }
+    private var fileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
+    private var fullscreen: View? = null
+    private var fullscreenCallback: android.webkit.WebChromeClient.CustomViewCallback? = null
+
     private var selectionMode = false
     private val selectedIds = mutableSetOf<Int>()
 
@@ -73,6 +78,12 @@ class GhostActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (android.os.Build.VERSION.SDK_INT < 28 || !PhormiRepairApplication.ghostStorageReady) {
+            android.app.AlertDialog.Builder(this).setTitle("Ghost mode unavailable")
+                .setMessage("This Android version cannot provide the separate private WebView storage required by Phormi. Normal browsing is unchanged.")
+                .setPositiveButton("Close") { _, _ -> finish() }.setOnCancelListener { finish() }.show()
+            return
+        }
         buildUi()
         if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
             val savedProfile = savedInstanceState?.getString("ghost_profile")?.takeIf { it.isNotBlank() }
@@ -84,17 +95,17 @@ class GhostActivity : Activity() {
             ghostProfileName = savedProfile
                 ?: ("PhormiGhost_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
             runCatching { ProfileStore.getInstance().getOrCreateProfile(ghostProfileName!!) }
-        } else {
-            // Never silently degrade to the ordinary default WebView profile while
-            // still calling the screen "Ghost". Tell the user plainly instead.
-            Toast.makeText(
-                this,
-                "Warning: this WebView cannot create an isolated profile. Ghost mode is NOT private on this device — cookies and site data may persist.",
-                Toast.LENGTH_LONG
-            ).show()
         }
         val savedUrls = savedInstanceState?.getStringArrayList("ghost_urls").orEmpty()
         val savedActive = savedInstanceState?.getInt("ghost_active", 0) ?: 0
+        if (ghostProfileName == null && savedInstanceState == null) {
+            android.webkit.WebStorage.getInstance().deleteAllData()
+            android.webkit.GeolocationPermissions.getInstance().clearAll()
+            CookieManager.getInstance().removeAllCookies {
+                if (!isFinishing && !isDestroyed) createTab(intent?.dataString?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: "about:blank")
+            }
+            return
+        }
         if (savedUrls.isEmpty()) {
             val incoming = intent?.dataString?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
             createTab(incoming ?: "about:blank")
@@ -151,16 +162,19 @@ class GhostActivity : Activity() {
                 cornerRadius = dp(12).toFloat()
                 setStroke(dp(1), Color.parseColor("#475569"))
             }
-            imeOptions = EditorInfo.IME_ACTION_GO
+            imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
 
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(40), dp(44)).apply { rightMargin = dp(4) })
-        toolbar.addView(url, LinearLayout.LayoutParams(0, dp(44), 1f))
-        toolbar.addView(forward, LinearLayout.LayoutParams(dp(40), dp(44)).apply { leftMargin = dp(4) })
-        toolbar.addView(reload, LinearLayout.LayoutParams(dp(40), dp(44)).apply { leftMargin = dp(4) })
-        toolbar.addView(count, LinearLayout.LayoutParams(dp(40), dp(44)).apply { leftMargin = dp(4) })
-        toolbar.addView(plus, LinearLayout.LayoutParams(dp(40), dp(44)).apply { leftMargin = dp(4) })
-        toolbar.addView(close, LinearLayout.LayoutParams(dp(40), dp(44)).apply { leftMargin = dp(4) })
+        toolbar.addView(back, LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(4) })
+        toolbar.addView(url, LinearLayout.LayoutParams(0, dp(48), 1f))
+        forward.visibility = View.GONE
+        reload.visibility = View.GONE
+        toolbar.addView(forward, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(4) })
+        toolbar.addView(reload, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(4) })
+        toolbar.addView(count, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(4) })
+        toolbar.addView(plus, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(4) })
+        toolbar.addView(close, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(4) })
 
         // Bulk-close bar. Hidden unless the user explicitly long-presses a tab.
         selectionBar = LinearLayout(this).apply {
@@ -236,16 +250,24 @@ class GhostActivity : Activity() {
 
     private fun createTab(initial: String) {
         val id = nextId++
-        val webView = WebView(this).apply {
-            // A transparent WebView over a dark window renders dark page text on
-            // a dark background. Pin a light content surface for readability.
-            setBackgroundColor(Color.WHITE)
+        val webView = object : WebView(this) {
+            override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
+                val connection = super.onCreateInputConnection(outAttrs)
+                outAttrs.imeOptions = outAttrs.imeOptions or android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                return connection
+            }
+            init { setBackgroundColor(Color.WHITE) }
         }
         if (ghostProfileName != null) {
-            runCatching { WebViewCompat.setProfile(webView, ghostProfileName!!) }
-                .onFailure { Toast.makeText(this, "Ghost mode could not create an isolated session.", Toast.LENGTH_LONG).show() }
+            if (runCatching { WebViewCompat.setProfile(webView, ghostProfileName!!) }.isFailure) {
+                webView.destroy()
+                Toast.makeText(this, "Ghost isolation failed. No page was opened.", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
         }
         webView.settings.apply {
+            allowFileAccess = false
             javaScriptEnabled = true
             domStorageEnabled = true
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -253,11 +275,47 @@ class GhostActivity : Activity() {
             loadWithOverviewMode = true
             if (android.os.Build.VERSION.SDK_INT >= 26) safeBrowsingEnabled = true
         }
+        webView.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onReceivedTitle(view: WebView?, title: String?) {
+                val tab = tabs.firstOrNull { it.id == id } ?: return
+                tab.title = title.orEmpty().takeIf { it != "about:blank" }.orEmpty()
+                refreshChipLabel(tab)
+            }
+
+            override fun onPermissionRequest(request: android.webkit.PermissionRequest) { sitePermissions.requestMedia(webView, request) }
+            override fun onPermissionRequestCanceled(request: android.webkit.PermissionRequest) { sitePermissions.cancelled(request) }
+            override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: android.webkit.GeolocationPermissions.Callback?) { sitePermissions.requestLocation(webView, origin, callback) }
+            override fun onGeolocationPermissionsHidePrompt() { sitePermissions.cancel(webView) }
+            override fun onShowFileChooser(view: WebView?, callback: android.webkit.ValueCallback<Array<android.net.Uri>>?, params: FileChooserParams?): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                return try {
+                    startActivityForResult(params?.createIntent() ?: throw IllegalArgumentException(), 7042)
+                    true
+                } catch (_: Exception) { fileCallback = null; false }
+            }
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null || fullscreen != null) { callback?.onCustomViewHidden(); return }
+                fullscreen = view; fullscreenCallback = callback
+                addContentView(view, android.view.ViewGroup.LayoutParams(-1, -1))
+            }
+            override fun onHideCustomView() { closeFullscreen() }
+        }
+        // Downloading outlives a private session, so make that consequence explicit.
+        webView.setDownloadListener { target, _, _, _, _ ->
+            android.app.AlertDialog.Builder(this).setTitle("Download outside Ghost mode?")
+                .setMessage("This link will open in the normal browser and may remain in its history and downloads. Private cookies will not be transferred.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Open normally") { _, _ ->
+                    if (target.startsWith("https://") || target.startsWith("http://")) startActivity(android.content.Intent(this, MainActivity::class.java).putExtra("open_url", target))
+                    else Toast.makeText(this, "This private download cannot be transferred safely.", Toast.LENGTH_LONG).show()
+                }.show()
+        }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: android.graphics.Bitmap?) {
+                sitePermissions.cancel(webView)
                 val tab = tabs.firstOrNull { it.id == id } ?: return
                 tab.address = pageUrl.orEmpty().takeIf { it != "about:blank" }.orEmpty()
-                if (id == activeId) showActiveAddress()
+                if (id == activeId && !url.hasFocus()) showActiveAddress()
                 refreshChipLabel(tab)
             }
 
@@ -265,16 +323,9 @@ class GhostActivity : Activity() {
                 val tab = tabs.firstOrNull { it.id == id } ?: return
                 tab.address = pageUrl.orEmpty().takeIf { it != "about:blank" }.orEmpty()
                 tab.title = view?.title.orEmpty().takeIf { it.isNotBlank() && it != "about:blank" }.orEmpty()
-                if (id == activeId) showActiveAddress()
+                if (id == activeId && !url.hasFocus()) showActiveAddress()
                 refreshChipLabel(tab)
                 super.onPageFinished(view, pageUrl)
-            }
-        }
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onReceivedTitle(view: WebView?, title: String?) {
-                val tab = tabs.firstOrNull { it.id == id } ?: return
-                tab.title = title.orEmpty().takeIf { it != "about:blank" }.orEmpty()
-                refreshChipLabel(tab)
             }
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
@@ -344,6 +395,7 @@ class GhostActivity : Activity() {
     }
 
     private fun switchTo(id: Int) {
+        sitePermissions.cancel()
         activeId = id
         tabs.forEach {
             it.webView.visibility = if (it.id == id) View.VISIBLE else View.GONE
@@ -419,6 +471,7 @@ class GhostActivity : Activity() {
         val index = tabs.indexOfFirst { it.id == id }
         if (index == -1) return
         val tab = tabs[index]
+        sitePermissions.cancel(tab.webView)
         tab.webView.stopLoading()
         tab.webView.clearHistory()
         tab.webView.clearCache(true)
@@ -488,6 +541,7 @@ class GhostActivity : Activity() {
     @Suppress("DEPRECATION")
     @SuppressLint("MissingSuperCall")
     override fun onBackPressed() {
+        if (fullscreen != null) { closeFullscreen(); return }
         if (selectionMode) {
             endSelection()
             return
@@ -496,15 +550,41 @@ class GhostActivity : Activity() {
     }
 
     private fun deleteGhostProfile() {
-        val name = ghostProfileName ?: return
+        val name = ghostProfileName ?: run {
+            if (android.os.Build.VERSION.SDK_INT >= 28 && ::host.isInitialized) {
+                CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
+                android.webkit.WebStorage.getInstance().deleteAllData()
+                android.webkit.GeolocationPermissions.getInstance().clearAll()
+                android.webkit.WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword()
+            }
+            return
+        }
         runCatching { ProfileStore.getInstance().deleteProfile(name) }
         ghostProfileName = null
     }
 
+    private fun closeFullscreen() {
+        fullscreen?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        fullscreen = null; fullscreenCallback?.onCustomViewHidden(); fullscreenCallback = null
+    }
+    override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(code, permissions, results)
+        sitePermissions.onResult(code)
+    }
+    override fun onActivityResult(code: Int, result: Int, data: android.content.Intent?) {
+        super.onActivityResult(code, result, data)
+        if (code == 7042) {
+            fileCallback?.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(result, data))
+            fileCallback = null
+        }
+    }
     override fun onDestroy() {
+        sitePermissions.cancel()
+        closeFullscreen()
+        fileCallback?.onReceiveValue(null); fileCallback = null
         tabs.forEach { runCatching { it.webView.destroy() } }
         tabs.clear()
-        deleteGhostProfile()
+        if (!isChangingConfigurations) deleteGhostProfile()
         super.onDestroy()
     }
 }

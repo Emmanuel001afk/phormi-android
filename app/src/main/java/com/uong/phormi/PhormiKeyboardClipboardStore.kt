@@ -26,7 +26,7 @@ object PhormiKeyboardClipboardStore {
                     val text = o.optString("text", "")
                     val uri = o.optString("uri", "").takeIf { it.isNotBlank() }
                     val createdAt = o.optLong("createdAt", 0L)
-                    if (text.isNotEmpty() && !looksSensitive(text) && (createdAt <= 0L || now - createdAt < AUTO_CLEAR_MS)) {
+                    if (text.isNotEmpty() && !looksSensitive(text) && (o.optBoolean("pinned", false) || createdAt <= 0L || now - createdAt < AUTO_CLEAR_MS)) {
                         add(Item(text, o.optBoolean("pinned", false), createdAt, uri, o.optString("mime", "").takeIf { it.isNotBlank() }))
                     }
                 }
@@ -83,15 +83,11 @@ object PhormiKeyboardClipboardStore {
         }
     }
 
-    private fun shouldCaptureForActiveEditor(): Boolean {
-        // "instance" lives in the Companion object, not on PhormiKeyboardServiceV2 itself.
-        // The old reflection always failed and therefore always returned true, which meant
-        // clipboard capture also ran while a password field was focused.
-        val info = PhormiKeyboardServiceV2.activeInstance()?.currentInputEditorInfo ?: return false
-        return !PhormiKeyboardTextEngine.isPassword(info) &&
-            !PhormiKeyboardTextEngine.isNoPersonalizedLearning(info) &&
-            !PhormiKeyboardTextEngine.isUriLike(info)
-    }
+    private fun shouldCaptureForActiveEditor(): Boolean = runCatching {
+        val service = PhormiKeyboardServiceV2.activeInstance()
+        val info = service?.currentInputEditorInfo
+        service?.isInputViewShown == true && info != null && !PhormiKeyboardTextEngine.isPassword(info) && !PhormiKeyboardTextEngine.isNoPersonalizedLearning(info) && !PhormiKeyboardTextEngine.isUriLike(info)
+    }.getOrDefault(false)
 
     private fun isSensitive(description: ClipDescription?): Boolean {
         if (description == null) return false

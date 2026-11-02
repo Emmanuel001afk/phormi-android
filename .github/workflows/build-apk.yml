@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - round12-keyboard-completion-multilingual
+      - arena/d4887026-phormi-android
   workflow_dispatch: {}
 
 permissions:
@@ -40,14 +41,50 @@ jobs:
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "version_name=1.0.$version_code" >> "$GITHUB_OUTPUT"
       - name: Audit source and resources
-        run: python3 tools/audit_project.py
+        run: |
+          python3 tools/audit_project.py
+          python3 tools/audit_repairs.py
       - name: Run unit tests
-        run: gradle testDebugUnitTest --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-tests.log
+      - name: Annotate test and compiler failures
+        if: failure()
+        run: |
+          grep -E '^e: |^> Task .*FAILED|^FAILURE:|^Caused by:|^.* > .*FAILED' /tmp/phormi-tests.log | head -60 | while IFS= read -r line; do
+            echo "::error title=Validation::$line"
+          done
+          python3 - <<'PYTEST'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for report in Path('app/build/test-results').rglob('TEST-*.xml'):
+              for case in ET.parse(report).iter('testcase'):
+                  failure = case.find('failure')
+                  if failure is not None:
+                      message = (failure.get('message', '') + ' ' + (failure.text or '')[:1200]).replace('\n', '%0A')
+                      print(f"::error title={case.get('classname')}.{case.get('name')}::{message}")
+          PYTEST
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phormi-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
       - name: Build debug and release APKs
         env:
           PHORMI_VERSION_CODE: ${{ steps.version.outputs.version_code }}
           PHORMI_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-        run: gradle assembleDebug assembleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-assemble.log
+      - name: Report release validation failures
+        if: failure()
+        run: |
+          python3 tools/report_lint.py
+          grep -E '^e: |Error:|^> Task .*FAILED|^FAILURE:' /tmp/phormi-assemble.log | head -40 | while IFS= read -r line; do
+            echo "::error title=APK validation::$line"
+          done || true
       - name: Set APK paths
         run: |
           echo "RELEASE_APK=app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_ENV"

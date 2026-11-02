@@ -10,6 +10,11 @@ object PhormiBrowserPreferences {
     const val PULL_TO_REFRESH = "pull_to_refresh"
     const val TAB_RETENTION = "tab_retention"
 
+    fun liveTabBudget(context: Context): Int {
+        val memory = (context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).memoryClass
+        return context.getSharedPreferences(STORE, Context.MODE_PRIVATE).getInt("live_tab_budget", if (memory >= 256) 6 else 3).coerceIn(2, 8)
+    }
+
     fun textZoom(context: Context): Int = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
         .getInt(TEXT_ZOOM, 100).coerceIn(80, 200)
 
