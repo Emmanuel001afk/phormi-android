@@ -3248,12 +3248,18 @@ class MainActivity : AppCompatActivity() {
                 dialog.show()
             }
 
+            // SafeBrowsingResponse and the threat constants arrived in API 27,
+            // while the app still supports API 26. WebView only invokes this
+            // callback on 27+, so the guard makes the older platform safe and
+            // the annotation tells lint the API-27 references are intentional.
+            @SuppressLint("NewApi")
             override fun onSafeBrowsingHit(
                 view: WebView?,
                 request: WebResourceRequest?,
                 threatType: Int,
                 callback: android.webkit.SafeBrowsingResponse?
             ) {
+                if (android.os.Build.VERSION.SDK_INT < 27) return
                 // Take the safe action immediately, then explain it with real detail
                 // instead of a transient toast.
                 callback?.backToSafety(true)

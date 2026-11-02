@@ -31,6 +31,21 @@ non-null `WebView`. Kotlin cannot smart-cast `view` from
 **Fix:** `showNetworkErrorPage(view: WebView?, ...)` and
 `view?.loadDataWithBaseURL(...)`.
 
+A second, previously unreachable CI step then failed: **`Android lint`**
+(`Lint found 2 errors, 717 warnings`). The job logs are not downloadable from
+this sandbox, so the workflow was updated to mirror lint findings into check
+annotations. That exposed:
+
+```
+MainActivity.kt:3259: Error: Call requires API level 27 (current min is 26):
+    android.webkit.SafeBrowsingResponse#backToSafety [NewApi]
+```
+
+`SafeBrowsingResponse` and the Safe Browsing threat constants are API 27, but
+`minSdk` is 26. `onSafeBrowsingHit()` is only ever invoked on 27+, so it now
+has an `SDK_INT < 27` guard and an explicit `@SuppressLint("NewApi")` that
+documents why the API-27 references are safe. Warnings (717) do not fail lint.
+
 > Note: the static checks used earlier (tree-sitter parse, XML parse,
 > `tools/audit_project.py`, Python mirrors of pure-Kotlin logic) cannot catch a
 > Kotlin type error. Only a real Gradle compile can. That is why this pass is

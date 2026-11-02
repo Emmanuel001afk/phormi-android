@@ -69,12 +69,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, re, xml.etree.ElementTree as ET
-          messages = []
-          for path in glob.glob('/tmp/phormi-gradle-lint.log'):
-              with open(path, errors='replace') as handle:
-                  for line in handle:
-                      if re.search(r'Error: |Lint found|^\* What went wrong|FAILED', line):
-                          messages.append(line.strip())
+          xml_issues, log_lines = [], []
+          def add(target, message):
+              text = " ".join(str(message).split())
+              if text and text not in target:
+                  target.append(text)
+          # The XML report is precise, so list its errors first.
           for path in glob.glob('app/build/reports/lint-results-debug.xml'):
               root = ET.parse(path).getroot()
               for issue in root.findall('issue'):
@@ -82,10 +82,16 @@ jobs:
                       loc = issue.find('location')
                       where = (loc.get('file') if loc is not None else 'app') or 'app'
                       line = (loc.get('line') if loc is not None else '') or '1'
-                      messages.append(f"{where}:{line} {issue.get('id')}: {issue.get('message')}")
-          print(f"Lint annotations: {len(messages)} finding(s)")
+                      add(xml_issues, f"{where}:{line} [{issue.get('id')}] {issue.get('message')}")
+          for path in glob.glob('/tmp/phormi-gradle-lint.log'):
+              with open(path, errors='replace') as handle:
+                  for line in handle:
+                      if re.search(r'Error: |Lint found|^\* What went wrong|FAILED', line):
+                          add(log_lines, line.strip())
+          messages = xml_issues + log_lines
+          print(f"::notice title=Android lint::{len(xml_issues)} error(s) in the XML report")
           for message in messages[:10]:
-              print("::error title=Android lint::" + message.replace('\n', ' '))
+              print("::error title=Android lint::" + message)
           if len(messages) > 10:
               print(f"::error title=Android lint::... and {len(messages) - 10} more finding(s); see the job log.")
           PY
