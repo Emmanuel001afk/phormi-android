@@ -1,4 +1,4 @@
-# Reopened feature work — not merge-ready
+# Feature scope, remaining work and validation
 
 On 2026-11-02 the user explicitly requested merging PR #11 despite the outstanding
 feature limitations below. The earlier draft hold is superseded; the merged tree
@@ -119,3 +119,7 @@ keyboards are Latin-only. Main's historical audit/fix documentation remains avai
 
 Fresh build/unit/emulator validation is required for this combined tree; earlier
 results above describe the pre-merge application and are not substituted for it.
+
+The loopback TLS exceptions explicitly disable subdomain matching as required by
+Android lint. The media viewer retains MODIFY_AUDIO_SETTINGS for its volume controls;
+other unnecessary permissions removed by main remain removed.
