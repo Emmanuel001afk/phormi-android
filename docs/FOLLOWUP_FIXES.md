@@ -214,19 +214,33 @@ way to manage several tabs. It is now:
   from 8 to 7).
 * all `app/src/main` XML parses; `python3 tools/audit_project.py` →
   `PASS (25 components, 22 layouts, 189 resource IDs, 8 dictionaries)`.
-* **A real Gradle `testDebugUnitTest` / `assembleDebug` / `lintDebug` run is
-  required for Kotlin type checking** — this pass is validated by an awaited CI
-  run, see the report accompanying it.
+* **CI was actually awaited this time.** PR #13 → run
+  [`41364917396`](https://github.com/Emmanuel001afk/phormi-android/actions/runs/41364917396):
+  `conclusion: success`, all steps green —
+  `Audit source and resources`, `Run unit tests` (real Gradle unit-test task),
+  `Build committed source for CodeQL extraction` (`assembleDebug`),
+  `Android lint` (**0 errors** in the lint XML report), `Publish debug APK`,
+  `Analyze`. `gh pr checks 13` → `CodeQL Java/Kotlin pass` and `CodeQL pass`.
 * No emulator/device UX test was possible in this sandbox, so the visual
-  changes are verified by source inspection only.
+  changes are verified by source inspection and a successful build only.
 
 ## 8. Reverting
 
-Everything in this pass is one commit on
-`arena/017ec980-phormi-android`. To undo just this pass:
+This pass is three commits on `arena/017ec980-phormi-android`
+(`a13b661`, `95d2bc1`, `ddf0329`), all on the PR #13 branch — **PR #13 has not
+been merged**, so nothing here is on `main` yet. To discard it:
 
 ```
-git revert <this-commit-sha>
+git checkout main
+git branch -D arena/017ec980-phormi-android   # local only
+gh pr close 13
+```
+
+To undo just the source changes while keeping the branch:
+
+```
+git revert --no-commit ddf0329 95d2bc1 a13b661
+git commit -m "Revert follow-up pass"
 ```
 
 To undo the earlier merged fix pass as well:
