@@ -75,7 +75,16 @@ jobs:
         env:
           PHORMI_VERSION_CODE: ${{ steps.version.outputs.version_code }}
           PHORMI_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-        run: gradle assembleDebug assembleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/phormi-assemble.log
+      - name: Report release validation failures
+        if: failure()
+        run: |
+          python3 tools/report_lint.py
+          grep -E '^e: |Error:|^> Task .*FAILED|^FAILURE:' /tmp/phormi-assemble.log | head -40 | while IFS= read -r line; do
+            echo "::error title=APK validation::$line"
+          done || true
       - name: Set APK paths
         run: |
           echo "RELEASE_APK=app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_ENV"
