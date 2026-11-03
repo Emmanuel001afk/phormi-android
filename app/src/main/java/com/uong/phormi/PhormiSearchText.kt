@@ -17,7 +17,8 @@ object PhormiSearchText {
             .trim()
 
     fun isNavigationTitle(title: String): Boolean {
-        val normalized = collapseWhitespace(title).lowercase(Locale.US).trim('.', ':', '›', '»', '|')
+        val normalized = collapseWhitespace(title).lowercase(Locale.US)
+            .trim { it.isWhitespace() || it in ".:›»|" }
         return normalized.length < 3 || normalized in navigationTitles
     }
 

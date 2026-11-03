@@ -55,6 +55,17 @@ jobs:
             grep -E '^e: |^> Task .*FAILED|^FAILURE:|^\* What went wrong:|^Could not|^    > |^Caused by:' /tmp/phormi-gradle-test.log | head -60 | while IFS= read -r line; do
               echo "::error title=Gradle test output::$line"
             done
+            python3 - <<'PY'
+            import glob, xml.etree.ElementTree as ET
+            for path in glob.glob('app/build/test-results/testDebugUnitTest/*.xml'):
+                for case in ET.parse(path).getroot().iter('testcase'):
+                    failure = case.find('failure')
+                    if failure is None:
+                        continue
+                    name = f"{case.get('classname')}.{case.get('name')}"
+                    message = ' '.join((failure.get('message') or failure.text or '').split())[:500]
+                    print(f"::error title=Failing unit test::{name}: {message}")
+            PY
           fi
           exit "$result"
       - name: Build committed source for CodeQL extraction
