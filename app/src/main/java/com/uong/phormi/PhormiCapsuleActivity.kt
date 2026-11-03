@@ -2,7 +2,6 @@ package com.uong.phormi
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -64,19 +63,19 @@ class PhormiCapsuleActivity : AppCompatActivity() {
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(11, 18, 32))
+            setBackgroundColor(PhormiUiColors.background(this@PhormiCapsuleActivity))
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
         val title = TextView(this).apply {
             text = "Phormi Capsule"
-            setTextColor(Color.rgb(248, 250, 252))
+            setTextColor(PhormiUiColors.text(this@PhormiCapsuleActivity))
             textSize = 24f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         root.addView(title, LinearLayout.LayoutParams(-1, -2))
         root.addView(TextView(this).apply {
             text = "Freeze a browsing moment into a portable, privacy-safe package. URLs, titles and your note travel with it — cookies, passwords and page contents do not."
-            setTextColor(Color.rgb(148, 163, 184))
+            setTextColor(PhormiUiColors.secondary(this@PhormiCapsuleActivity))
             textSize = 14f
             setPadding(0, dp(6), 0, dp(12))
         })
@@ -86,10 +85,10 @@ class PhormiCapsuleActivity : AppCompatActivity() {
             setSingleLine(false)
             minLines = 2
             maxLines = 4
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(100, 116, 139))
+            setTextColor(PhormiUiColors.text(this@PhormiCapsuleActivity))
+            setHintTextColor(PhormiUiColors.secondary(this@PhormiCapsuleActivity))
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(Color.rgb(23, 32, 51))
+            setBackgroundResource(R.drawable.bg_input)
         }
         root.addView(noteInput, LinearLayout.LayoutParams(-1, dp(78)).apply { bottomMargin = dp(10) })
 
@@ -102,7 +101,7 @@ class PhormiCapsuleActivity : AppCompatActivity() {
 
         root.addView(TextView(this).apply {
             text = "Saved Capsules"
-            setTextColor(Color.rgb(226, 232, 240))
+            setTextColor(PhormiUiColors.text(this@PhormiCapsuleActivity))
             textSize = 17f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(0, 0, 0, dp(8))
@@ -132,7 +131,7 @@ class PhormiCapsuleActivity : AppCompatActivity() {
         if (capsules.isEmpty()) {
             listHost.addView(TextView(this).apply {
                 text = "No capsules yet. Capture a research trail, shopping comparison, project setup, or anything you want to resume later."
-                setTextColor(Color.rgb(100, 116, 139))
+                setTextColor(PhormiUiColors.secondary(this@PhormiCapsuleActivity))
                 textSize = 14f
                 setPadding(0, dp(8), 0, dp(8))
             })
@@ -142,23 +141,23 @@ class PhormiCapsuleActivity : AppCompatActivity() {
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(12), dp(12), dp(12))
-                setBackgroundColor(Color.rgb(17, 24, 39))
+                setBackgroundResource(R.drawable.bg_card)
             }
             val heading = TextView(this).apply {
                 text = capsule.note.ifBlank { "Untitled browsing moment" }
-                setTextColor(Color.rgb(248, 250, 252))
+                setTextColor(PhormiUiColors.text(this@PhormiCapsuleActivity))
                 textSize = 16f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             }
             val details = TextView(this).apply {
                 text = "${capsule.tabs.size} tab(s)  •  ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(capsule.createdAt))}"
-                setTextColor(Color.rgb(148, 163, 184))
+                setTextColor(PhormiUiColors.secondary(this@PhormiCapsuleActivity))
                 textSize = 12f
                 setPadding(0, dp(4), 0, dp(8))
             }
             val first = TextView(this).apply {
                 text = capsule.tabs.first().title.ifBlank { capsule.tabs.first().url }
-                setTextColor(Color.rgb(125, 211, 252))
+                setTextColor(PhormiUiColors.accent(this@PhormiCapsuleActivity))
                 textSize = 13f
                 maxLines = 2
             }
@@ -186,8 +185,8 @@ class PhormiCapsuleActivity : AppCompatActivity() {
 
     private fun actionButton(label: String, primary: Boolean = true, onClick: () -> Unit): Button = Button(this).apply {
         text = label
-        setTextColor(if (primary) Color.WHITE else Color.rgb(226, 232, 240))
-        setBackgroundColor(if (primary) Color.rgb(14, 165, 233) else Color.rgb(30, 41, 59))
+        setTextColor(if (primary) PhormiUiColors.onAccent(this@PhormiCapsuleActivity) else PhormiUiColors.text(this@PhormiCapsuleActivity))
+        setBackgroundResource(if (primary) R.drawable.bg_primary_button else R.drawable.bg_secondary_button)
         minHeight = 0
         minimumHeight = 0
         isAllCaps = false

@@ -1,10 +1,27 @@
 <resources>
-    <style name="Theme.Phormi" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/phormi_surface</item>
-        <item name="colorPrimaryDark">@color/phormi_surface</item>
+    <style name="Base.Theme.Phormi" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/phormi_accent</item>
+        <item name="colorPrimaryVariant">@color/phormi_accent</item>
+        <item name="colorOnPrimary">@color/phormi_on_accent</item>
+        <item name="colorSecondary">@color/phormi_coral</item>
+        <item name="colorSecondaryVariant">@color/phormi_coral</item>
+        <item name="colorOnSecondary">@color/phormi_on_coral</item>
+        <item name="colorSurface">@color/phormi_surface</item>
+        <item name="colorOnSurface">@color/phormi_text</item>
+        <item name="colorError">@color/phormi_danger</item>
         <item name="colorAccent">@color/phormi_accent</item>
-        <item name="android:windowBackground">@color/phormi_surface</item>
+        <item name="android:windowBackground">@color/phormi_background</item>
+        <item name="android:statusBarColor">@color/phormi_background</item>
+        <item name="android:navigationBarColor">@color/phormi_navigation_bar</item>
+        <item name="android:windowLightStatusBar">@bool/phormi_light_system_bars</item>
+        <item name="android:colorBackground">@color/phormi_background</item>
+        <item name="android:textColorPrimary">@color/phormi_text</item>
+        <item name="android:textColorSecondary">@color/phormi_secondary</item>
+        <item name="android:textColorHint">@color/phormi_secondary</item>
     </style>
+
+    <style name="Theme.Phormi" parent="Base.Theme.Phormi" />
+
     <style name="PhormiStartAction">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
@@ -18,9 +35,11 @@
         <item name="android:background">@drawable/bg_start_action</item>
         <item name="android:textColor">@color/phormi_text</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
     </style>
+
     <style name="PhormiMenuTab">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">match_parent</item>
@@ -32,6 +51,7 @@
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
     </style>
+
     <style name="PhormiMenuSection">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
@@ -40,7 +60,9 @@
         <item name="android:textColor">@color/phormi_accent</item>
         <item name="android:textSize">12sp</item>
         <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
     </style>
+
     <style name="Theme.Phormi.Translucent" parent="Theme.Phormi">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
@@ -50,6 +72,7 @@
         <item name="android:backgroundDimEnabled">true</item>
         <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
     </style>
+
     <style name="PhormiMenuItem">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>

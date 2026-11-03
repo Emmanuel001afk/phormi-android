@@ -27,17 +27,17 @@ class TabEnvironmentActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
-            setBackgroundColor(0xFF0B1220.toInt())
+            setBackgroundColor(PhormiUiColors.background(this@TabEnvironmentActivity))
         }
         root.addView(TextView(this).apply {
             text = "Tab environments"
             textSize = 24f
-            setTextColor(0xFFF8FAFC.toInt())
+            setTextColor(PhormiUiColors.text(this@TabEnvironmentActivity))
         })
         root.addView(TextView(this).apply {
             text = "Each environment has separate website cookies and storage. The same website can therefore hold different legitimate accounts in different environments."
             textSize = 14f
-            setTextColor(0xFF94A3B8.toInt())
+            setTextColor(PhormiUiColors.secondary(this@TabEnvironmentActivity))
             setPadding(0, 10, 0, 10)
         })
 
@@ -68,7 +68,7 @@ class TabEnvironmentActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "Inactive named environments are automatically removed after 30 days. Active/open environments are protected."
             textSize = 12f
-            setTextColor(0xFF64748B.toInt())
+            setTextColor(PhormiUiColors.secondary(this@TabEnvironmentActivity))
             setPadding(0, 8, 0, 16)
         })
 
@@ -92,7 +92,7 @@ class TabEnvironmentActivity : AppCompatActivity() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
             list.addView(TextView(this).apply {
                 text = "Separate environments are not supported by this WebView version."
-                setTextColor(0xFFFCA5A5.toInt())
+                setTextColor(PhormiUiColors.danger(this@TabEnvironmentActivity))
             })
             return
         }
@@ -108,7 +108,7 @@ class TabEnvironmentActivity : AppCompatActivity() {
             row.addView(TextView(this).apply {
                 text = if (name == selected) "$name  ✓" else name
                 textSize = 17f
-                setTextColor(0xFFE2E8F0.toInt())
+                setTextColor(PhormiUiColors.text(this@TabEnvironmentActivity))
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             })
             row.setOnClickListener {

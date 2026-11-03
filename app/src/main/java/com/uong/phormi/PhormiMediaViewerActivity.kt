@@ -90,7 +90,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             .ifBlank { PhormiFileOpener.displayName(this, uri) }
         isVideo = mime.startsWith("video/")
 
-        root = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
+        root = FrameLayout(this).apply { setBackgroundColor(PhormiUiColors.mediaBackground(this@PhormiMediaViewerActivity)) }
         playerView = PlayerView(this).apply {
             useController = true
             controllerShowTimeoutMs = 4500
@@ -109,7 +109,7 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
 
         if (mime.startsWith("image/")) {
             val image = android.widget.ImageView(this).apply {
-                setBackgroundColor(0xFF000000.toInt())
+                setBackgroundColor(PhormiUiColors.mediaBackground(this@PhormiMediaViewerActivity))
                 scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 setImageURI(uri)
                 contentDescription = title
@@ -123,14 +123,14 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(8, 4, 8, 4)
-            setBackgroundColor(0x66000000)
+            setBackgroundColor(PhormiUiColors.mediaScrim(this@PhormiMediaViewerActivity))
         }
         topBar.addView(button("‹", "Back") { finish() }, LinearLayout.LayoutParams(48, 56))
 
         topBar.addView(TextView(this).apply {
             text = title
             textSize = 16f
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(PhormiUiColors.onMedia(this@PhormiMediaViewerActivity))
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -186,8 +186,8 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
             this.text = text
             textSize = 19f
             gravity = Gravity.CENTER
-            setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0x66000000)
+            setTextColor(PhormiUiColors.onMedia(this@PhormiMediaViewerActivity))
+            setBackgroundColor(PhormiUiColors.mediaScrim(this@PhormiMediaViewerActivity))
             contentDescription = description
             isClickable = true
             isFocusable = true
@@ -605,8 +605,8 @@ class PhormiMediaViewerActivity : AppCompatActivity() {
     private fun makeHint() = TextView(this).apply {
         gravity = Gravity.CENTER
         textSize = 15f
-        setTextColor(0xFFFFFFFF.toInt())
-        setBackgroundColor(0x99000000.toInt())
+        setTextColor(PhormiUiColors.onMedia(this@PhormiMediaViewerActivity))
+        setBackgroundColor(PhormiUiColors.mediaScrimStrong(this@PhormiMediaViewerActivity))
         visibility = View.GONE
     }
 

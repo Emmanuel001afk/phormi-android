@@ -41,7 +41,7 @@
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
             android:text="Clear"
-            android:textColor="#F87171"
+            android:textColor="@color/phormi_danger"
             android:textSize="14sp"
             android:clickable="true"
             android:focusable="true" />

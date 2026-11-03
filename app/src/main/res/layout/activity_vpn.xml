@@ -74,9 +74,9 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="Connect"
-            android:textColor="@color/phormi_background"
+            android:textColor="@color/phormi_on_accent"
             android:textStyle="bold"
-            android:background="@color/phormi_accent"
+            android:background="@drawable/bg_primary_button"
             android:clickable="true"
             android:focusable="true" />
 
@@ -89,7 +89,7 @@
             android:gravity="center"
             android:text="Disconnect"
             android:textColor="@color/phormi_text"
-            android:background="#334155"
+            android:background="@drawable/bg_secondary_button"
             android:clickable="true"
             android:focusable="true" />
     </LinearLayout>
@@ -101,7 +101,7 @@
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
         android:layout_marginBottom="6dp"
-        android:background="@color/phormi_surface"
+        android:background="@drawable/bg_input"
         android:hint="Search country, code, or IP"
         android:textColorHint="@color/phormi_secondary"
         android:textColor="@color/phormi_text"

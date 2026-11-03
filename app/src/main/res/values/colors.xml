@@ -1,8 +1,29 @@
 <resources>
-    <color name="phormi_background">#FAF7F5</color>
-    <color name="phormi_surface">#FFFFFF</color>
-    <color name="phormi_text">#172033</color>
-    <color name="phormi_secondary">#526173</color>
-    <color name="phormi_accent">#006A93</color>
-    <color name="phormi_border">#D4DDE7</color>
+    <!-- Phormi brand palette: derived from the app icon. -->
+    <color name="phormi_cobalt">#3659E3</color>
+    <color name="phormi_paper">#FFF4D8</color>
+    <color name="phormi_coral">#FF9678</color>
+    <color name="phormi_ink">#192653</color>
+
+    <color name="phormi_background">#FAF5E9</color>
+    <color name="phormi_surface">#FFFDF7</color>
+    <color name="phormi_surface_soft">#FFF4D8</color>
+    <color name="phormi_text">#192653</color>
+    <color name="phormi_secondary">#5B6178</color>
+    <color name="phormi_accent">#3659E3</color>
+    <color name="phormi_accent_soft">#E6EBFF</color>
+    <color name="phormi_on_accent">#FFF4D8</color>
+    <color name="phormi_on_coral">#192653</color>
+    <color name="phormi_coral_text">#B4471F</color>
+    <color name="phormi_border">#E4D9C3</color>
+    <color name="phormi_success">#1B7F4D</color>
+    <color name="phormi_warning">#B7791F</color>
+    <color name="phormi_danger">#C0392B</color>
+    <color name="phormi_scrim">#CC192653</color>
+    <color name="phormi_media_background">#080C14</color>
+    <color name="phormi_media_scrim">#66080C14</color>
+    <color name="phormi_media_scrim_strong">#99080C14</color>
+    <color name="phormi_on_media">#FFF4D8</color>
+    <!-- API 26 cannot draw light navigation-bar icons, so keep a dark bar there. -->
+    <color name="phormi_navigation_bar">#192653</color>
 </resources>

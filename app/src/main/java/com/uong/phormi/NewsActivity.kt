@@ -113,7 +113,7 @@ class NewsActivity : AppCompatActivity() {
                         TextView(this@NewsActivity).apply {
                             id = View.generateViewId()
                             tag = "news_title"
-                            setTextColor(Color.rgb(248, 250, 252))
+                            setTextColor(PhormiUiColors.text(this@NewsActivity))
                             textSize = 15f
                             maxLines = 2
                             ellipsize =
@@ -129,7 +129,7 @@ class NewsActivity : AppCompatActivity() {
                         TextView(this@NewsActivity).apply {
                             id = View.generateViewId()
                             tag = "news_meta"
-                            setTextColor(Color.rgb(148, 163, 184))
+                            setTextColor(PhormiUiColors.secondary(this@NewsActivity))
                             textSize = 11f
                         },
                         LinearLayout.LayoutParams(

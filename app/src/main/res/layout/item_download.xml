@@ -34,7 +34,7 @@
             android:text="Open"
             android:textColor="@color/phormi_text"
             android:textSize="13sp"
-            android:background="#162235"
+            android:background="@drawable/bg_secondary_button"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Pause download" />
@@ -47,7 +47,7 @@
             android:text="Delete"
             android:textColor="@color/phormi_text"
             android:textSize="13sp"
-            android:background="#182338"
+            android:background="@drawable/bg_secondary_button"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Delete download" />

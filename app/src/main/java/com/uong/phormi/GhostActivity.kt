@@ -65,15 +65,15 @@ class GhostActivity : Activity() {
     private var selectionMode = false
     private val selectedIds = mutableSetOf<Int>()
 
-    private val windowBgColor = Color.parseColor("#0B1220")
-    private val toolbarColor = Color.parseColor("#111C2E")
-    private val stripColor = Color.parseColor("#0F1A2B")
-    private val surfaceColor = Color.parseColor("#1E293B")
-    private val activeColor = Color.parseColor("#1D4ED8")
-    private val selectedColor = Color.parseColor("#F59E0B")
-    private val textColor = Color.parseColor("#F8FAFC")
-    private val mutedTextColor = Color.parseColor("#CBD5E1")
-    private val hintColor = Color.parseColor("#94A3B8")
+    private val windowBgColor by lazy { PhormiUiColors.background(this) }
+    private val toolbarColor by lazy { PhormiUiColors.surface(this) }
+    private val stripColor by lazy { PhormiUiColors.background(this) }
+    private val surfaceColor by lazy { PhormiUiColors.surfaceSoft(this) }
+    private val activeColor by lazy { PhormiUiColors.accent(this) }
+    private val selectedColor by lazy { PhormiUiColors.coral(this) }
+    private val textColor by lazy { PhormiUiColors.text(this) }
+    private val mutedTextColor by lazy { PhormiUiColors.secondary(this) }
+    private val hintColor by lazy { PhormiUiColors.secondary(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -160,7 +160,7 @@ class GhostActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(surfaceColor)
                 cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.parseColor("#475569"))
+                setStroke(dp(1), PhormiUiColors.border(this@GhostActivity))
             }
             imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
@@ -180,7 +180,7 @@ class GhostActivity : Activity() {
         selectionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#3F1D24"))
+            setBackgroundColor(PhormiUiColors.surfaceSoft(this@GhostActivity))
             setPadding(dp(8), dp(4), dp(8), dp(4))
             visibility = View.GONE
         }
@@ -193,7 +193,7 @@ class GhostActivity : Activity() {
         }
         closeSelectedButton = TextView(this).apply {
             text = "Close (0)"
-            setTextColor(Color.parseColor("#FCA5A5"))
+            setTextColor(PhormiUiColors.danger(this@GhostActivity))
             textSize = 13f
             gravity = Gravity.CENTER
             isClickable = true
@@ -428,16 +428,16 @@ class GhostActivity : Activity() {
             tab.chip.background = GradientDrawable().apply {
                 setColor(color)
                 cornerRadius = dp(10).toFloat()
-                if (selected || active) setStroke(dp(2), textColor)
+                if (selected || active) setStroke(dp(2), if (selected) PhormiUiColors.onCoral(this@GhostActivity) else PhormiUiColors.onAccent(this@GhostActivity))
             }
             tab.label.setTextColor(
                 when {
-                    selected -> Color.parseColor("#111827")
-                    active -> textColor
+                    selected -> PhormiUiColors.onCoral(this@GhostActivity)
+                    active -> PhormiUiColors.onAccent(this@GhostActivity)
                     else -> mutedTextColor
                 }
             )
-            tab.close.setTextColor(if (selected) Color.parseColor("#111827") else textColor)
+            tab.close.setTextColor(when { selected -> PhormiUiColors.onCoral(this@GhostActivity); active -> PhormiUiColors.onAccent(this@GhostActivity); else -> textColor })
             tab.chip.alpha = if (active || selected || selectionMode) 1f else 0.85f
         }
     }

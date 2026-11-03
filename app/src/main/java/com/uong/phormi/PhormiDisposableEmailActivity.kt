@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.widget.ArrayAdapter
@@ -38,25 +37,25 @@ class PhormiDisposableEmailActivity : Activity() {
     }
 
     private fun render() {
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 20, 20, 24); setBackgroundColor(Color.rgb(11, 18, 32)) }
-        root.addView(TextView(this).apply { text = "Disposable Email Lab"; textSize = 23f; setTextColor(Color.WHITE); setPadding(0, 0, 0, 8) })
-        root.addView(TextView(this).apply { text = "For legitimate testing: create temporary inboxes on your own MailTub server, receive verification mail, copy the address, and delete the mailbox when finished."; setTextColor(Color.LTGRAY); setPadding(0, 0, 0, 14) })
-        serverInput = EditText(this).apply { hint = "MailTub server, e.g. https://mail.example.com"; setSingleLine(true); setText(PhormiDisposableEmailStore.server(this@PhormiDisposableEmailActivity)); setTextColor(Color.WHITE) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 20, 20, 24); setBackgroundColor(PhormiUiColors.background(this@PhormiDisposableEmailActivity)) }
+        root.addView(TextView(this).apply { text = "Disposable Email Lab"; textSize = 23f; setTextColor(PhormiUiColors.text(this@PhormiDisposableEmailActivity)); setPadding(0, 0, 0, 8) })
+        root.addView(TextView(this).apply { text = "For legitimate testing: create temporary inboxes on your own MailTub server, receive verification mail, copy the address, and delete the mailbox when finished."; setTextColor(PhormiUiColors.secondary(this@PhormiDisposableEmailActivity)); setPadding(0, 0, 0, 14) })
+        serverInput = EditText(this).apply { hint = "MailTub server, e.g. https://mail.example.com"; setSingleLine(true); setText(PhormiDisposableEmailStore.server(this@PhormiDisposableEmailActivity)); setTextColor(PhormiUiColors.text(this@PhormiDisposableEmailActivity)) }
         root.addView(serverInput)
-        apiKeyInput = EditText(this).apply { hint = "Optional API key"; setSingleLine(true); setText(PhormiDisposableEmailStore.apiKey(this@PhormiDisposableEmailActivity)); setTextColor(Color.WHITE); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        apiKeyInput = EditText(this).apply { hint = "Optional API key"; setSingleLine(true); setText(PhormiDisposableEmailStore.apiKey(this@PhormiDisposableEmailActivity)); setTextColor(PhormiUiColors.text(this@PhormiDisposableEmailActivity)); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD }
         root.addView(apiKeyInput)
         ttlSpinner = Spinner(this)
         ttlSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, arrayOf("1 hour", "6 hours", "24 hours", "7 days"))
         root.addView(ttlSpinner)
         root.addView(Button(this).apply { text = "Save server"; setOnClickListener { saveConfig(); toast("Mail server saved") } })
         root.addView(Button(this).apply { text = "Generate disposable address"; setOnClickListener { generate() } })
-        current = TextView(this).apply { text = "No mailbox selected"; textSize = 16f; setTextColor(Color.rgb(56, 189, 248)); setPadding(0, 14, 0, 10) }
+        current = TextView(this).apply { text = "No mailbox selected"; textSize = 16f; setTextColor(PhormiUiColors.accent(this@PhormiDisposableEmailActivity)); setPadding(0, 14, 0, 10) }
         root.addView(current)
         root.addView(Button(this).apply { text = "Copy address"; setOnClickListener { copyCurrent() } })
         root.addView(Button(this).apply { text = "Refresh inbox"; setOnClickListener { refresh() } })
         root.addView(Button(this).apply { text = "Delete current mailbox"; setOnClickListener { deleteCurrent() } })
         root.addView(Button(this).apply { text = "Open MailTub web inbox"; setOnClickListener { openServer() } })
-        inbox = TextView(this).apply { text = "Inbox is empty. Generate an address, then refresh after a message arrives."; setTextColor(Color.WHITE); setPadding(0, 12, 0, 12) }
+        inbox = TextView(this).apply { text = "Inbox is empty. Generate an address, then refresh after a message arrives."; setTextColor(PhormiUiColors.text(this@PhormiDisposableEmailActivity)); setPadding(0, 12, 0, 12) }
         val scroll = ScrollView(this); scroll.addView(inbox); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         PhormiDisposableEmailStore.list(this).firstOrNull()?.let { current.text = it.address; loadInbox(it) }

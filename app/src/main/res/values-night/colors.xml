@@ -1,8 +1,23 @@
 <resources>
-    <color name="phormi_background">#0B1220</color>
-    <color name="phormi_surface">#111D30</color>
-    <color name="phormi_text">#F1F5F9</color>
-    <color name="phormi_secondary">#A5B4C6</color>
-    <color name="phormi_accent">#38BDF8</color>
-    <color name="phormi_border">#334155</color>
+    <!-- Dark variant keeps the icon's ink/paper/coral relationship, with a lighter cobalt for contrast. -->
+    <color name="phormi_background">#121A3A</color>
+    <color name="phormi_surface">#192653</color>
+    <color name="phormi_surface_soft">#232F5C</color>
+    <color name="phormi_text">#FFF4D8</color>
+    <color name="phormi_secondary">#C3CAE2</color>
+    <color name="phormi_accent">#9DB1FF</color>
+    <color name="phormi_accent_soft">#24326B</color>
+    <color name="phormi_on_accent">#121A3A</color>
+    <color name="phormi_on_coral">#192653</color>
+    <color name="phormi_coral_text">#FF9678</color>
+    <color name="phormi_border">#33406E</color>
+    <color name="phormi_success">#7DD8A0</color>
+    <color name="phormi_warning">#F5C471</color>
+    <color name="phormi_danger">#FF8A80</color>
+    <color name="phormi_scrim">#CC121A3A</color>
+    <color name="phormi_media_background">#080C14</color>
+    <color name="phormi_media_scrim">#66080C14</color>
+    <color name="phormi_media_scrim_strong">#99080C14</color>
+    <color name="phormi_on_media">#FFF4D8</color>
+    <color name="phormi_navigation_bar">#121A3A</color>
 </resources>

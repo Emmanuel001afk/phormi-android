@@ -20,16 +20,16 @@ class PhormiPdfViewerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(8, 16, 28))
+            setBackgroundColor(PhormiUiColors.background(this@PhormiPdfViewerActivity))
         }
         val bar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(12, 8, 12, 8)
-            setBackgroundColor(Color.rgb(15, 23, 42))
+            setBackgroundColor(PhormiUiColors.surface(this@PhormiPdfViewerActivity))
         }
         val title = TextView(this).apply {
             text = intent.getStringExtra("title").orEmpty().ifBlank { "PDF" }
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.text(this@PhormiPdfViewerActivity))
             textSize = 16f
             maxLines = 1
         }
@@ -37,7 +37,7 @@ class PhormiPdfViewerActivity : AppCompatActivity() {
             text = "×"
             textSize = 28f
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.text(this@PhormiPdfViewerActivity))
             contentDescription = "Close PDF viewer"
             setOnClickListener { finish() }
         }
@@ -47,7 +47,7 @@ class PhormiPdfViewerActivity : AppCompatActivity() {
 
         val scroll = android.widget.ScrollView(this).apply {
             isFillViewport = true
-            setBackgroundColor(Color.rgb(30, 41, 59))
+            setBackgroundColor(PhormiUiColors.surfaceSoft(this@PhormiPdfViewerActivity))
         }
         val pages = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -97,7 +97,7 @@ class PhormiPdfViewerActivity : AppCompatActivity() {
                 pages.removeAllViews()
                 pages.addView(TextView(this).apply {
                     text = "Phormi could not render this PDF and no installed PDF app accepted it."
-                    setTextColor(Color.WHITE)
+                    setTextColor(PhormiUiColors.text(this@PhormiPdfViewerActivity))
                     textSize = 15f
                     setPadding(24, 32, 24, 32)
                 })

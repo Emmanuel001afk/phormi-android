@@ -18,7 +18,7 @@ class PhormiGlideLayout(context: Context) : LinearLayout(context) {
     private var keys = emptyList<Key>()
     private var tracking = false
     private var gliding = false
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff60a5fa.toInt(); strokeWidth = 4 * resources.displayMetrics.density; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = PhormiUiColors.accent(context); strokeWidth = 4 * resources.displayMetrics.density; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     init { orientation = VERTICAL }
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
