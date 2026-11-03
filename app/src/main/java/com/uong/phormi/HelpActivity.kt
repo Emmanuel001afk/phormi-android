@@ -13,17 +13,17 @@ class HelpActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF08101C.toInt())
+            setBackgroundColor(PhormiUiColors.background(this@HelpActivity))
         }
         val bar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(12.dp(), 10.dp(), 12.dp(), 10.dp())
-            setBackgroundColor(0xFF0F172A.toInt())
+            setBackgroundColor(PhormiUiColors.surface(this@HelpActivity))
         }
         bar.addView(TextView(this).apply {
             text = "‹  Phormi Help"
             textSize = 20f
-            setTextColor(0xFFF8FAFC.toInt())
+            setTextColor(PhormiUiColors.text(this@HelpActivity))
             setPadding(4.dp(), 8.dp(), 16.dp(), 8.dp())
             isClickable = true
             isFocusable = true
@@ -49,7 +49,7 @@ class HelpActivity : AppCompatActivity() {
         section(body, "Permissions and media", "Camera, microphone and geolocation requests are handled asynchronously and are granted only when the requesting website asks for them. Web file choosers support single or multiple selections where the site requests them. Media playback supports fullscreen and Picture-in-Picture where Android and the content permit it.")
         section(body, "Security & privacy", "TLS certificate errors are failed closed and Safe Browsing threats are sent back to safety. The Security Center controls JavaScript, third-party cookies and mixed HTTP content, plus browser/site locking and local site-data clearing. These controls are designed to change actual browser behavior rather than merely display labels.")
         section(body, "Browser Lock", "Browser Lock protects access when Phormi is left and reopened. Device security or a local Phormi PIN can be used. Site locks add a more granular protection layer without forcing authentication for every normal tab switch.")
-        section(body, "Keyboard", "Phormi Keyboard is an Android input method with a fixed-height suggestion strip, offline dictionaries, conservative automatic corrections and undo-by-backspace. If you retype a corrected spelling it stops correcting that word. The ABC toolbar opens Symbols directly; the number page has a single Symbols key. Shift is purple and caps lock red. Emoji are grouped with Recent first; contextual AI emoji insert Unicode text, not images. Optional image stickers live separately in Media. Clipboard items show a Delete key; deleting all history needs confirmation. Password fields disable predictions and contextual emoji.")
+        section(body, "Keyboard", "Phormi Keyboard is an Android input method with a fixed-height suggestion strip, offline dictionaries, conservative automatic corrections and undo-by-backspace. If you retype a corrected spelling it stops correcting that word. The ABC toolbar opens Symbols directly; the number page has a single Symbols key. Shift is coral and caps lock red. Emoji are grouped with Recent first; contextual AI emoji insert Unicode text, not images. Optional image stickers live separately in Media. Clipboard items show a Delete key; deleting all history needs confirmation. Password fields disable predictions and contextual emoji.")
         section(body, "AI", "AI is optional. Configure a provider to queue browser tasks that can inspect and act across normal tabs without replacing your visible tab; sensitive form submissions require approval. The AI screen shows task updates and lets you choose a starting tab. Scheduled instructions set reminders, then require your approval in the foreground; Phormi does not browse unattended in the background. Browser navigation works without AI. A separate web fallback opens supported AI services in normal tabs.")
         section(body, "Navigation Lens + Object Anchors", "Navigation Lens inspects the current page's DOM through the existing WebView and exposes useful headings, links, buttons and images. Object Anchors save lightweight page-object metadata so Phormi can try to relocate the object later without copying the page itself.")
         section(body, "Accounts and sign-in", "Normal tabs in the same environment share cookies but not page/navigation state. Some providers, including Google, restrict embedded WebView authentication. In Accounts, long-press a provider for an external browser fallback; external browser sessions do not become Phormi sessions. Recently opened providers are shortcuts, not proof of a successful sign-in.")
@@ -66,13 +66,13 @@ class HelpActivity : AppCompatActivity() {
         parent.addView(TextView(this).apply {
             text = titleText
             textSize = 18f
-            setTextColor(0xFFF8FAFC.toInt())
+            setTextColor(PhormiUiColors.text(this@HelpActivity))
             setPadding(0, 12.dp(), 0, 5.dp())
         })
         parent.addView(TextView(this).apply {
             text = bodyText
             textSize = 14f
-            setTextColor(0xFFCBD5E1.toInt())
+            setTextColor(PhormiUiColors.secondary(this@HelpActivity))
             setLineSpacing(0f, 1.15f)
             setPadding(0, 0, 0, 10.dp())
         })

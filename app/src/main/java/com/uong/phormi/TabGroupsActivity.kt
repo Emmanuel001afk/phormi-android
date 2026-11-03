@@ -27,18 +27,18 @@ class TabGroupsActivity : AppCompatActivity() {
         list.removeAllViews()
         val groups = TabGroupManager(this).list()
         if (groups.isEmpty()) {
-            list.addView(TextView(this).apply { text = "No groups yet. Create a group, then assign tabs from Tab overview."; setTextColor(0xFF94A3B8.toInt()); setPadding(18, 30, 18, 30) }); return
+            list.addView(TextView(this).apply { text = "No groups yet. Create a group, then assign tabs from Tab overview."; setTextColor(PhormiUiColors.secondary(this@TabGroupsActivity)); setPadding(18, 30, 18, 30) }); return
         }
         val tabData = readCurrentTabs()
         groups.forEach { group ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 14, 16, 14); setBackgroundColor(0xFF172033.toInt()) }
-            row.addView(TextView(this).apply { text = group.name; textSize = 17f; setTextColor(0xFFF8FAFC.toInt()) })
-            row.addView(TextView(this).apply { text = "${group.tabIds.size} tabs${if (group.taskNote.isNotBlank()) " · ${group.taskNote}" else ""}"; textSize = 12f; setTextColor(0xFF94A3B8.toInt()); setPadding(0, 4, 0, 8) })
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 14, 16, 14); setBackgroundResource(R.drawable.bg_card) }
+            row.addView(TextView(this).apply { text = group.name; textSize = 17f; setTextColor(PhormiUiColors.text(this@TabGroupsActivity)) })
+            row.addView(TextView(this).apply { text = "${group.tabIds.size} tabs${if (group.taskNote.isNotBlank()) " · ${group.taskNote}" else ""}"; textSize = 12f; setTextColor(PhormiUiColors.secondary(this@TabGroupsActivity)); setPadding(0, 4, 0, 8) })
             group.tabIds.forEach { tabId ->
                 val tab = tabData.firstOrNull { it.first == tabId }
                 row.addView(TextView(this).apply {
                     text = if (tab != null) "• ${tab.second}\n  ${tab.third}" else "• Tab $tabId (closed)"
-                    textSize = 12f; setTextColor(0xFFE2E8F0.toInt()); setPadding(4, 5, 4, 5)
+                    textSize = 12f; setTextColor(PhormiUiColors.text(this@TabGroupsActivity)); setPadding(4, 5, 4, 5)
                     if (tab != null) setOnClickListener {
                         startActivity(Intent(this@TabGroupsActivity, MainActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -49,7 +49,7 @@ class TabGroupsActivity : AppCompatActivity() {
                     }
                 })
             }
-            if (group.tabIds.isEmpty()) row.addView(TextView(this).apply { text = "No tabs assigned yet."; textSize = 12f; setTextColor(0xFF64748B.toInt()) })
+            if (group.tabIds.isEmpty()) row.addView(TextView(this).apply { text = "No tabs assigned yet."; textSize = 12f; setTextColor(PhormiUiColors.secondary(this@TabGroupsActivity)) })
             row.setOnClickListener { editGroup(group.id) }
             list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 8 })
         }

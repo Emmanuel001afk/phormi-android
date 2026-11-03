@@ -1,7 +1,6 @@
 package com.uong.phormi
 
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
@@ -33,12 +32,12 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
     override fun onResume() { super.onResume(); if (::status.isInitialized) updateStatus() }
 
     private fun render() {
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(11,18,32)) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(PhormiUiColors.background(this@PhormiKeyboardSettingsActivity)) }
         val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = true; setPadding(dp(20), dp(18), dp(20), dp(24)) }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        content.addView(TextView(this).apply { text="Phormi Keyboard"; textSize=24f; setTextColor(Color.WHITE); setPadding(0,0,0,dp(10)) })
-        status=TextView(this).apply{setTextColor(Color.rgb(203,213,225));textSize=14f;setPadding(0,0,0,dp(14))};content.addView(status)
+        content.addView(TextView(this).apply { text="Phormi Keyboard"; textSize=24f; setTextColor(PhormiUiColors.text(this@PhormiKeyboardSettingsActivity)); setPadding(0,0,0,dp(10)) })
+        status=TextView(this).apply{setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));textSize=14f;setPadding(0,0,0,dp(14))};content.addView(status)
 
         content.addView(Button(this).apply{text="Enable Phormi Keyboard";isAllCaps=false;setOnClickListener{runCatching{startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))}.onFailure{ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard settings are unavailable")}}})
         content.addView(Button(this).apply{text="Choose Phormi Keyboard";isAllCaps=false;setOnClickListener{(getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()}})
@@ -46,7 +45,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         content.addView(sectionTitle("Languages"))
         content.addView(TextView(this).apply{
             text="Character layouts: " + PhormiKeyboardLayouts.supported.joinToString(", ") { java.util.Locale(it).displayLanguage } + ". Korean supports two-set Hangul composition. Offline glide: English, French, Spanish, Portuguese, German, Italian, Indonesian and Turkish. Chinese, Japanese and Indic composition are not yet available."
-            textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
+            textSize=13f;setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));setPadding(0,0,0,dp(8))
         })
         content.addView(Button(this).apply {
             text = "Choose Phormi language"; isAllCaps = false
@@ -60,12 +59,12 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
                     }.show()
             }
         })
-        content.addView(TextView(this).apply { text = "Select a language here, or follow Android's active keyboard subtype. Korean uses two-set Hangul: vowels and final consonants combine while typing; Backspace reverses one key. Glide is disabled in passwords, addresses and private fields."; textSize=12f; setTextColor(Color.rgb(148,163,184)); setPadding(0,dp(5),0,dp(8)) })
+        content.addView(TextView(this).apply { text = "Select a language here, or follow Android's active keyboard subtype. Korean uses two-set Hangul: vowels and final consonants combine while typing; Backspace reverses one key. Glide is disabled in passwords, addresses and private fields."; textSize=12f; setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity)); setPadding(0,dp(5),0,dp(8)) })
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{
             text="Use the Floating and Resize controls in Tools on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
-            textSize=13f;setTextColor(Color.rgb(203,213,225));setPadding(0,0,0,dp(8))
+            textSize=13f;setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));setPadding(0,0,0,dp(8))
         })
         content.addView(Button(this).apply{
             text="Reset keyboard position and size";isAllCaps=false
@@ -76,7 +75,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         })
 
         content.addView(sectionTitle("Appearance"))
-        val themes=arrayOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand")
+        val themes=arrayOf("Phormi","Graphite","Ocean","Light","Slate","Forest","Berry","Sand")
         themes.toList().chunked(2).forEachIndexed { rowIndex, names ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             names.forEachIndexed { column, name ->
@@ -90,10 +89,10 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
             }
             content.addView(row)
         }
-        content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
+        content.addView(TextView(this).apply{text="Appearance presets change the keyboard surface and key treatment without changing the keyboard's feature set.";setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));textSize=12f;setPadding(0,dp(6),0,dp(8))})
         content.addView(Button(this).apply{text="Choose keyboard wallpaper";isAllCaps=false;setOnClickListener{wallpaperPicker.launch(arrayOf("image/*"))}})
         content.addView(Button(this).apply{text="Remove keyboard wallpaper";isAllCaps=false;setOnClickListener{PhormiKeyboardPreferences.setWallpaperUri(this@PhormiKeyboardSettingsActivity,null);ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard wallpaper removed")}})
-        content.addView(TextView(this).apply{text="Wallpaper is selected from your device and kept as a persistent document URI so the keyboard can reuse it after restart.";setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(0,dp(6),0,dp(8))})
+        content.addView(TextView(this).apply{text="Wallpaper is selected from your device and kept as a persistent document URI so the keyboard can reuse it after restart.";setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));textSize=12f;setPadding(0,dp(6),0,dp(8))})
 
         content.addView(sectionTitle("Keyboard behavior"))
         option(content,"Suggestions","Show word suggestions when the editor does not provide its own completions.",PhormiKeyboardPreferences.suggestions(this),PhormiKeyboardPreferences.KEY_SUGGESTIONS)
@@ -107,8 +106,8 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
         scroll.addView(content);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));setContentView(root);updateStatus()
     }
 
-    private fun sectionTitle(value:String)=TextView(this).apply{text=value;textSize=18f;setTextColor(Color.rgb(56,189,248));setPadding(0,dp(20),0,dp(7))}
-    private fun updateStatus(){val imm=getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager;val serviceId="$packageName/.PhormiKeyboardServiceV2";val enabled=imm.enabledInputMethodList.any{it.id==serviceId};val selected=Settings.Secure.getString(contentResolver,Settings.Secure.DEFAULT_INPUT_METHOD)==serviceId;status.text=when{selected->"Status: enabled and currently selected as the active keyboard.";enabled->"Status: enabled, but another keyboard is currently selected.";else->"Status: not enabled yet. Enable it in Android settings, then choose Phormi as the active keyboard."};status.setTextColor(if(enabled)Color.rgb(134,239,172)else Color.rgb(248,196,113))}
-    private fun option(root:LinearLayout,title:String,summary:String,checked:Boolean,key:String){val row=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(0,dp(7),0,dp(7))};row.addView(CheckBox(this).apply{text=title;isChecked=checked;setTextColor(Color.WHITE);textSize=16f;setOnCheckedChangeListener{_,value->PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity,key,value)}});row.addView(TextView(this).apply{text=summary;setTextColor(Color.rgb(148,163,184));textSize=12f;setPadding(dp(48),0,dp(48),dp(6))});root.addView(row)}
+    private fun sectionTitle(value:String)=TextView(this).apply{text=value;textSize=18f;setTextColor(PhormiUiColors.accent(this@PhormiKeyboardSettingsActivity));setPadding(0,dp(20),0,dp(7))}
+    private fun updateStatus(){val imm=getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager;val serviceId="$packageName/.PhormiKeyboardServiceV2";val enabled=imm.enabledInputMethodList.any{it.id==serviceId};val selected=Settings.Secure.getString(contentResolver,Settings.Secure.DEFAULT_INPUT_METHOD)==serviceId;status.text=when{selected->"Status: enabled and currently selected as the active keyboard.";enabled->"Status: enabled, but another keyboard is currently selected.";else->"Status: not enabled yet. Enable it in Android settings, then choose Phormi as the active keyboard."};status.setTextColor(if (enabled) PhormiUiColors.success(this) else PhormiUiColors.warning(this))}
+    private fun option(root:LinearLayout,title:String,summary:String,checked:Boolean,key:String){val row=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(0,dp(7),0,dp(7))};row.addView(CheckBox(this).apply{text=title;isChecked=checked;setTextColor(PhormiUiColors.text(this@PhormiKeyboardSettingsActivity));textSize=16f;setOnCheckedChangeListener{_,value->PhormiKeyboardPreferences.set(this@PhormiKeyboardSettingsActivity,key,value)}});row.addView(TextView(this).apply{text=summary;setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));textSize=12f;setPadding(dp(48),0,dp(48),dp(6))});root.addView(row)}
 }
 private object ToastCompat{fun show(context:android.content.Context,message:String)=android.widget.Toast.makeText(context,message,android.widget.Toast.LENGTH_SHORT).show()}

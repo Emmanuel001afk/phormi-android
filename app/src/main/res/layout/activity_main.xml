@@ -200,7 +200,7 @@
             android:gravity="center"
             android:visibility="gone"
             android:text="✦"
-            android:textColor="#A78BFA"
+            android:textColor="@color/phormi_coral_text"
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"
@@ -260,7 +260,7 @@
                 android:gravity="center"
                 android:text="🔒"
                 android:textSize="18sp"
-                android:background="#CC111827"
+                android:background="@color/phormi_scrim"
                 android:clickable="true"
                 android:focusable="true"
                 android:contentDescription="Hide browser controls" />

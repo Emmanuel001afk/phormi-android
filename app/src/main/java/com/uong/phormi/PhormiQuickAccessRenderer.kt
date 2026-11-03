@@ -1,7 +1,6 @@
 package com.uong.phormi
 
 import android.content.Context
-import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.widget.LinearLayout
@@ -17,8 +16,9 @@ object PhormiQuickAccessRenderer {
     private const val HIDDEN_CUSTOM = "hidden_custom"
 
     fun render(context: Context, rows: LinearLayout, onOpen: (url: String, newTab: Boolean) -> Unit) {
+        val density = context.resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).toInt()
         rows.removeAllViews()
-        val accent = Color.rgb(56, 189, 248)
         val custom = readCustom(context)
             .filterNot { hidden(context, HIDDEN_CUSTOM).contains(it.url) }
         // Quick Access is intentionally user-controlled: only manually added/pinned shortcuts appear.
@@ -28,7 +28,7 @@ object PhormiQuickAccessRenderer {
         if (combined.isEmpty()) {
             rows.addView(TextView(context).apply {
                 text = "Quick Access contains pinned sites and shortcuts you add."
-                setTextColor(Color.rgb(148, 163, 184)); textSize = 12f; setPadding(8, 10, 8, 10)
+                setTextColor(PhormiUiColors.secondary(context)); textSize = 12f; setPadding(dp(8), dp(10), dp(8), dp(10))
             })
             return
         }
@@ -43,11 +43,15 @@ object PhormiQuickAccessRenderer {
                         if (item.kind == "Most visited") append(" · ${item.visits} visits")
                     }
                     gravity = Gravity.CENTER
-                    setTextColor(Color.WHITE)
+                    setTextColor(PhormiUiColors.text(context))
                     textSize = 11f
-                    setPadding(7, 8, 7, 8)
+                    setPadding(dp(7), dp(8), dp(7), dp(8))
                     maxLines = 2
-                    background = GradientDrawable().apply { setColor(Color.rgb(30, 41, 59)); setStroke(1, accent); cornerRadius = 18f }
+                    background = GradientDrawable().apply {
+                        setColor(PhormiUiColors.surfaceSoft(context))
+                        setStroke(dp(1).coerceAtLeast(1), PhormiUiColors.border(context))
+                        cornerRadius = 18f * density
+                    }
                     setOnClickListener { onOpen(item.url, item.kind == "Pinned") }
                     setOnLongClickListener {
                         when (item.kind) {
@@ -58,9 +62,9 @@ object PhormiQuickAccessRenderer {
                         true
                     }
                 }
-                row.addView(chip, LinearLayout.LayoutParams(0, 52, 1f).apply { leftMargin = 3; rightMargin = 3; bottomMargin = 5 })
+                row.addView(chip, LinearLayout.LayoutParams(0, dp(52), 1f).apply { leftMargin = dp(3); rightMargin = dp(3); bottomMargin = dp(5) })
             }
-            rows.addView(row, LinearLayout.LayoutParams(-1, 57))
+            rows.addView(row, LinearLayout.LayoutParams(-1, dp(57)))
         }
     }
 

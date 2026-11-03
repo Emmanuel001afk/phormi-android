@@ -377,15 +377,15 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     private fun scale(): Float = PhormiKeyboardPreferences.heightScale(this)
     private fun scaled(value: Int): Int = dp((value * scale()).roundToInt())
     private fun theme(): Int = PhormiKeyboardPreferences.theme(this)
-    private fun themeBackground(): Int = when (theme()) { 1 -> Color.rgb(20,24,29); 2 -> Color.rgb(7,24,42); 3 -> Color.rgb(242,244,247); 4 -> Color.rgb(38,45,58); 5 -> Color.rgb(17,55,42); 6 -> Color.rgb(61,28,48); 7 -> Color.rgb(69,54,38); else -> Color.rgb(13,18,30) }
-    private fun themeKey(): Int = when (theme()) { 1 -> Color.rgb(48,53,61); 2 -> Color.rgb(18,52,79); 3 -> Color.WHITE; 4 -> Color.rgb(55,65,81); 5 -> Color.rgb(26,78,58); 6 -> Color.rgb(86,38,64); 7 -> Color.rgb(92,70,48); else -> Color.rgb(39,48,64) }
-    private fun themePill(): Int = when (theme()) { 1 -> Color.rgb(37,42,49); 2 -> Color.rgb(15,45,69); 3 -> Color.rgb(224,228,234); 4 -> Color.rgb(47,58,73); 5 -> Color.rgb(20,63,48); 6 -> Color.rgb(70,31,53); 7 -> Color.rgb(78,59,41); else -> Color.rgb(31,41,55) }
-    private fun themeText(): Int = if (theme() == 3) Color.rgb(20,27,36) else Color.WHITE
-    private fun accent(): Int = when (theme()) { 2 -> Color.rgb(65,135,220); 3 -> Color.rgb(98,72,220); 5 -> Color.rgb(52,211,153); 6 -> Color.rgb(244,114,182); 7 -> Color.rgb(245,158,11); else -> Color.rgb(112,75,255) }
+    private fun themeBackground(): Int = when (theme()) { 1 -> Color.rgb(20,24,29); 2 -> Color.rgb(7,24,42); 3 -> Color.rgb(242,244,247); 4 -> Color.rgb(38,45,58); 5 -> Color.rgb(17,55,42); 6 -> Color.rgb(61,28,48); 7 -> Color.rgb(69,54,38); else -> Color.rgb(25,38,83) }
+    private fun themeKey(): Int = when (theme()) { 1 -> Color.rgb(48,53,61); 2 -> Color.rgb(18,52,79); 3 -> Color.WHITE; 4 -> Color.rgb(55,65,81); 5 -> Color.rgb(26,78,58); 6 -> Color.rgb(86,38,64); 7 -> Color.rgb(92,70,48); else -> Color.rgb(35,47,92) }
+    private fun themePill(): Int = when (theme()) { 1 -> Color.rgb(37,42,49); 2 -> Color.rgb(15,45,69); 3 -> Color.rgb(224,228,234); 4 -> Color.rgb(47,58,73); 5 -> Color.rgb(20,63,48); 6 -> Color.rgb(70,31,53); 7 -> Color.rgb(78,59,41); else -> Color.rgb(36,50,107) }
+    private fun themeText(): Int = if (theme() == 3) Color.rgb(20,27,36) else Color.rgb(255,244,216)
+    private fun accent(): Int = when (theme()) { 2 -> Color.rgb(65,135,220); 3 -> Color.rgb(98,72,220); 5 -> Color.rgb(52,211,153); 6 -> Color.rgb(244,114,182); 7 -> Color.rgb(245,158,11); else -> Color.rgb(157,177,255) }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = radius.toFloat()
-        setStroke(dp(1), if (theme() == 3) Color.rgb(205,210,218) else Color.rgb(56,68,88))
+        setStroke(dp(1), when (theme()) { 3 -> Color.rgb(205,210,218); 0 -> Color.rgb(51,64,110); else -> Color.rgb(56,68,88) })
     }
     private fun root(): LinearLayout = LinearLayout(this).apply {
         orientation=LinearLayout.VERTICAL
@@ -463,7 +463,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         setOnClickListener{feedback(this);action()}
         layoutParams=LinearLayout.LayoutParams(0,scaled(42),weight).apply{setMargins(dp(2),dp(1),dp(2),dp(1))}
     }
-    private fun shiftButton(action:()->Unit):Button{val state=when{capsLock->2;shift||autoShift->1;else->0};return keyButton(if(state==0)"⇧"else"⇧A",action=action).apply{background=rounded(when(state){2->Color.rgb(220,38,38);1->Color.rgb(124, 58, 237);else->themeKey()},dp(9));setTextColor(Color.WHITE);contentDescription=when(state){2->"Caps lock";1->"One-letter capitalization";else->"Shift"}}}
+    private fun shiftButton(action:()->Unit):Button{val state=when{capsLock->2;shift||autoShift->1;else->0};return keyButton(if(state==0)"⇧"else"⇧A",action=action).apply{background=rounded(when(state){2->Color.rgb(192,57,43);1->Color.rgb(255,150,120);else->themeKey()},dp(9));setTextColor(when(state){1->Color.rgb(25,38,83);0->themeText();else->Color.WHITE});contentDescription=when(state){2->"Caps lock";1->"One-letter capitalization";else->"Shift"}}}
     private fun addResizeControls(parent: LinearLayout) {
         parent.addView(
             pill(if (PhormiKeyboardPreferences.floating(this)) "Dock keyboard" else "Floating keyboard") {
@@ -634,7 +634,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             else
                 "Suggestions on · autocorrect " + (if (autocorrect) "on" else "off") + " · type a word"
             textSize = 12f
-            setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148, 163, 184))
+            setTextColor(when (theme()) { 3 -> Color.DKGRAY; 0 -> Color.rgb(195,202,226); else -> Color.rgb(148, 163, 184) })
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(-1, scaled(30)))
         // Never collapse the strip: the letter keys must not move while typing.
@@ -853,13 +853,17 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         updateLetterLabels()
         if (renderedShiftState == state) return
         renderedShiftState = state
-        // Purple = one-letter capitalization; red = caps lock.
+        // Coral = one-letter capitalization; red = caps lock.
         key.background = rounded(when (state) {
-            2 -> Color.rgb(220, 38, 38)
-            1 -> Color.rgb(124, 58, 237)
+            2 -> Color.rgb(192, 57, 43)
+            1 -> Color.rgb(255, 150, 120)
             else -> themeKey()
         }, dp(9))
-        key.setTextColor(if (state == 0) themeText() else Color.WHITE)
+        key.setTextColor(when (state) {
+            1 -> Color.rgb(25, 38, 83)
+            0 -> themeText()
+            else -> Color.WHITE
+        })
         key.contentDescription = when (state) {
             2 -> "Caps lock — all letters uppercase"
             1 -> "Shift — next letter uppercase"
@@ -923,7 +927,10 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
             val name = PhormiKeyboardEmoji.categoryNames.getOrElse(index) { "Emoji" }
             categories.addView(pill(icon) { emojiCategory = index; setInputView(render()) }.apply {
                 contentDescription = "$name emoji"
-                if (emojiCategory == index) background = rounded(Color.rgb(80, 63, 152), dp(13))
+                if (emojiCategory == index) {
+                    background = rounded(accent(), dp(13))
+                    setTextColor(if (theme() == 0) Color.rgb(25, 38, 83) else themeText())
+                }
             }, LinearLayout.LayoutParams(dp(46), scaled(36)).apply { setMargins(dp(2), 0, dp(2), 0) })
         }
         nav.addView(categories)
@@ -1033,7 +1040,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         list.addView(TextView(this).apply {
             text = "On-device context suggestions. Tap to insert real Unicode emoji characters, not an image."
             textSize = 12f
-            setTextColor(if (theme() == 3) Color.DKGRAY else Color.rgb(148, 163, 184))
+            setTextColor(when (theme()) { 3 -> Color.DKGRAY; 0 -> Color.rgb(195,202,226); else -> Color.rgb(148, 163, 184) })
             setPadding(0, dp(4), 0, dp(8))
         })
         val context = aiEmojiContext.ifBlank { PhormiKeyboardTextEngine.contextBeforeCursor(currentInputConnection) }
@@ -1064,7 +1071,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         },LinearLayout.LayoutParams(-1,scaled(46)));list.addView(TextView(this).apply{text="Images/GIFs are inserted only when the focused field accepts the requested MIME type.";setTextColor(themeText());textSize=13f;setPadding(dp(8),dp(12),dp(8),dp(12))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildTools():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Contextual emoji"){openAiEmojiFromContext()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Settings"){panel=Panel.SETTINGS;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));addResizeControls(list);list.addView(pill("GIFs & stickers"){panel=Panel.MEDIA;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Voice typing"){launchVoice()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Select all"){currentInputConnection?.performContextMenuAction(android.R.id.selectAll)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Copy"){currentInputConnection?.performContextMenuAction(android.R.id.copy)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Paste"){currentInputConnection?.performContextMenuAction(android.R.id.paste)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Share text"){shareSelectedText()},LinearLayout.LayoutParams(-1,scaled(46)));scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Tools. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(themeText().let{if(theme()==3)Color.DKGRAY else Color.rgb(148,163,184)});setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Offline glide (8 dictionary languages)",PhormiKeyboardPreferences.glide(this)){PhormiKeyboardPreferences.set(this,PhormiKeyboardPreferences.KEY_GLIDE,!PhormiKeyboardPreferences.glide(this));finishGlide();setInputView(render())};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
+    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Tools. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(when (theme()) { 3 -> Color.DKGRAY; 0 -> Color.rgb(195,202,226); else -> Color.rgb(148,163,184) });setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});fun toggle(title:String,enabled:Boolean,action:()->Unit){list.addView(pill(if(enabled)"✓ $title"else title,action),LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})};toggle("Offline glide (8 dictionary languages)",PhormiKeyboardPreferences.glide(this)){PhormiKeyboardPreferences.set(this,PhormiKeyboardPreferences.KEY_GLIDE,!PhormiKeyboardPreferences.glide(this));finishGlide();setInputView(render())};toggle("Suggestions",PhormiKeyboardPreferences.suggestions(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SUGGESTIONS,!PhormiKeyboardPreferences.suggestions(this));setInputView(render())};toggle("Autocorrect",PhormiKeyboardPreferences.autocorrect(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTOCORRECT,!PhormiKeyboardPreferences.autocorrect(this));setInputView(render())};toggle("Auto-capitalization",PhormiKeyboardPreferences.autoCaps(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_AUTO_CAPS,!PhormiKeyboardPreferences.autoCaps(this));setInputView(render())};toggle("Haptic feedback",PhormiKeyboardPreferences.haptic(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_HAPTIC,!PhormiKeyboardPreferences.haptic(this));setInputView(render())};toggle("Key sounds",PhormiKeyboardPreferences.sound(this)){PhormiKeyboardPreferences.set(this@PhormiKeyboardServiceV2,PhormiKeyboardPreferences.KEY_SOUND,!PhormiKeyboardPreferences.sound(this));setInputView(render())};list.addView(pill("Theme: ${themeLabel(theme())}"){
             PhormiKeyboardPreferences.setTheme(this@PhormiKeyboardServiceV2, (theme() + 1) % 8)
             setInputView(render())
         },LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
@@ -1073,7 +1080,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         },LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
         if (!PhormiKeyboardPreferences.wallpaperUri(this).isNullOrBlank()) list.addView(pill("Remove wallpaper"){PhormiKeyboardPreferences.setWallpaperUri(this@PhormiKeyboardServiceV2,null);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))})
         list.addView(pill(if(PhormiKeyboardPreferences.pollinationsKey(this).isBlank())"Set sticker generation key"else"Sticker generation key ✓"){startActivity(Intent(this,PhormiAiEmojiActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);putExtra(PhormiAiEmojiActivity.EXTRA_CONFIG_ONLY,true)})},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(3),0,dp(3))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun themeLabel(value: Int): String = listOf("Midnight","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Midnight" }
+    private fun themeLabel(value: Int): String = listOf("Phormi","Graphite","Ocean","Light","Slate","Forest","Berry","Sand").getOrElse(value) { "Phormi" }
     private fun addBackHeader(root:LinearLayout,label:String,action:()->Unit){root.addView(pill(label,action),LinearLayout.LayoutParams(-1,scaled(36)))}
     private fun render():View{
         if (panel != Panel.KEYBOARD || page != KeyboardPage.LETTERS) { finishGlide(); finishHangul() }

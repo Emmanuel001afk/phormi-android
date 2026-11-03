@@ -135,9 +135,9 @@ class MenuActivity : AppCompatActivity() {
         pages.forEachIndexed { i, id -> findViewById<View>(id).visibility = if (i == activePage) View.VISIBLE else View.GONE }
         buttons.forEachIndexed { i, id ->
             findViewById<TextView>(id).apply {
-                setTextColor(if (i == activePage) Color.WHITE else PhormiUiColors.secondary(this@MenuActivity))
+                setTextColor(if (i == activePage) PhormiUiColors.onAccent(this@MenuActivity) else PhormiUiColors.secondary(this@MenuActivity))
                 background = GradientDrawable().apply {
-                    setColor(if (i == activePage) Color.rgb(29, 78, 105) else Color.TRANSPARENT)
+                    setColor(if (i == activePage) PhormiUiColors.accent(this@MenuActivity) else Color.TRANSPARENT)
                     cornerRadius = 18f * resources.displayMetrics.density
                 }
                 isSelected = i == activePage

@@ -77,13 +77,14 @@ object PhormiNavigationLens {
 
     fun focus(webView: WebView, locator: String, callback: ((Boolean) -> Unit)? = null) {
         val selector = JSONObject.quote(locator)
+        val outline = String.format(java.util.Locale.ROOT, "#%06X", 0xFFFFFF and PhormiUiColors.coral(webView.context))
         val js = """
           (()=>{
             const e=document.querySelector($selector);
             if(!e)return false;
             e.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
             const old=e.style.outline;
-            e.style.outline='3px solid #ef4444';
+            e.style.outline='3px solid $outline';
             e.style.outlineOffset='3px';
             setTimeout(()=>{e.style.outline=old;e.style.outlineOffset='';},1800);
             return true;

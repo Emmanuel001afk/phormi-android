@@ -1,0 +1,7 @@
+<resources>
+    <!-- Android 8.1+ can match the navigation bar to the app surface. -->
+    <style name="Theme.Phormi" parent="Base.Theme.Phormi">
+        <item name="android:navigationBarColor">@color/phormi_background</item>
+        <item name="android:windowLightNavigationBar">@bool/phormi_light_system_bars</item>
+    </style>
+</resources>

@@ -1,6 +1,5 @@
 package com.uong.phormi
 
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.widget.LinearLayout
@@ -16,13 +15,13 @@ class PhormiCodeViewerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         val uri = intent.getParcelableExtra<Uri>("uri") ?: run { finish(); return }
         val title = intent.getStringExtra("title").orEmpty().ifBlank { PhormiFileOpener.displayName(this, uri) }
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(8, 12, 20)) }
-        val bar = LinearLayout(this).apply { setPadding(12, 8, 12, 8); gravity = android.view.Gravity.CENTER_VERTICAL; setBackgroundColor(Color.rgb(15, 23, 42)) }
-        val close = TextView(this).apply { text = "‹"; textSize = 30f; gravity = android.view.Gravity.CENTER; setTextColor(Color.WHITE); setOnClickListener { finish() } }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(PhormiUiColors.background(this@PhormiCodeViewerActivity)) }
+        val bar = LinearLayout(this).apply { setPadding(12, 8, 12, 8); gravity = android.view.Gravity.CENTER_VERTICAL; setBackgroundColor(PhormiUiColors.surface(this@PhormiCodeViewerActivity)) }
+        val close = TextView(this).apply { text = "‹"; textSize = 30f; gravity = android.view.Gravity.CENTER; setTextColor(PhormiUiColors.text(this@PhormiCodeViewerActivity)); setOnClickListener { finish() } }
         bar.addView(close, LinearLayout.LayoutParams(48, 48))
-        bar.addView(TextView(this).apply { text = title; textSize = 16f; setTextColor(Color.WHITE); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, 48, 1f))
+        bar.addView(TextView(this).apply { text = title; textSize = 16f; setTextColor(PhormiUiColors.text(this@PhormiCodeViewerActivity)); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, 48, 1f))
         root.addView(bar)
-        val codeView = TextView(this).apply { setTextColor(Color.rgb(226, 232, 240)); textSize = 13f; typeface = android.graphics.Typeface.MONOSPACE; setPadding(16, 16, 16, 24); setTextIsSelectable(true) }
+        val codeView = TextView(this).apply { setTextColor(PhormiUiColors.text(this@PhormiCodeViewerActivity)); textSize = 13f; typeface = android.graphics.Typeface.MONOSPACE; setPadding(16, 16, 16, 24); setTextIsSelectable(true) }
         val scroll = ScrollView(this)
         scroll.addView(codeView)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))

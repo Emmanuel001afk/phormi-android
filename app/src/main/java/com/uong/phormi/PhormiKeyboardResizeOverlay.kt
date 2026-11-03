@@ -20,19 +20,19 @@ class PhormiKeyboardResizeOverlay(
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(2f)
-        color = 0xFF42A5F5.toInt()
+        color = PhormiUiColors.accent(context)
     }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0xFF42A5F5.toInt()
+        color = PhormiUiColors.accent(context)
     }
     private val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0xFF42A5F5.toInt()
+        color = PhormiUiColors.accent(context)
     }
     private val checkText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0xFFFFFFFF.toInt()
+        color = PhormiUiColors.onAccent(context)
         textAlign = Paint.Align.CENTER
         textSize = dp(16f)
     }

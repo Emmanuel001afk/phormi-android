@@ -746,7 +746,7 @@ class MainActivity : AppCompatActivity() {
         }
         content.addView(TextView(this).apply {
             text = "Automatically close normal tabs after they have been inactive for the selected period. Opening a tab resets its inactivity clock."
-            setTextColor(Color.rgb(148, 163, 184))
+            setTextColor(PhormiUiColors.secondary(this@MainActivity))
             setPadding(0, 0, 0, 12)
         })
         val dialog = AlertDialog.Builder(this).setTitle("Tab retention").setView(content).create()
@@ -831,13 +831,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun dailyAccent(): Int {
         val accents = intArrayOf(
-            Color.rgb(56, 189, 248),
-            Color.rgb(99, 102, 241),
-            Color.rgb(16, 185, 129),
-            Color.rgb(245, 158, 11),
-            Color.rgb(236, 72, 153),
-            Color.rgb(139, 92, 246),
-            Color.rgb(14, 165, 233)
+            PhormiUiColors.accent(this),
+            PhormiUiColors.coralText(this),
+            PhormiUiColors.success(this),
+            PhormiUiColors.warning(this)
         )
         val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
         return accents[(day - 1) % accents.size]
@@ -853,10 +850,10 @@ class MainActivity : AppCompatActivity() {
                     android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
 
-        val background = if (dark) Color.rgb(11, 18, 32) else Color.rgb(250, 247, 245)
-        val primary = if (dark) Color.rgb(248, 250, 252) else Color.rgb(31, 31, 31)
-        val secondary = if (dark) Color.rgb(148, 163, 184) else Color.rgb(92, 82, 78)
-        val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)
+        val background = PhormiUiColors.background(this)
+        val primary = PhormiUiColors.text(this)
+        val secondary = PhormiUiColors.secondary(this)
+        val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
 
         root.setBackgroundColor(background)
         findViewById<TextView>(R.id.start_page_title)?.setTextColor(primary)
@@ -867,9 +864,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<EditText>(R.id.start_page_search)?.setTextColor(primary)
         findViewById<EditText>(R.id.start_page_search)?.setHintTextColor(secondary)
 
-        val surface = if (dark) Color.rgb(17, 24, 39) else Color.rgb(255, 255, 255)
-        val surfaceSoft = if (dark) Color.rgb(23, 32, 51) else Color.rgb(248, 244, 241)
-        val outline = if (dark) Color.rgb(51, 65, 85) else Color.rgb(224, 214, 208)
+        val surface = PhormiUiColors.surface(this)
+        val surfaceSoft = PhormiUiColors.surfaceSoft(this)
+        val outline = PhormiUiColors.border(this)
         styleSurface(findViewById(R.id.start_page_search_box), surface, outline, 28)
         styleSurface(findViewById(R.id.start_page_ai), surfaceSoft, outline, 22)
         listOf(R.id.start_page_action_tabs, R.id.start_page_action_bookmarks,
@@ -895,38 +892,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyBrowserChromeAppearance() {
-        val dark = when (prefs.getString(KEY_THEME_MODE, "System")) {
-            "Dark" -> true
-            "Light" -> false
-            else -> (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        }
-        val background = if (dark) Color.rgb(11, 18, 32) else Color.rgb(250, 247, 245)
-        val toolbar = if (dark) Color.rgb(15, 23, 42) else Color.rgb(255, 255, 255)
-        val text = if (dark) Color.rgb(226, 232, 240) else Color.rgb(31, 31, 31)
-        val secondary = if (dark) Color.rgb(148, 163, 184) else Color.rgb(92, 82, 78)
+        val background = PhormiUiColors.background(this)
+        val toolbar = PhormiUiColors.surface(this)
+        val text = PhormiUiColors.text(this)
+        val secondary = PhormiUiColors.secondary(this)
         findViewById<View>(R.id.main_root)?.setBackgroundColor(background)
         findViewById<View>(R.id.top_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
-        findViewById<View>(R.id.url_toolbar)?.setBackgroundColor(toolbar)
+        styleSurface(findViewById(R.id.url_toolbar), PhormiUiColors.surfaceSoft(this), PhormiUiColors.border(this), 24)
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
         listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu, R.id.btn_refresh,
             R.id.btn_back, R.id.btn_forward, R.id.btn_top_back, R.id.btn_top_forward,
             R.id.btn_top_ai, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai || id == R.id.btn_top_ai)
-                (if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)) else text)
+                (if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)) else text)
         }
         findViewById<TextView>(R.id.tab_count)?.setTextColor(
-            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)
+            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
         )
         findViewById<EditText>(R.id.url_bar)?.apply {
             setTextColor(text)
             setHintTextColor(secondary)
         }
         findViewById<TextView>(R.id.btn_go)?.setTextColor(
-            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else Color.rgb(56, 189, 248)
+            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
         )
     }
+
+    private fun cssColor(color: Int): String = String.format(java.util.Locale.ROOT, "#%06X", 0xFFFFFF and color)
 
     private fun styleSurface(view: View?, fill: Int, stroke: Int, radiusDp: Int) {
         if (view == null) return
@@ -1016,12 +1009,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun makeQuickSiteView(site: QuickSite): TextView {
-        val surfaceSoft = Color.rgb(23, 32, 51)
-        val outline = Color.rgb(51, 65, 85)
+        val surfaceSoft = PhormiUiColors.surfaceSoft(this)
+        val outline = PhormiUiColors.border(this)
         return TextView(this).apply {
             gravity = android.view.Gravity.CENTER
             text = if (site.tag.isNotBlank()) site.tag + "\n" + site.name.take(9) else site.name.take(9)
-            setTextColor(if (site.tag == "+") Color.rgb(56,189,248) else Color.WHITE)
+            setTextColor(if (site.tag == "+") PhormiUiColors.accent(this@MainActivity) else PhormiUiColors.text(this@MainActivity))
             textSize = 8.5f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1581,14 +1574,20 @@ class MainActivity : AppCompatActivity() {
             val escaped = Html.escapeHtml(answer)
             "<section class='ai'><div class='ai-title'>AI synthesis</div><div>$escaped</div></section>"
         }.orEmpty()
+        val bg = cssColor(PhormiUiColors.background(this))
+        val surface = cssColor(PhormiUiColors.surface(this))
+        val text = cssColor(PhormiUiColors.text(this))
+        val muted = cssColor(PhormiUiColors.secondary(this))
+        val accent = cssColor(PhormiUiColors.accent(this))
+        val border = cssColor(PhormiUiColors.border(this))
         return """
             <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
             <style>
-            body{margin:0;background:#0b1220;color:#e5e7eb;font-family:sans-serif}
-            .top{padding:18px 18px 12px;position:sticky;top:0;background:#0b1220;border-bottom:1px solid #263244}
-            .brand{font-size:22px;font-weight:700}.query{margin-top:5px;color:#94a3b8;font-size:13px}.status{padding:28px 18px;color:#94a3b8}
-            .result{padding:17px 18px;border-bottom:1px solid #202b3c;position:relative}.title{font-size:17px;color:#38bdf8;text-decoration:none;font-weight:600}.url{font-size:11px;color:#64748b;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.snippet{font-size:13px;line-height:1.45;margin-top:7px;color:#cbd5e1}.source-badge{margin-top:8px;min-width:28px;height:24px;padding:0 7px;border:1px solid #334155;border-radius:12px;background:#111827;color:#94a3b8;font-size:9px;font-weight:700}.source-details{display:none;margin-left:7px;color:#64748b;font-size:10px;vertical-align:middle}.source-details.show{display:inline-block}
-            .coverage{padding:8px 14px;color:#94a3b8;font-size:11px;border-bottom:1px solid #1e293b}.ai{margin:10px 14px;padding:12px;border:1px solid #334155;border-radius:14px;background:#111827;color:#e2e8f0}.ai-title{color:#38bdf8;font-weight:700}.ai div{margin-top:8px;line-height:1.5;font-size:13px}.contributors{display:none;margin-top:5px;color:#64748b}.footer{padding:18px;color:#94a3b8;font-size:12px}.engine{display:inline-block;margin:4px 4px 0 0;padding:8px 10px;border:1px solid #334155;border-radius:14px;color:#cbd5e1;text-decoration:none}
+            body{margin:0;background:$bg;color:$text;font-family:sans-serif}
+            .top{padding:18px 18px 12px;position:sticky;top:0;background:$bg;border-bottom:1px solid $border}
+            .brand{font-size:22px;font-weight:700}.query{margin-top:5px;color:$muted;font-size:13px}.status{padding:28px 18px;color:$muted}
+            .result{padding:17px 18px;border-bottom:1px solid $border;position:relative}.title{font-size:17px;color:$accent;text-decoration:none;font-weight:600}.url{font-size:11px;color:$muted;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.snippet{font-size:13px;line-height:1.45;margin-top:7px;color:$text}.source-badge{margin-top:8px;min-width:28px;height:24px;padding:0 7px;border:1px solid $border;border-radius:12px;background:$surface;color:$muted;font-size:9px;font-weight:700}.source-details{display:none;margin-left:7px;color:$muted;font-size:10px;vertical-align:middle}.source-details.show{display:inline-block}
+            .coverage{padding:8px 14px;color:$muted;font-size:11px;border-bottom:1px solid $border}.ai{margin:10px 14px;padding:12px;border:1px solid $border;border-radius:14px;background:$surface;color:$text}.ai-title{color:$accent;font-weight:700}.ai div{margin-top:8px;line-height:1.5;font-size:13px}.contributors{display:none;margin-top:5px;color:$muted}.footer{padding:18px;color:$muted;font-size:12px}.engine{display:inline-block;margin:4px 4px 0 0;padding:8px 10px;border:1px solid $border;border-radius:14px;color:$text;text-decoration:none}
             </style></head><body>
             <div class='top'><div class='brand'>Phormi Search</div><div class='query'>$q</div><div class='query'>${if (loading) "Collecting $completed/$total engines…" else "Unified results · $total engines"}</div></div>
             <div class='coverage'>${if (loading) "${finishedEngines.size}/$total answered" else "${successfulEngines.size}/$total answered"}</div>
@@ -1769,7 +1768,7 @@ class MainActivity : AppCompatActivity() {
         val favorite = url.startsWith("http") && PhormiFavorites.contains(this, url)
         val icon = button.compoundDrawables.getOrNull(1)?.mutate()
         if (icon != null) {
-            icon.setTint(if (favorite) Color.rgb(56, 189, 248) else Color.rgb(100, 116, 139))
+            icon.setTint(if (favorite) PhormiUiColors.accent(this) else PhormiUiColors.secondary(this))
             button.setCompoundDrawablesWithIntrinsicBounds(null, icon, null, null)
         }
         button.alpha = if (favorite) 1f else 0.72f
@@ -2593,7 +2592,7 @@ class MainActivity : AppCompatActivity() {
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(10.dp(), 8.dp(), 10.dp(), 8.dp())
                     text = "${story.title}\n${story.source} · ${story.category}"
-                    setTextColor(Color.rgb(226, 232, 240))
+                    setTextColor(PhormiUiColors.text(this@MainActivity))
                     textSize = 11f
                     maxLines = 3
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -2611,7 +2610,7 @@ class MainActivity : AppCompatActivity() {
             container.addView(row)
         }
         if (stories.isEmpty()) container.addView(TextView(this).apply {
-            text = "News unavailable right now"; setTextColor(Color.rgb(100,116,139)); textSize = 9f; setPadding(8.dp(),8.dp(),8.dp(),8.dp())
+            text = "News unavailable right now"; setTextColor(PhormiUiColors.secondary(this@MainActivity)); textSize = 9f; setPadding(8.dp(),8.dp(),8.dp(),8.dp())
         })
     }
 
@@ -2919,17 +2918,17 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
             setPadding(36.dp(), 36.dp(), 36.dp(), 36.dp())
-            setBackgroundColor(Color.rgb(11, 18, 32))
+            setBackgroundColor(PhormiUiColors.background(this@MainActivity))
         }
         val title = TextView(this).apply {
             text = "Phormi is locked"
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.text(this@MainActivity))
             textSize = 24f
             gravity = android.view.Gravity.CENTER
         }
         val message = TextView(this).apply {
             text = "Authenticate with your device security to continue."
-            setTextColor(Color.rgb(148, 163, 184))
+            setTextColor(PhormiUiColors.secondary(this@MainActivity))
             textSize = 14f
             gravity = android.view.Gravity.CENTER
             setPadding(0, 12.dp(), 0, 24.dp())
@@ -2937,10 +2936,10 @@ class MainActivity : AppCompatActivity() {
         val retry = TextView(this).apply {
             text = "Unlock with device security"
             gravity = android.view.Gravity.CENTER
-            setTextColor(Color.WHITE)
+            setTextColor(PhormiUiColors.onAccent(this@MainActivity))
             textSize = 16f
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(56, 189, 248))
+                setColor(PhormiUiColors.accent(this@MainActivity))
                 cornerRadius = 24.dp().toFloat()
             }
             setPadding(24.dp(), 14.dp(), 24.dp(), 14.dp())
@@ -2949,7 +2948,7 @@ class MainActivity : AppCompatActivity() {
         val pin = TextView(this).apply {
             text = "Unlock with Phormi PIN"
             gravity = android.view.Gravity.CENTER
-            setTextColor(Color.rgb(56, 189, 248))
+            setTextColor(PhormiUiColors.accent(this@MainActivity))
             textSize = 14f
             setPadding(24.dp(), 18.dp(), 24.dp(), 10.dp())
             setOnClickListener { promptPinUnlock() }
@@ -3967,12 +3966,17 @@ class MainActivity : AppCompatActivity() {
     private fun showNetworkErrorPage(view: WebView, url: String, detail: String) {
         val safeUrl = Html.escapeHtml(url).replace("'", "&#39;")
         val safeDetail = Html.escapeHtml(detail)
+        val bg = cssColor(PhormiUiColors.background(this))
+        val text = cssColor(PhormiUiColors.text(this))
+        val muted = cssColor(PhormiUiColors.secondary(this))
+        val accent = cssColor(PhormiUiColors.accent(this))
+        val onAccent = cssColor(PhormiUiColors.onAccent(this))
         val page = """
             <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
-            <style>body{margin:0;background:#0b1220;color:#e5e7eb;font-family:sans-serif;padding:28px}
-            h1{font-size:20px;color:#f8fafc}p{font-size:14px;line-height:1.5;color:#cbd5e1}
-            .url{font-size:12px;color:#64748b;word-break:break-all;margin:12px 0}
-            a{display:inline-block;margin-top:18px;padding:11px 16px;border-radius:12px;background:#1d4ed8;color:#fff;text-decoration:none;font-size:14px}</style>
+            <style>body{margin:0;background:$bg;color:$text;font-family:sans-serif;padding:28px}
+            h1{font-size:20px;color:$text}p{font-size:14px;line-height:1.5;color:$text}
+            .url{font-size:12px;color:$muted;word-break:break-all;margin:12px 0}
+            a{display:inline-block;margin-top:18px;padding:11px 16px;border-radius:12px;background:$accent;color:$onAccent;text-decoration:none;font-size:14px}</style>
             </head><body><h1>This page isn't available</h1><p>$safeDetail</p>
             <div class='url'>$safeUrl</div><p>Check your connection, then try again.</p>
             <a href='$safeUrl'>Try again</a></body></html>
@@ -3988,17 +3992,17 @@ class MainActivity : AppCompatActivity() {
             url.startsWith("https://") && page?.certificate != null -> {
                 indicator.text = "🔒"
                 indicator.contentDescription = "Secure HTTPS connection. Tap for site information."
-                indicator.setTextColor(Color.rgb(134, 239, 172))
+                indicator.setTextColor(PhormiUiColors.success(this))
             }
             url.startsWith("http://") -> {
                 indicator.text = "⚠"
                 indicator.contentDescription = "Not secure HTTP connection. Tap for site information."
-                indicator.setTextColor(Color.rgb(251, 191, 36))
+                indicator.setTextColor(PhormiUiColors.warning(this))
             }
             else -> {
                 indicator.text = "ⓘ"
                 indicator.contentDescription = "Site information and connection security"
-                indicator.setTextColor(Color.rgb(148, 163, 184))
+                indicator.setTextColor(PhormiUiColors.secondary(this@MainActivity))
             }
         }
     }
@@ -4041,7 +4045,7 @@ class MainActivity : AppCompatActivity() {
         val counter = TextView(this).apply {
             text = "Enter text to search this page"
             setPadding(24, 8, 24, 8)
-            setTextColor(Color.rgb(148, 163, 184))
+            setTextColor(PhormiUiColors.secondary(this@MainActivity))
         }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
