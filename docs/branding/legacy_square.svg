@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="fieldl" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="317.44" y2="512.00">
+      <stop offset="0" stop-color="#2C5248"/><stop offset="1" stop-color="#0A1715"/>
+    </linearGradient>
+    <radialGradient id="warmthl" gradientUnits="userSpaceOnUse" cx="138.24" cy="35.84" r="522.24">
+      <stop offset="0" stop-color="#E8A659" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#C67537" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#C67537" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="depthl" gradientUnits="userSpaceOnUse" cx="450.56" cy="486.40" r="399.36">
+      <stop offset="0" stop-color="#05100D" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#05100D" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bonel" gradientUnits="userSpaceOnUse"
+        x1="186.47" y1="122.80"
+        x2="310.89" y2="389.94">
+      <stop offset="0" stop-color="#FBF3E3"/>
+      <stop offset="0.42" stop-color="#F1E5CE"/>
+      <stop offset="1" stop-color="#DFC9A3"/>
+    </linearGradient>
+    <radialGradient id="emberl" gradientUnits="userSpaceOnUse" cx="256.00" cy="217.83" r="36.60">
+      <stop offset="0" stop-color="#FFD79E"/>
+      <stop offset="0.38" stop-color="#E9955A"/>
+      <stop offset="0.82" stop-color="#C4532F"/>
+      <stop offset="1" stop-color="#B24A28"/>
+    </radialGradient>
+    <radialGradient id="blooml" gradientUnits="userSpaceOnUse" cx="256.00" cy="217.83" r="113.45">
+      <stop offset="0" stop-color="#F0A05E" stop-opacity="0.34"/>
+      <stop offset="0.45" stop-color="#E08A4C" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#E08A4C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="spilll" gradientUnits="userSpaceOnUse" cx="256.00" cy="217.83" r="73.19">
+      <stop offset="0" stop-color="#FFCE8F" stop-opacity="0.46"/>
+      <stop offset="0.30" stop-color="#F5A868" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#F5A868" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="grainl" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8500" numOctaves="3" seed="11" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0"/>
+    </filter>
+  </defs>
+    <rect width="512" height="512" fill="url(#fieldl)"/>
+    <rect width="512" height="512" fill="url(#warmthl)"/>
+    <g fill="none">
+      <circle cx="467.97" cy="51.71" r="77.82" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="129.79" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="181.76" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="233.73" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="285.70" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="337.66" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="389.63" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="441.60" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+      <circle cx="467.97" cy="51.71" r="493.57" stroke="#4E796D" stroke-width="1.48" opacity="0.30"/>
+    </g>
+    <rect width="512" height="512" fill="url(#depthl)"/>
+    <circle cx="256.00" cy="217.83" r="113.45" fill="url(#blooml)"/>
+    <g transform="translate(3.07,4.72)" opacity="0.46">
+      <path d="M155.66 135.19 L228.85 135.19 C320.93 135.19 356.34 172.97 356.34 217.83 C356.34 281.57 320.93 300.46 228.85 300.46 L155.66 300.46" fill="none" stroke="#04100C" stroke-width="73.19" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M155.66 366.57 L155.66 135.19" fill="none" stroke="#04100C" stroke-width="73.19" stroke-linecap="round"/>
+    </g>
+    <circle cx="256.00" cy="217.83" r="36.60" fill="url(#emberl)"/>
+    <circle cx="256.00" cy="217.83" r="36.60" fill="none" stroke="#8E3A22" stroke-width="2.24" opacity="0.4"/>
+    <path d="M155.66 135.19 L228.85 135.19 C320.93 135.19 356.34 172.97 356.34 217.83 C356.34 281.57 320.93 300.46 228.85 300.46 L155.66 300.46" fill="none" stroke="url(#bonel)" stroke-width="73.19" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M155.66 366.57 L155.66 135.19" fill="none" stroke="url(#bonel)" stroke-width="73.19" stroke-linecap="round"/>
+    <path d="M155.66 135.19 L228.85 135.19 C320.93 135.19 356.34 172.97 356.34 217.83 C356.34 281.57 320.93 300.46 228.85 300.46 L155.66 300.46" fill="none" stroke="url(#spilll)" stroke-width="67.34" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M155.66 366.57 L155.66 135.19" fill="none" stroke="url(#spilll)" stroke-width="67.34" stroke-linecap="round"/>
+    <rect width="512" height="512" filter="url(#grainl)" opacity="0.05"/>
+</svg>

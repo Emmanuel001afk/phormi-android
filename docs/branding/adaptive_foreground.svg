@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108.0" height="108.0" viewBox="0 0 108.0 108.0">
+  <defs>
+    <linearGradient id="fieldf" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="66.96" y2="108.00">
+      <stop offset="0" stop-color="#2C5248"/><stop offset="1" stop-color="#0A1715"/>
+    </linearGradient>
+    <radialGradient id="warmthf" gradientUnits="userSpaceOnUse" cx="29.16" cy="7.56" r="110.16">
+      <stop offset="0" stop-color="#E8A659" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#C67537" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#C67537" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="depthf" gradientUnits="userSpaceOnUse" cx="95.04" cy="102.60" r="84.24">
+      <stop offset="0" stop-color="#05100D" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#05100D" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bonef" gradientUnits="userSpaceOnUse"
+        x1="44.01" y1="35.05"
+        x2="61.89" y2="73.44">
+      <stop offset="0" stop-color="#FBF3E3"/>
+      <stop offset="0.42" stop-color="#F1E5CE"/>
+      <stop offset="1" stop-color="#DFC9A3"/>
+    </linearGradient>
+    <radialGradient id="emberf" gradientUnits="userSpaceOnUse" cx="54.00" cy="48.71" r="5.26">
+      <stop offset="0" stop-color="#FFD79E"/>
+      <stop offset="0.38" stop-color="#E9955A"/>
+      <stop offset="0.82" stop-color="#C4532F"/>
+      <stop offset="1" stop-color="#B24A28"/>
+    </radialGradient>
+    <radialGradient id="bloomf" gradientUnits="userSpaceOnUse" cx="54.00" cy="48.71" r="16.30">
+      <stop offset="0" stop-color="#F0A05E" stop-opacity="0.34"/>
+      <stop offset="0.45" stop-color="#E08A4C" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#E08A4C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="spillf" gradientUnits="userSpaceOnUse" cx="54.00" cy="48.71" r="10.52">
+      <stop offset="0" stop-color="#FFCE8F" stop-opacity="0.46"/>
+      <stop offset="0.30" stop-color="#F5A868" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#F5A868" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+    <circle cx="54.00" cy="48.71" r="16.30" fill="url(#bloomf)"/>
+    <circle cx="54.00" cy="48.71" r="5.26" fill="url(#emberf)"/>
+    <circle cx="54.00" cy="48.71" r="5.26" fill="none" stroke="#8E3A22" stroke-width="0.60" opacity="0.4"/>
+    <path d="M39.58 36.84 L50.10 36.84 C63.33 36.84 68.42 42.26 68.42 48.71 C68.42 57.87 63.33 60.58 50.10 60.58 L39.58 60.58" fill="none" stroke="url(#bonef)" stroke-width="10.52" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M39.58 70.08 L39.58 36.84" fill="none" stroke="url(#bonef)" stroke-width="10.52" stroke-linecap="round"/>
+    <path d="M39.58 36.84 L50.10 36.84 C63.33 36.84 68.42 42.26 68.42 48.71 C68.42 57.87 63.33 60.58 50.10 60.58 L39.58 60.58" fill="none" stroke="url(#spillf)" stroke-width="9.68" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M39.58 70.08 L39.58 36.84" fill="none" stroke="url(#spillf)" stroke-width="9.68" stroke-linecap="round"/>
+</svg>

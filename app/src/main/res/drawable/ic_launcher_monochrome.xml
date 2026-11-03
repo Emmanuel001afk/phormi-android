@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon silhouette (Android 13+). Solid shape only; the system tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M39.58 36.84 L50.10 36.84 C63.33 36.84 68.42 42.26 68.42 48.71 C68.42 57.87 63.33 60.58 50.10 60.58 L39.58 60.58"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="10.52"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M39.58 70.08 L39.58 36.84"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="10.52"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M50.845 48.710C50.845 46.967 52.257 45.555 54.000 45.555C55.743 45.555 57.155 46.967 57.155 48.710C57.155 50.453 55.743 51.865 54.000 51.865C52.257 51.865 50.845 50.453 50.845 48.710Z"
+        android:fillColor="#FF000000" />
+</vector>
