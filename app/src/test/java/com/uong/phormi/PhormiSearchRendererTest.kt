@@ -65,9 +65,11 @@ class PhormiSearchRendererTest {
     @Test
     fun `loading state shows skeletons and no result count`() {
         val html = render(results = emptyList(), loading = true, successful = emptyList(), finished = emptyList())
-        assertTrue(html.contains("Searching the web"))
-        assertTrue(html.contains("skeleton"))
-        assertFalse(html.contains("result-count"))
+        val main = html.substringAfter("<main").substringBefore("</main>")
+        assertTrue(main.contains("Searching the web"))
+        assertTrue(main.contains("skeleton"))
+        // The stylesheet legitimately defines .result-count; the loading document must not render one.
+        assertFalse(main.contains("result-count"))
     }
 
     @Test
