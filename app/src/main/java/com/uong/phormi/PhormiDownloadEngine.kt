@@ -779,7 +779,7 @@ class PhormiDownloadService : Service() {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else Notification.Builder(this)
-        return builder.setSmallIcon(applicationInfo.icon)
+        return builder.setSmallIcon(R.drawable.ic_phormi_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(open)
