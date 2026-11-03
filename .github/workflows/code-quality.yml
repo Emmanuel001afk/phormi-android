@@ -38,7 +38,9 @@ jobs:
           languages: java-kotlin
           build-mode: manual
       - name: Audit source and resources
-        run: python3 tools/audit_project.py
+        run: |
+          python3 tools/audit_project.py
+          python3 tools/audit_app_icon.py
       - name: Run unit tests
         run: |
           set +e

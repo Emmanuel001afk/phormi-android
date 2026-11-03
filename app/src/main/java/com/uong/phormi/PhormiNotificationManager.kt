@@ -54,7 +54,7 @@ object PhormiNotificationManager {
             )
         }
         val notification = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_phormi_logo)
+            .setSmallIcon(R.drawable.ic_phormi_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pending)

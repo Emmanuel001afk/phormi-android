@@ -46,7 +46,7 @@ object PhormiNotificationCenter {
         )
         val text = if (success) "Download completed" else "Download failed"
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_phormi_logo)
+            .setSmallIcon(R.drawable.ic_phormi_notification)
             .setContentTitle(title.ifBlank { "Phormi download" })
             .setContentText(text)
             .setContentIntent(intent)
