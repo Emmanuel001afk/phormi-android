@@ -42,6 +42,7 @@ jobs:
           python3 tools/audit_project.py
           python3 tools/audit_app_icon.py
           python3 tools/audit_app_ui.py
+          python3 tools/audit_search.py
       - name: Run unit tests
         run: |
           set +e
