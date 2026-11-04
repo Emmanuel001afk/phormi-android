@@ -153,7 +153,9 @@ class TabOverviewSmokeTest {
         assertEquals(listOf(12, 13), manager.groupForId(read.id)!!.tabIds)
         manager.replaceMembers(work.id, listOf(11, 14))
         assertEquals(listOf(11, 14), manager.groupForId(work.id)!!.tabIds)
-        assertEquals(listOf(13), manager.groupForId(read.id)!!.tabIds)
+        // Replacing Work's membership only steals the new ids from other groups;
+        // it does not remove Reading's existing member 12.
+        assertEquals(listOf(12, 13), manager.groupForId(read.id)!!.tabIds)
         manager.setColor(work.id, 5)
         manager.setCollapsed(work.id, true)
         manager.move(work.id, 1)
