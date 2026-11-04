@@ -3065,7 +3065,7 @@ class MainActivity : AppCompatActivity() {
                     val owner = tabs.firstOrNull { it.webView === view }
                     val cached = owner?.searchDocuments?.get(localUrl)
                     if (cached != null) {
-                        owner.renderedSearchHtml = cached
+                        owner?.renderedSearchHtml = cached
                         return android.webkit.WebResourceResponse(
                             "text/html", "UTF-8",
                             java.io.ByteArrayInputStream(cached.toByteArray(Charsets.UTF_8))
