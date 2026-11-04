@@ -743,6 +743,8 @@ class MainActivity : AppCompatActivity() {
             "new_tab" -> createNewTab(NEW_TAB_URL, requestedProfile = incomingProfile)
             "select" -> if (startupTabId > 0) tabs.firstOrNull { it.id == startupTabId }?.let { switchToTab(it.id) }
             "close" -> if (startupTabId > 0) tabs.firstOrNull { it.id == startupTabId }?.let { closeTab(it.id) }
+            "open_group" -> openGroupById(intent?.getStringExtra("group_id").orEmpty())
+            "close_group" -> closeGroupById(intent?.getStringExtra("group_id").orEmpty())
         }
         if (incomingUrl != null && (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
             createNewTab(incomingUrl, requestedProfile = incomingProfile)
@@ -1828,6 +1830,8 @@ class MainActivity : AppCompatActivity() {
             "new_tab" -> createNewTab(NEW_TAB_URL, requestedProfile = profile)
             "select" -> intent?.getIntExtra("tab_id", -1)?.let { id -> tabs.firstOrNull { it.id == id }?.let { switchToTab(it.id) } }
             "close" -> intent?.getIntExtra("tab_id", -1)?.let { id -> if (id > 0) closeTab(id) }
+            "open_group" -> openGroupById(intent?.getStringExtra("group_id").orEmpty())
+            "close_group" -> closeGroupById(intent?.getStringExtra("group_id").orEmpty())
         }
         if (openUrl.startsWith("http://") || openUrl.startsWith("https://")) createNewTab(openUrl, requestedProfile = profile)
         else intent?.dataString?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { createNewTab(it, requestedProfile = profile) }
@@ -2238,6 +2242,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateTabCount()
         saveTabs()
+        TabGroupManager(this).prune(tabs.map { it.id })
     }
 
     private fun saveTabs() {
@@ -3743,12 +3748,38 @@ class MainActivity : AppCompatActivity() {
                     val tabId = data.getIntExtra("tab_id", -1)
                     if (tabId > 0) TabGroupManager(this).unassignTab(tabId)
                 }
+                "assign_group_many" -> {
+                    val groupId = data.getStringExtra("group_id").orEmpty()
+                    val ids = (data.getIntArrayExtra("tab_ids") ?: intArrayOf()).filter { id -> tabs.any { it.id == id } }
+                    if (groupId.isNotBlank() && ids.isNotEmpty()) TabGroupManager(this).assignTabs(groupId, ids)
+                }
+                "unassign_group_many" -> {
+                    val ids = (data.getIntArrayExtra("tab_ids") ?: intArrayOf()).filter { id -> tabs.any { it.id == id } }
+                    if (ids.isNotEmpty()) TabGroupManager(this).unassignTabs(ids)
+                }
+                "open_group" -> openGroupById(data.getStringExtra("group_id").orEmpty())
+                "close_group" -> closeGroupById(data.getStringExtra("group_id").orEmpty())
                 "reassign_env" -> {
                     val tabId = data.getIntExtra("tab_id", -1)
                     val profile = data.getStringExtra("profile").orEmpty()
                     if (tabId > 0 && profile.isNotBlank()) reassignTabEnvironment(tabId, profile)
                 }
             }
+    }
+
+    private fun openGroupById(groupId: String) {
+        if (groupId.isBlank()) return
+        val group = TabGroupManager(this).groupForId(groupId) ?: return
+        val target = group.tabIds.firstOrNull { id -> tabs.any { it.id == id } }
+        if (target != null) switchToTab(target)
+        else Toast.makeText(this, "${group.name} has no open tabs.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun closeGroupById(groupId: String) {
+        if (groupId.isBlank()) return
+        val group = TabGroupManager(this).groupForId(groupId) ?: return
+        group.tabIds.filter { id -> tabs.any { it.id == id } }.distinct().forEach { id -> closeTab(id) }
+        TabGroupManager(this).prune(tabs.map { it.id })
     }
 
     fun openAiFromBottom(view: View) {

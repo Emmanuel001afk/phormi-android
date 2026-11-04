@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/group_card" android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:padding="12dp" android:background="@drawable/bg_card">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+        <View android:id="@+id/group_color_dot" android:layout_width="12dp" android:layout_height="12dp" android:layout_marginEnd="8dp" android:background="@drawable/bg_tab_add" />
+        <TextView android:id="@+id/group_name" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:textColor="@color/phormi_text" android:textSize="16sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/group_meta" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/phormi_secondary" android:textSize="12sp" />
+    </LinearLayout>
+    <TextView android:id="@+id/group_note" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp"
+        android:textColor="@color/phormi_secondary" android:textSize="12sp" android:maxLines="2" android:ellipsize="end" android:visibility="gone" />
+    <TextView android:id="@+id/group_hosts" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+        android:textColor="@color/phormi_secondary" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:id="@+id/btn_group_open" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:layout_marginEnd="6dp"
+            android:gravity="center" android:text="Open" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/phormi_on_accent"
+            android:background="@drawable/bg_primary_button" android:clickable="true" android:focusable="true" />
+        <TextView android:id="@+id/btn_group_add_tabs" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:layout_marginEnd="6dp"
+            android:gravity="center" android:text="Add tabs" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/phormi_text"
+            android:background="@drawable/bg_secondary_button" android:clickable="true" android:focusable="true" />
+        <TextView android:id="@+id/btn_group_edit" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+            android:gravity="center" android:text="Edit" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/phormi_text"
+            android:background="@drawable/bg_secondary_button" android:clickable="true" android:focusable="true" />
+    </LinearLayout>
+</LinearLayout>

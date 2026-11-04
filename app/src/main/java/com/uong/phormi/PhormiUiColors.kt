@@ -32,6 +32,16 @@ object PhormiUiColors {
     fun mediaScrimStrong(context: Context) = ContextCompat.getColor(context, R.color.phormi_media_scrim_strong)
     fun onMedia(context: Context) = ContextCompat.getColor(context, R.color.phormi_on_media)
 
+    /** Stable, semantic group palette. Index is persisted by TabGroupManager. */
+    fun groupColor(context: Context, index: Int): Int = when (Math.floorMod(index, TabGroupManager.COLOR_COUNT)) {
+        0 -> accent(context)
+        1 -> coralText(context)
+        2 -> success(context)
+        3 -> warning(context)
+        4 -> danger(context)
+        else -> secondary(context)
+    }
+
     fun isDark(context: Context): Boolean =
         (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES

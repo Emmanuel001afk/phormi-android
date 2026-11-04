@@ -96,13 +96,74 @@ class TabOverviewSmokeTest {
 
     @Test fun gridChoicePersistsAndCardsRemainReachable() {
         seedTabs()
-        ActivityScenario.launch(TabsOverviewActivity::class.java).use {
+        ActivityScenario.launch(TabsOverviewActivity::class.java).use { scenario ->
             assertTrue(device.wait(Until.hasObject(By.desc("Grid layout")), 7000))
             device.findObject(By.desc("Grid layout")).click()
             assertEquals("grid", prefs.getString("tab_view_mode", null))
             assertTrue(device.hasObject(By.desc("Group News")) || device.hasObject(By.desc("Group github.com")))
+            scenario.onActivity { activity ->
+                val grid = activity.findViewById<ViewGroup>(R.id.tabs_grid)
+                assertEquals(4, tagged(grid, "tab-card").size)
+                assertTrue(tagged(grid, "tab-card").all { it.getTag(R.id.overview_tab_card) == "tab-card:grid" })
+            }
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "tab-overview-grid.png"))
+            device.findObject(By.desc("Horizontal card layout")).click()
+            assertEquals("horizontal", prefs.getString("tab_view_mode", null))
+            scenario.onActivity { activity ->
+                val cards = activity.findViewById<ViewGroup>(R.id.tabs_horizontal)
+                assertEquals(4, tagged(cards, "tab-card").size)
+                assertTrue(tagged(cards, "tab-card").all { it.getTag(R.id.overview_tab_card) == "tab-card:cards" })
+            }
+            device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "tab-overview-cards.png"))
+            device.findObject(By.desc("List layout")).click()
+            scenario.onActivity { activity ->
+                val list = activity.findViewById<ViewGroup>(R.id.tabs_vertical)
+                assertTrue(tagged(list, "tab-card").all { it.getTag(R.id.overview_tab_card) == "tab-card:list" })
+            }
         }
+    }
+
+    @Test fun groupCollapseAndBulkGroupActionAreReal() {
+        seedTabs()
+        ActivityScenario.launchActivityForResult<TabsOverviewActivity>(Intent(context, TabsOverviewActivity::class.java)).use { scenario ->
+            assertTrue(device.wait(Until.hasObject(By.desc("Collapse group Work")), 7000))
+            device.findObject(By.desc("Collapse group Work")).click()
+            assertTrue(device.wait(Until.hasObject(By.desc("Expand group Work")), 3000))
+            assertTrue(TabGroupManager(context).list().first { it.name == "Work" }.collapsed)
+            device.findObject(By.desc("Expand group Work")).click()
+            assertTrue(device.wait(Until.hasObject(By.desc("Collapse group Work")), 3000))
+            device.findObject(By.res("com.uong.phormi", "btn_select_tabs")).click()
+            device.findObject(By.res("com.uong.phormi", "btn_select_all_tabs")).click()
+            device.findObject(By.res("com.uong.phormi", "btn_group_selected")).click()
+            assertTrue(device.wait(Until.hasObject(By.desc("Group choice Work")), 3000))
+            device.findObject(By.desc("Group choice Work")).click()
+            val result = scenario.result
+            assertEquals("assign_group_many", result.resultData?.getStringExtra("action"))
+            assertArrayEquals(intArrayOf(11, 12, 13, 14), result.resultData?.getIntArrayExtra("tab_ids")?.sortedArray())
+        }
+    }
+
+    @Test fun groupManagerPersistsColorOrderMembershipAndPrunesClosedTabs() {
+        val manager = TabGroupManager(context)
+        val work = manager.create("Work", 2)
+        val read = manager.create("Reading", 4)
+        manager.assignTabs(work.id, listOf(11, 12))
+        manager.assignTabs(read.id, listOf(12, 13))
+        assertEquals(listOf(11), manager.groupForId(work.id)!!.tabIds)
+        assertEquals(listOf(12, 13), manager.groupForId(read.id)!!.tabIds)
+        manager.replaceMembers(work.id, listOf(11, 14))
+        assertEquals(listOf(11, 14), manager.groupForId(work.id)!!.tabIds)
+        assertEquals(listOf(13), manager.groupForId(read.id)!!.tabIds)
+        manager.setColor(work.id, 5)
+        manager.setCollapsed(work.id, true)
+        manager.move(work.id, 1)
+        val saved = manager.list()
+        assertEquals(listOf("Reading", "Work"), saved.map { it.name })
+        assertEquals(5, saved.first { it.id == work.id }.color)
+        assertTrue(saved.first { it.id == work.id }.collapsed)
+        manager.prune(listOf(14))
+        assertEquals(listOf(14), manager.groupForId(work.id)!!.tabIds)
+        assertTrue(manager.groupForId(read.id)!!.tabIds.isEmpty())
     }
 
     @Test fun typedUrlSurvivesImmediateSnapshotAndHomeIsAlwaysReachable() {

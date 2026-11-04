@@ -150,6 +150,7 @@ jobs:
             mkdir -p /tmp/phormi-device-screenshots
             adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-list.png /tmp/phormi-device-screenshots/ || true
             adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-grid.png /tmp/phormi-device-screenshots/ || true
+            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-cards.png /tmp/phormi-device-screenshots/ || true
             exit 0
       - name: Validate device test results
         if: always()

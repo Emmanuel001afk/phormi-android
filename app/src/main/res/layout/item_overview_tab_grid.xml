@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overview_tab_card" android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:minHeight="148dp" android:orientation="vertical" android:padding="10dp" android:background="@drawable/bg_card">
+    <LinearLayout android:id="@+id/tab_card_open" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:clickable="true" android:focusable="true" android:background="?attr/selectableItemBackground">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/tab_card_monogram" android:layout_width="36dp" android:layout_height="36dp" android:gravity="center"
+                android:textColor="@color/phormi_accent" android:textSize="17sp" android:textStyle="bold"
+                android:background="@drawable/bg_overview_monogram" android:importantForAccessibility="no" />
+            <TextView android:id="@+id/tab_card_check" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:gravity="center|end"
+                android:textColor="@color/phormi_accent" android:textSize="17sp" android:visibility="gone" android:importantForAccessibility="no" />
+            <TextView android:id="@+id/btn_close_tab_card" android:layout_width="34dp" android:layout_height="36dp" android:gravity="center"
+                android:text="×" android:textColor="@color/phormi_secondary" android:textSize="19sp" android:clickable="true" android:focusable="true"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+        </LinearLayout>
+        <TextView android:id="@+id/tab_card_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:textColor="@color/phormi_text" android:textSize="14sp" android:textStyle="bold" android:maxLines="2" android:ellipsize="end" />
+        <TextView android:id="@+id/tab_card_address" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp"
+            android:textColor="@color/phormi_secondary" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/tab_card_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp"
+            android:textColor="@color/phormi_secondary" android:textSize="10sp" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:id="@+id/btn_group_tab_card" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1"
+            android:gravity="center" android:text="Group" android:textColor="@color/phormi_accent" android:textSize="11sp" android:textStyle="bold"
+            android:clickable="true" android:focusable="true" android:background="?attr/selectableItemBackground" />
+        <TextView android:id="@+id/btn_more_tab_card" android:layout_width="36dp" android:layout_height="36dp" android:gravity="center"
+            android:text="⋯" android:textColor="@color/phormi_text" android:textSize="17sp" android:visibility="gone"
+            android:clickable="true" android:focusable="true" android:background="?attr/selectableItemBackgroundBorderless" />
+    </LinearLayout>
+</LinearLayout>
