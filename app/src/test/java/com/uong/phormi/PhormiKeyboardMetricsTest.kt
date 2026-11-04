@@ -6,8 +6,8 @@ import org.junit.Test
 class PhormiKeyboardMetricsTest {
     @Test fun `base height adapts to landscape and tablet without using one fixed number`() {
         assertEquals(260, PhormiKeyboardMetrics.baseHeightDp(800, 400))
-        assertEquals(320, PhormiKeyboardMetrics.baseHeightDp(800, 1280))
-        assertEquals(296, PhormiKeyboardMetrics.baseHeightDp(390, 844))
+        assertEquals(340, PhormiKeyboardMetrics.baseHeightDp(800, 1280))
+        assertEquals(320, PhormiKeyboardMetrics.baseHeightDp(390, 844))
     }
 
     @Test fun `window height respects scale and screen cap`() {
@@ -36,6 +36,6 @@ class PhormiKeyboardMetricsTest {
         val width = PhormiKeyboardMetrics.keyWidthDp(360f, 12)
         assertTrue(width >= 12f)
         assertTrue(PhormiKeyboardMetrics.homeInsetDp(9, width) in 6f..22f)
-        assertTrue(PhormiKeyboardMetrics.keyHeightDp(296, 1.0f) >= 32f)
+        assertTrue(PhormiKeyboardMetrics.keyHeightDp(320, 1.0f) >= 32f)
     }
 }

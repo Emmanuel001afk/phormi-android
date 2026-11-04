@@ -13,8 +13,8 @@ object PhormiKeyboardMetrics {
 
     fun baseHeightDp(screenWidthDp: Int, screenHeightDp: Int): Int = when {
         screenHeightDp < 500 -> 260
-        screenWidthDp >= 600 -> 320
-        else -> 296
+        screenWidthDp >= 600 -> 340
+        else -> 320
     }
 
     fun windowHeightDp(screenWidthDp: Int, screenHeightDp: Int, heightScale: Float, floating: Boolean): Int {
