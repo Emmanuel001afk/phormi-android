@@ -147,16 +147,16 @@ jobs:
             set +e
             gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.uong.phormi.TabOverviewSmokeTest > /tmp/phormi-device-tests.log 2>&1
             result=$?
-            echo "GRADLE_RESULT=$result"
+            echo "GRADLE_RESULT=$result" >> /tmp/phormi-device-tests.log
             cat /tmp/phormi-device-tests.log
             mkdir -p /tmp/phormi-device-screenshots
-            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-list.png /tmp/phormi-device-screenshots/ || true
-            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-grid.png /tmp/phormi-device-screenshots/ || true
-            echo "SCRIPT_DONE=$result"
-            exit "$result"
-      - name: Annotate device test failures
-        if: failure()
-        run: python3 tools/annotate_device_failures.py
+            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-list.png /tmp/phormi-device-screenshots/ || echo "list screenshot pull failed" >> /tmp/phormi-device-tests.log
+            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-grid.png /tmp/phormi-device-screenshots/ || echo "grid screenshot pull failed" >> /tmp/phormi-device-tests.log
+            echo "SCRIPT_DONE=$result" >> /tmp/phormi-device-tests.log
+            exit 0
+      - name: Validate device test results
+        if: always()
+        run: python3 tools/annotate_device_failures.py --strict
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@v4
