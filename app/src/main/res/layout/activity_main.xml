@@ -6,11 +6,11 @@
     android:orientation="vertical"
     android:background="@color/phormi_background">
 
-    <!-- ONE compact horizontal chrome layer only. -->
+    <!-- One 48dp chrome layer; 48dp touch targets remain accessible. -->
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="48dp"
         android:gravity="center_vertical"
         android:paddingStart="2dp"
         android:paddingEnd="2dp"
@@ -32,7 +32,7 @@
             android:id="@+id/url_toolbar"
             android:layout_width="0dp"
             android:layout_height="48dp"
-            android:layout_weight="1"
+            android:layout_weight="1.4"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingStart="6dp"
@@ -82,8 +82,9 @@
 
         <HorizontalScrollView
             android:id="@+id/tab_strip"
-            android:layout_width="220dp"
-            android:layout_height="56dp"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="48dp"
             android:layout_marginStart="2dp"
             android:visibility="gone"
             android:fillViewport="false"
@@ -311,13 +312,13 @@
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
-            android:layout_marginStart="10dp"
+            android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="‹"
             android:textColor="@color/phormi_text"
-            android:textSize="24sp"
-            android:background="@drawable/bg_nav_ring"
+            android:textSize="22sp"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Back" />
@@ -332,8 +333,8 @@
             android:gravity="center"
             android:text="›"
             android:textColor="@color/phormi_text"
-            android:textSize="24sp"
-            android:background="@drawable/bg_nav_ring"
+            android:textSize="22sp"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Forward" />
@@ -360,7 +361,7 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
-            android:layout_marginEnd="10dp"
+            android:layout_marginEnd="4dp"
             android:gravity="center"
             android:text="↓"
             android:textColor="@color/phormi_text"

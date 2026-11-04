@@ -48,6 +48,7 @@ jobs:
           python3 tools/audit_app_ui.py
           python3 tools/audit_search.py
           python3 tools/audit_desktop.py
+          python3 tools/audit_tabs.py
       - name: Run unit tests
         run: |
           set -o pipefail

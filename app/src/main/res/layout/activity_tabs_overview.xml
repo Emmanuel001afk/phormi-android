@@ -1,26 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@color/phormi_background">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:gravity="center_vertical" android:paddingStart="8dp" android:paddingEnd="8dp">
-        <TextView android:id="@+id/btn_close_overview" android:layout_width="48dp" android:layout_height="48dp" android:gravity="center" android:text="‹" android:textColor="@color/phormi_text" android:textSize="28sp" android:contentDescription="Back" />
-        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Tabs" android:textColor="@color/phormi_text" android:textSize="22sp" android:textStyle="bold" />
-        <TextView android:id="@+id/tab_count" android:layout_width="48dp" android:layout_height="48dp" android:gravity="center" android:text="0" android:textColor="@color/phormi_accent" android:textSize="16sp" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@color/phormi_background">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp"
+        android:gravity="center_vertical" android:paddingStart="16dp" android:paddingEnd="8dp">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Your tabs" android:textColor="@color/phormi_text" android:textSize="23sp" android:textStyle="bold" />
+            <TextView android:id="@+id/overview_summary" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Organized for your next move" android:textColor="@color/phormi_secondary" android:textSize="12sp" />
+        </LinearLayout>
+        <TextView android:id="@+id/btn_select_tabs" android:layout_width="wrap_content" android:layout_height="48dp"
+            android:minWidth="56dp" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp"
+            android:text="Select" android:textColor="@color/phormi_accent" android:textSize="14sp" android:textStyle="bold"
+            android:clickable="true" android:focusable="true" android:background="?attr/selectableItemBackground" />
+        <TextView android:id="@+id/btn_close_overview" android:layout_width="48dp" android:layout_height="48dp"
+            android:gravity="center" android:text="×" android:textColor="@color/phormi_text" android:textSize="25sp"
+            android:clickable="true" android:focusable="true" android:background="?attr/selectableItemBackground" android:contentDescription="Close tab overview" />
     </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:paddingStart="8dp" android:paddingEnd="8dp">
-        <TextView android:id="@+id/btn_view_mode" style="@style/PhormiMenuTab" android:text="List" />
-        <TextView android:id="@+id/btn_groups_overview" style="@style/PhormiMenuTab" android:text="Groups" />
-        <TextView android:id="@+id/btn_split_overview" style="@style/PhormiMenuTab" android:text="Split" />
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp"
+        android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:layout_marginBottom="8dp"
+        android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="2dp" android:background="@drawable/bg_tab_search">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⌕"
+            android:textColor="@color/phormi_secondary" android:textSize="21sp" android:importantForAccessibility="no" />
+        <EditText android:id="@+id/search_tabs" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginStart="8dp" android:background="@android:color/transparent"
+            android:hint="Search tabs, sites, or groups" android:textColor="@color/phormi_text" android:textColorHint="@color/phormi_secondary"
+            android:textSize="14sp" android:singleLine="true" android:inputType="text" android:imeOptions="actionSearch" />
+        <TextView android:id="@+id/btn_clear_tab_search" android:layout_width="44dp" android:layout_height="48dp"
+            android:gravity="center" android:text="×" android:textSize="20sp" android:textColor="@color/phormi_secondary"
+            android:visibility="gone" android:clickable="true" android:focusable="true" android:contentDescription="Clear tab search" />
     </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginStart="10dp" android:layout_marginEnd="10dp" android:layout_marginBottom="8dp" android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="14dp" android:background="@drawable/bg_tab_search">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="⌕" android:textColor="@color/phormi_secondary" android:textSize="20sp" />
-        <EditText android:id="@+id/search_tabs" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="8dp" android:background="@android:color/transparent" android:hint="Search your tabs" android:textColor="@color/phormi_text" android:textColorHint="@color/phormi_secondary" android:textSize="14sp" android:singleLine="true" android:inputType="text" />
+
+    <LinearLayout android:id="@+id/overview_layout_controls" android:layout_width="match_parent" android:layout_height="48dp"
+        android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:id="@+id/btn_mode_list" style="@style/PhormiMenuTab" android:text="List" android:contentDescription="List layout" />
+        <TextView android:id="@+id/btn_mode_grid" style="@style/PhormiMenuTab" android:text="Grid" android:contentDescription="Grid layout" />
+        <TextView android:id="@+id/btn_mode_carousel" style="@style/PhormiMenuTab" android:text="Cards" android:contentDescription="Horizontal card layout" />
     </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:orientation="horizontal" android:gravity="center_vertical" android:paddingStart="10dp" android:paddingEnd="10dp">
-        <TextView android:id="@+id/btn_select_tabs" style="@style/PhormiMenuTab" android:layout_height="48dp" android:text="Select" />
-        <TextView android:id="@+id/btn_select_all_tabs" style="@style/PhormiMenuTab" android:layout_height="48dp" android:text="All" android:visibility="gone" />
-        <TextView android:id="@+id/btn_close_selected" style="@style/PhormiMenuTab" android:layout_height="48dp" android:text="Close (0)" android:visibility="gone" />
+
+    <LinearLayout android:id="@+id/overview_selection_bar" android:layout_width="match_parent" android:layout_height="48dp"
+        android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:visibility="gone">
+        <TextView android:id="@+id/selection_summary" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="0 selected" android:textColor="@color/phormi_secondary" android:textSize="13sp" />
+        <TextView android:id="@+id/btn_select_all_tabs" android:layout_width="wrap_content" android:minWidth="64dp" android:layout_height="48dp"
+            android:gravity="center" android:text="Select all" android:textColor="@color/phormi_accent" android:textSize="13sp" android:clickable="true" android:focusable="true" />
+        <TextView android:id="@+id/btn_close_selected" android:layout_width="wrap_content" android:minWidth="80dp" android:layout_height="40dp"
+            android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp" android:text="Close (0)"
+            android:textColor="@color/phormi_danger" android:textSize="13sp" android:textStyle="bold" android:background="@drawable/bg_secondary_button"
+            android:clickable="true" android:focusable="true" />
     </LinearLayout>
-    <ScrollView android:id="@+id/tabs_vertical_scroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:scrollbars="none"><LinearLayout android:id="@+id/tabs_vertical" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingStart="10dp" android:paddingEnd="10dp" /></ScrollView>
-    <HorizontalScrollView android:id="@+id/tabs_horizontal_scroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:scrollbars="none" android:overScrollMode="never"><LinearLayout android:id="@+id/tabs_horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="top" android:paddingStart="12dp" android:paddingEnd="12dp" /></HorizontalScrollView>
-    <ScrollView android:id="@+id/tabs_grid_scroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:scrollbars="none"><LinearLayout android:id="@+id/tabs_grid" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="8dp" /></ScrollView>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="60dp" android:gravity="center"><TextView android:id="@+id/btn_new_tab_overview" android:layout_width="48dp" android:layout_height="48dp" android:gravity="center" android:text="+" android:textColor="@color/phormi_on_accent" android:textSize="27sp" android:background="@drawable/bg_tab_add" /></LinearLayout>
+
+    <ScrollView android:id="@+id/tabs_vertical_scroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:clipToPadding="false" android:scrollbars="none">
+        <LinearLayout android:id="@+id/tabs_vertical" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+            android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingTop="4dp" android:paddingBottom="16dp" />
+    </ScrollView>
+    <HorizontalScrollView android:id="@+id/tabs_horizontal_scroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:scrollbars="none" android:overScrollMode="never" android:visibility="gone">
+        <LinearLayout android:id="@+id/tabs_horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal"
+            android:gravity="top" android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingTop="4dp" android:paddingBottom="16dp" />
+    </HorizontalScrollView>
+    <ScrollView android:id="@+id/tabs_grid_scroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:scrollbars="none" android:visibility="gone">
+        <LinearLayout android:id="@+id/tabs_grid" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+            android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingTop="4dp" android:paddingBottom="16dp" />
+    </ScrollView>
+
+    <!-- Keep the old count addressable for accessibility/tests without a separate counter badge. -->
+    <TextView android:id="@+id/tab_count" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" android:importantForAccessibility="no" />
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="72dp" android:gravity="center_vertical"
+        android:orientation="horizontal" android:paddingStart="16dp" android:paddingEnd="16dp" android:background="@color/phormi_surface">
+        <TextView android:id="@+id/btn_groups_overview" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+            android:layout_marginEnd="6dp" android:gravity="center" android:text="Groups" android:textSize="13sp" android:textStyle="bold"
+            android:textColor="@color/phormi_text" android:background="@drawable/bg_secondary_button" android:clickable="true" android:focusable="true" />
+        <TextView android:id="@+id/btn_split_overview" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+            android:layout_marginEnd="10dp" android:gravity="center" android:text="Split view" android:textSize="13sp" android:textStyle="bold"
+            android:textColor="@color/phormi_text" android:background="@drawable/bg_secondary_button" android:clickable="true" android:focusable="true" />
+        <TextView android:id="@+id/btn_new_tab_overview" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1.35"
+            android:gravity="center" android:text="+  New tab" android:textSize="14sp" android:textStyle="bold"
+            android:textColor="@color/phormi_on_accent" android:background="@drawable/bg_primary_button" android:clickable="true" android:focusable="true" />
+    </LinearLayout>
 </LinearLayout>
