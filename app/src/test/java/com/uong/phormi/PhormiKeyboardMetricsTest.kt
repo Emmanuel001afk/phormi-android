@@ -14,7 +14,7 @@ class PhormiKeyboardMetricsTest {
         val normal = PhormiKeyboardMetrics.windowHeightDp(390, 844, 1.0f, false)
         val large = PhormiKeyboardMetrics.windowHeightDp(390, 844, 1.4f, false)
         val compact = PhormiKeyboardMetrics.windowHeightDp(390, 844, 0.6f, false)
-        assertTrue(normal in 240..692)
+        assertTrue(normal in 220..692)
         assertTrue(large >= normal)
         assertTrue(compact <= normal)
         assertTrue(PhormiKeyboardMetrics.windowHeightDp(390, 400, 1.4f, false) <= 328)

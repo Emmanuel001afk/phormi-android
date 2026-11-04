@@ -22,8 +22,9 @@ object PhormiKeyboardMetrics {
         val base = baseHeightDp(screenWidthDp, screenHeightDp)
         val raw = (base * scale).roundToInt() + if (floating) 30 else 0
         val cap = max(240, (screenHeightDp * 0.82f).roundToInt())
-        // Keep enough room for three readable key rows after the suggestion/toolbar strips.
-        return raw.coerceIn(240, cap)
+        // Keep enough room for three readable key rows after the suggestion/toolbar strips,
+        // without making Compact taller than the default window on short screens.
+        return raw.coerceIn(220, cap)
     }
 
     fun keyMarginHDp(rowKeys: Int): Int = if (rowKeys >= 11) 1 else 2

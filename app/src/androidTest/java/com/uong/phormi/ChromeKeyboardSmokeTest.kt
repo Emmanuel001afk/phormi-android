@@ -98,10 +98,12 @@ class ChromeKeyboardSmokeTest {
     }
 
     private fun letterKeyHeight(): Int {
+        assertTrue("Keyboard must be shown", device.wait(Until.hasObject(By.desc("Backspace")), 7000))
         device.waitForIdle()
         val key = device.wait(Until.findObject(By.desc(Pattern.compile("q", Pattern.CASE_INSENSITIVE))), 7000)
         assertNotNull("Letter q must be visible", key)
-        return key!!.visibleBounds.height()
+        key!!.refresh()
+        return key.visibleBounds.height()
     }
 
     @Test fun keyboardLetterKeysAreReadableAndHeightPresetIsReal() {
