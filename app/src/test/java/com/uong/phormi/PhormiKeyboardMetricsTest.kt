@@ -5,7 +5,7 @@ import org.junit.Test
 
 class PhormiKeyboardMetricsTest {
     @Test fun `base height adapts to landscape and tablet without using one fixed number`() {
-        assertEquals(224, PhormiKeyboardMetrics.baseHeightDp(800, 400))
+        assertEquals(260, PhormiKeyboardMetrics.baseHeightDp(800, 400))
         assertEquals(320, PhormiKeyboardMetrics.baseHeightDp(800, 1280))
         assertEquals(296, PhormiKeyboardMetrics.baseHeightDp(390, 844))
     }

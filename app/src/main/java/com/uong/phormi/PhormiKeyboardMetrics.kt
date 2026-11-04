@@ -12,7 +12,7 @@ object PhormiKeyboardMetrics {
     const val MAX_WIDTH_SCALE = 1.00f
 
     fun baseHeightDp(screenWidthDp: Int, screenHeightDp: Int): Int = when {
-        screenHeightDp < 500 -> 224
+        screenHeightDp < 500 -> 260
         screenWidthDp >= 600 -> 320
         else -> 296
     }
