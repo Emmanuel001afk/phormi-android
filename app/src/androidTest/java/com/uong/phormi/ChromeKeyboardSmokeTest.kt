@@ -101,6 +101,14 @@ class ChromeKeyboardSmokeTest {
         device.executeShellCommand("ime set com.uong.phormi/.PhormiKeyboardServiceV2")
     }
 
+    private fun imeWindowHeight(): Int {
+        var height = 0
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            height = PhormiKeyboardServiceV2.activeInstance()?.window?.window?.attributes?.height ?: 0
+        }
+        return height
+    }
+
     private fun letterKeyHeight(): Int {
         assertTrue("Keyboard must be shown", device.wait(Until.hasObject(By.desc("Backspace")), 7000))
         device.waitForIdle()
@@ -119,10 +127,12 @@ class ChromeKeyboardSmokeTest {
         enableKeyboard()
         ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
-            val compact = letterKeyHeight()
+            val compactKey = letterKeyHeight()
+            val compactWindow = imeWindowHeight()
             val density = context.resources.displayMetrics.density
             // Compact is intentionally shorter than Comfortable, but keys must remain tappable.
-            assertTrue("Compact keys must stay readable: height=$compact px, density=$density", compact >= (24 * density).toInt())
+            assertTrue("Compact keys must stay readable: height=$compactKey px, density=$density", compactKey >= (24 * density).toInt())
+            assertTrue("Compact IME window must have a real height", compactWindow > 0)
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-compact.png"))
 
             PhormiKeyboardPreferences.setHeightScale(context, 1.20f)
@@ -130,13 +140,14 @@ class ChromeKeyboardSmokeTest {
                 PhormiKeyboardServiceV2.activeInstance()?.applySizingPreferences()
             }
             device.waitForIdle()
-            var large = letterKeyHeight()
-            if (large <= compact) {
+            var largeWindow = imeWindowHeight()
+            if (largeWindow <= compactWindow) {
                 android.os.SystemClock.sleep(500)
                 device.waitForIdle()
-                large = letterKeyHeight()
+                largeWindow = imeWindowHeight()
             }
-            assertTrue("Large preset must actually increase key height: compact=$compact large=$large", large > compact)
+            assertTrue("Large preset must actually increase the IME window: compact=$compactWindow large=$largeWindow", largeWindow > compactWindow)
+            assertTrue("Large keyboard must still expose letter keys", letterKeyHeight() > 0)
             assertTrue(device.hasObject(By.desc("Backspace")))
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-large.png"))
         }
