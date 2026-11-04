@@ -101,11 +101,6 @@ class ChromeKeyboardSmokeTest {
         device.executeShellCommand("ime set com.uong.phormi/.PhormiKeyboardServiceV2")
     }
 
-    private fun restartKeyboard() {
-        device.executeShellCommand("ime disable com.uong.phormi/.PhormiKeyboardServiceV2")
-        enableKeyboard()
-    }
-
     private fun letterKeyHeight(): Int {
         assertTrue("Keyboard must be shown", device.wait(Until.hasObject(By.desc("Backspace")), 7000))
         device.waitForIdle()
@@ -120,23 +115,27 @@ class ChromeKeyboardSmokeTest {
     }
 
     @Test fun keyboardLetterKeysAreReadableAndHeightPresetIsReal() {
-        enableKeyboard()
         PhormiKeyboardPreferences.setHeightScale(context, 0.90f)
-        val compact = ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
-            .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
-            val height = letterKeyHeight()
-            val density = context.resources.displayMetrics.density
-            // Compact is intentionally shorter than Comfortable, but keys must remain tappable.
-            assertTrue("Compact keys must stay readable: height=$height px, density=$density", height >= (24 * density).toInt())
-            device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-compact.png"))
-            height
-        }
-        PhormiKeyboardPreferences.setHeightScale(context, 1.20f)
-        // Restart the IME so the new height preset is applied to a fresh input view/window.
-        restartKeyboard()
+        enableKeyboard()
         ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
-            val large = letterKeyHeight()
+            val compact = letterKeyHeight()
+            val density = context.resources.displayMetrics.density
+            // Compact is intentionally shorter than Comfortable, but keys must remain tappable.
+            assertTrue("Compact keys must stay readable: height=$compact px, density=$density", compact >= (24 * density).toInt())
+            device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-compact.png"))
+
+            PhormiKeyboardPreferences.setHeightScale(context, 1.20f)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                PhormiKeyboardServiceV2.activeInstance()?.applySizingPreferences()
+            }
+            device.waitForIdle()
+            var large = letterKeyHeight()
+            if (large <= compact) {
+                android.os.SystemClock.sleep(500)
+                device.waitForIdle()
+                large = letterKeyHeight()
+            }
             assertTrue("Large preset must actually increase key height: compact=$compact large=$large", large > compact)
             assertTrue(device.hasObject(By.desc("Backspace")))
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-large.png"))

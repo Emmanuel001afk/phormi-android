@@ -320,9 +320,11 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         val window = win ?: return
         val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(dp(1))
         val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(dp(1))
+        val screenHeightDp = (screenH / density()).toInt().coerceAtLeast(240)
+        val screenWidthDp = (screenW / density()).toInt().coerceAtLeast(240)
         val height = dp(PhormiKeyboardMetrics.windowHeightDp(
-            resources.configuration.screenWidthDp,
-            resources.configuration.screenHeightDp,
+            screenWidthDp,
+            screenHeightDp,
             PhormiKeyboardPreferences.heightScale(this),
             PhormiKeyboardPreferences.floating(this)
         ))
@@ -372,6 +374,12 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }
         window.attributes = attrs
         window.setLayout(width, height)
+    }
+
+    /** Apply height/width/floating preferences to the live IME window and key layout. */
+    fun applySizingPreferences() {
+        applyKeyboardWindowSize()
+        if (isInputViewShown) setInputView(render())
     }
 
     private fun density(): Float = resources.displayMetrics.density
@@ -1092,7 +1100,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         },LinearLayout.LayoutParams(-1,scaled(46)));list.addView(TextView(this).apply{text="Images/GIFs are inserted only when the focused field accepts the requested MIME type.";setTextColor(themeText());textSize=13f;setPadding(dp(8),dp(12),dp(8),dp(12))});scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
     private fun buildTools():View{val root=root();addBackHeader(root,"← Keyboard"){panel=Panel.KEYBOARD;setInputView(render())};val scroll=ScrollView(this);val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(8),dp(8),dp(8),dp(8))};list.addView(pill("Contextual emoji"){openAiEmojiFromContext()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Settings"){panel=Panel.SETTINGS;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));addResizeControls(list);list.addView(pill("GIFs & stickers"){panel=Panel.MEDIA;setInputView(render())},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Voice typing"){launchVoice()},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Select all"){currentInputConnection?.performContextMenuAction(android.R.id.selectAll)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Copy"){currentInputConnection?.performContextMenuAction(android.R.id.copy)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Paste"){currentInputConnection?.performContextMenuAction(android.R.id.paste)},LinearLayout.LayoutParams(-1,scaled(46)));list.addView(pill("Share text"){shareSelectedText()},LinearLayout.LayoutParams(-1,scaled(46)));scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));return root}
-    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Tools. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(when (theme()) { 3 -> Color.DKGRAY; 0 -> Color.rgb(195,202,226); else -> Color.rgb(148,163,184) });setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);setInputView(render())},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});list.addView(pill("Height: " + when {
+    private fun buildSettings():View{val root=root();addBackHeader(root,"← Tools"){panel=Panel.TOOLS;setInputView(render())};val scroll=ScrollView(this).apply{overScrollMode=View.OVER_SCROLL_IF_CONTENT_SCROLLS};val list=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(6),dp(10),dp(8))};list.addView(TextView(this).apply{text="Keyboard size";textSize=15f;setTextColor(themeText());setPadding(0,dp(4),0,dp(2))});list.addView(TextView(this).apply{text="Use Floating or Resize keyboard in Tools. Resize shows a Gboard-style frame with draggable corners and edge handles; the center nub moves a floating keyboard.";textSize=12f;setTextColor(when (theme()) { 3 -> Color.DKGRAY; 0 -> Color.rgb(195,202,226); else -> Color.rgb(148,163,184) });setPadding(0,0,0,dp(6))});list.addView(pill("Reset keyboard size"){PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardServiceV2);applySizingPreferences()},LinearLayout.LayoutParams(-1,scaled(36)).apply{setMargins(0,dp(4),0,dp(8))});list.addView(pill("Height: " + when {
             PhormiKeyboardPreferences.heightScale(this) < 0.93f -> "Compact"
             PhormiKeyboardPreferences.heightScale(this) > 1.08f -> "Large"
             else -> "Comfortable"
@@ -1103,7 +1111,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 else -> 1.20f
             }
             PhormiKeyboardPreferences.setHeightScale(this@PhormiKeyboardServiceV2, next)
-            setInputView(render())
+            applySizingPreferences()
         }, LinearLayout.LayoutParams(-1, scaled(36)).apply { setMargins(0, dp(3), 0, dp(3)) })
         list.addView(pill("Key lettering: " + when {
             PhormiKeyboardPreferences.keyTextScale(this) < 0.95f -> "Small"
