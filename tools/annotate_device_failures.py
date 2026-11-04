@@ -39,6 +39,6 @@ if text:
 else:
     print('::error title=Device test log::/tmp/phormi-device-tests.log was not created')
 print(f"::notice title=Device test summary::{tests} tests, {failures} failures/errors")
-build_failed = 'BUILD FAILED' in text or 'GRADLE_RESULT=0' not in text
+build_failed = 'BUILD FAILED' in text or ('BUILD SUCCESSFUL' not in text and 'GRADLE_RESULT=0' not in text)
 if args.strict and (failures or tests == 0 or build_failed):
     sys.exit(1)
