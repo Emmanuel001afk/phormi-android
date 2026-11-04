@@ -101,7 +101,7 @@ class MainActivity : AppCompatActivity() {
         var hasDeviceAccess: Boolean = false,
         var discardReason: String? = null
     ) {
-        val currentUrl: String get() = deferredUrl ?: webView?.url ?: lastKnownUrl
+        val currentUrl: String get() = PhormiTabOverview.navigationUrl(deferredUrl, lastKnownUrl, webView?.url)
     }
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -662,7 +662,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.start_page_action_tabs).setOnClickListener {
-            saveTabs()
+            saveTabsImmediate(true)
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
         findViewById<TextView>(R.id.start_page_action_bookmarks).setOnClickListener {
@@ -693,7 +693,7 @@ class MainActivity : AppCompatActivity() {
         }
         // The circular count is the single combined Tab Overview + Counter control.
         findViewById<TextView>(R.id.tab_count).setOnClickListener {
-            saveTabs()
+            saveTabsImmediate(true)
             startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS_OVERVIEW)
         }
 
@@ -1205,6 +1205,9 @@ class MainActivity : AppCompatActivity() {
         val loadingHtml = unifiedSearchHtml(query, emptyList(), true, 0, providers.size)
         tab.searchDocuments.put(searchUrl, loadingHtml)
         tab.lastSearchHtml = loadingHtml
+        recordTabNavigation(tab, searchUrl)
+        updateHomeChromeVisibility()
+        saveTabsImmediate(false)
         // A real local history URL lets Back/Forward restore this exact search entry.
         // The document itself is served from the per-tab cache by shouldInterceptRequest;
         // phormi.local is never resolved on the network.
@@ -1543,7 +1546,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showStartPage() {
-        tabs.firstOrNull { it.id == activeTabId }?.searchQuery = null
+        tabs.firstOrNull { it.id == activeTabId }?.let { tab ->
+            tab.searchQuery = null
+            tab.lastSearchHtml = null
+            tab.lastKnownUrl = NEW_TAB_URL
+            tab.deferredUrl = null
+            tab.savedState = null
+            tab.title = getString(R.string.new_tab)
+            refreshTabIdentity(tab)
+        }
         if (splitMode) setSplitMode(false)
         activeWebView()?.loadUrl(NEW_TAB_URL)
         startPageContainer.visibility = View.VISIBLE
@@ -1553,6 +1564,7 @@ class MainActivity : AppCompatActivity() {
         hideKeyboard()
         updateHomeChromeVisibility()
         loadQuickAccessRows()
+        saveTabsImmediate(false)
     }
 
     private fun updateHomeChromeVisibility() {
@@ -1563,7 +1575,8 @@ class MainActivity : AppCompatActivity() {
         val fullscreen = customView != null || isInPictureInPictureMode
         findViewById<View>(R.id.top_toolbar)?.visibility = if (fullscreen || splitChromeLocked) View.GONE else View.VISIBLE
         findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_home)?.visibility = if (onHome || !wide) View.GONE else View.VISIBLE
+        // Home is a primary escape hatch on every screen size, not a tablet-only control.
+        findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
         findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
         val bottom = PhormiBrowserPreferences.showBottomToolbar(this)
         // Favorite remains in the Browse menu; reserve more width for the address field.
@@ -1578,7 +1591,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateStartPageVisibility() {
-        val url = activeWebView()?.url
+        val url = tabs.firstOrNull { it.id == activeTabId }?.currentUrl ?: activeWebView()?.url
         if (tabs.firstOrNull { it.id == activeTabId }?.searchQuery != null) {
             startPageContainer.visibility = View.GONE
             startPageContainer.isClickable = false
@@ -1746,7 +1759,10 @@ class MainActivity : AppCompatActivity() {
         }
         val url = direct ?: searchUrlForProvider(raw)
         val webView = activeWebView()
-        tabs.firstOrNull { it.id == activeTabId }?.let { it.searchQuery = null; it.lastSearchHtml = null }
+        tabs.firstOrNull { it.id == activeTabId }?.let { tab ->
+            tab.searchQuery = null; tab.lastSearchHtml = null
+            recordTabNavigation(tab, url)
+        }
         if (webView != null) {
             // Desktop/normal mode resolved before load to prevent flicker/reload loop
             val desktopBefore = isDesktopModeFor(url)
@@ -1757,6 +1773,8 @@ class MainActivity : AppCompatActivity() {
             webView.isClickable = true
             webView.loadUrl(url)
         } else createNewTab(url)
+        updateHomeChromeVisibility()
+        saveTabsImmediate(false)
         hideKeyboard()
         urlBar.clearFocus()
     }
@@ -1934,13 +1952,13 @@ class MainActivity : AppCompatActivity() {
         tab.hasDeviceAccess = false
         tab.documentEpoch++
         newWebView.webChromeClient = buildChromeClient(newWebView) { title ->
-            tab.title = title.orEmpty().ifBlank { "Tab" }
-            tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+            tab.title = PhormiTabOverview.displayTitle(title.orEmpty().ifBlank { tab.title }, tab.currentUrl)
+            refreshTabIdentity(tab)
             saveTabs()
         }
         tab.profileName = target
-        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text =
-            if (tab.title.isBlank()) target else "${tab.title} · $target"
+        tab.lastKnownUrl = url
+        refreshTabIdentity(tab)
         if (url.isBlank() || url == NEW_TAB_URL) updateStartPageVisibility() else newWebView.loadUrl(url)
         saveTabs()
         if (tab.id == activeTabId) {
@@ -1983,11 +2001,12 @@ class MainActivity : AppCompatActivity() {
         val requested = requestedProfile?.trim().takeIf { !it.isNullOrBlank() }
             ?: if (ghostRequested) GHOST_PROFILE_NAME else selectedTabEnvironment()
         val chip = LayoutInflater.from(this).inflate(R.layout.tab_chip, tabStripContainer, false)
-        val tab = Tab(id, null, getString(R.string.new_tab), chip,
+        val tab = Tab(id, null, PhormiTabOverview.displayTitle(getString(R.string.new_tab), url), chip,
             isGhost = ghostRequested, createdAt = requestedCreatedAt ?: System.currentTimeMillis(),
             profileName = if (isMultiProfileSupported()) requested else DEFAULT_PROFILE_NAME,
             deferredUrl = url, savedState = restoredStateBase64, lastKnownUrl = url)
         tabs.add(tab); tabStripContainer.addView(chip)
+        refreshTabIdentity(tab)
         chip.setOnClickListener { switchToTab(id) }
         chip.findViewById<TextView>(R.id.tab_chip_close).setOnClickListener { closeTab(id) }
         if (activate) switchToTab(id) else if (!deferLoad) {
@@ -1995,6 +2014,20 @@ class MainActivity : AppCompatActivity() {
             tab.webView?.apply { visibility = View.GONE; onPause() }
         }
         updateTabCount(); saveTabs(); scheduleTabBudget()
+    }
+
+    /** Record the requested destination before WebView commits it, so pausing or
+     * opening the overview cannot turn an in-flight website into a blank New Tab. */
+    private fun recordTabNavigation(tab: Tab, url: String) {
+        tab.lastKnownUrl = url.trim().ifBlank { NEW_TAB_URL }
+        tab.title = PhormiTabOverview.displayTitle(null, tab.lastKnownUrl)
+        refreshTabIdentity(tab)
+    }
+
+    private fun refreshTabIdentity(tab: Tab) {
+        tab.title = PhormiTabOverview.displayTitle(tab.title, tab.currentUrl)
+        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+        tab.chipView.contentDescription = "${tab.title}, ${PhormiTabOverview.address(tab.currentUrl)}"
     }
 
     /** Recreate an evicted renderer on demand; dormant tabs contain metadata only. */
@@ -2016,8 +2049,8 @@ class MainActivity : AppCompatActivity() {
             webViewContainer.addView(created, FrameLayout.LayoutParams(-1, -1))
             created.webChromeClient = buildChromeClient(created) { title ->
                 if (tab.webView !== created) return@buildChromeClient
-                tab.title = title.orEmpty().ifBlank { getString(R.string.new_tab) }
-                tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+                tab.title = PhormiTabOverview.displayTitle(title.orEmpty().ifBlank { tab.title }, tab.currentUrl)
+                refreshTabIdentity(tab)
                 saveTabs()
             }
         }
@@ -2025,6 +2058,7 @@ class MainActivity : AppCompatActivity() {
         applyDesktopMode(view, isDesktopModeFor(target))
         val restored = tab.savedState?.let { restoreWebViewState(view, it) } == true
         if (!restored && target != NEW_TAB_URL) view.loadUrl(target)
+        refreshTabIdentity(tab)
     }
 
     private val memoryHandler = Handler(Looper.getMainLooper())
@@ -2125,7 +2159,7 @@ class MainActivity : AppCompatActivity() {
         scheduleTabBudget()
         updateSiteSecurityIndicator()
         updatePageProgress(activeWebView(), activeWebView()?.progress ?: 100)
-        val current = tabs.find { it.id == id }?.webView?.url
+        val current = tabs.find { it.id == id }?.currentUrl
         val query = tabs.firstOrNull { it.id == id }?.searchQuery
         if (query != null) urlBar.setText(query)
         else if (!current.isNullOrBlank() && current != NEW_TAB_URL) urlBar.setText(current)
@@ -2229,7 +2263,7 @@ class MainActivity : AppCompatActivity() {
         persistTabs.forEach { tab ->
             val u = if (tab.searchQuery != null) PhormiSearchHistory.searchUrl(tab.searchQuery.orEmpty()) else tab.currentUrl
             urls.put(u)
-            titles.put(tab.title.ifBlank { "Tab" })
+            titles.put(PhormiTabOverview.displayTitle(tab.title, u))
             lastUsed.put(tab.lastUsed)
             createdAt.put(tab.createdAt)
             profiles.put(tab.profileName)
@@ -2353,8 +2387,8 @@ class MainActivity : AppCompatActivity() {
                 if (i < tabs.size && i < lastUsed.length()) tabs[i].lastUsed = lastUsed.optLong(i, System.currentTimeMillis())
                 val restoredTitle = titles.optString(i).trim()
                 if (restoredTitle.isNotBlank() && i < tabs.size) {
-                    tabs[i].title = restoredTitle
-                    tabs[i].chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = restoredTitle
+                    tabs[i].title = PhormiTabOverview.displayTitle(restoredTitle, tabs[i].currentUrl)
+                    refreshTabIdentity(tabs[i])
                 }
             }
             if (tabs.isNotEmpty()) {
@@ -3225,7 +3259,11 @@ class MainActivity : AppCompatActivity() {
                 val owner = tabs.firstOrNull { it.webView === view }
                 if (owner?.deferredUrl != null) return
                 owner?.savedState = null
-                if (!url.isNullOrBlank()) owner?.lastKnownUrl = url
+                if (!url.isNullOrBlank()) owner?.let { started ->
+                    started.lastKnownUrl = url
+                    if (started.searchQuery == null) started.title = PhormiTabOverview.displayTitle(null, url)
+                    refreshTabIdentity(started)
+                }
                 owner?.documentEpoch = (owner?.documentEpoch ?: 0) + 1
                 owner?.hasDeviceAccess = false
                 view?.let { sitePermissions.cancel(it) }
@@ -3381,13 +3419,17 @@ class MainActivity : AppCompatActivity() {
                     if (!urlBar.hasFocus()) {
                         val query = tabs.firstOrNull { it.webView === view }?.searchQuery
                         if (query != null) urlBar.setText(query)
-                        else if (!url.isNullOrBlank() && url != NEW_TAB_URL) urlBar.setText(url)
+                        else urlBar.setText(tabs.firstOrNull { it.webView === view }?.currentUrl
+                            ?.takeIf { address -> address != NEW_TAB_URL }.orEmpty())
                     }
                     updateNavButtons()
                     updateFavoriteButton()
                     updateSiteSecurityIndicator()
                 }
                 tabs.find { it.webView === view }?.let { finished ->
+                    if (u.isNotBlank()) finished.lastKnownUrl = u
+                    finished.title = PhormiTabOverview.displayTitle(t.ifBlank { finished.title }, finished.currentUrl)
+                    refreshTabIdentity(finished)
                     PhormiBrowserPerformance.finish(finished.id, u)
                     view?.evaluateJavascript(PhormiTabMemoryPolicy.INSTALL_DIRTY_TRACKER, null)
                     if (finished.savedScrollY > 0) {
@@ -3696,6 +3738,10 @@ class MainActivity : AppCompatActivity() {
                     if (groupId.isNotBlank() && tabId > 0) {
                         TabGroupManager(this).assignTab(groupId, tabId, tabs.find { it.id == tabId }?.currentUrl.orEmpty())
                     }
+                }
+                "unassign_group" -> {
+                    val tabId = data.getIntExtra("tab_id", -1)
+                    if (tabId > 0) TabGroupManager(this).unassignTab(tabId)
                 }
                 "reassign_env" -> {
                     val tabId = data.getIntExtra("tab_id", -1)
