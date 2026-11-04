@@ -2,6 +2,7 @@ package com.uong.phormi
 
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.text.InputType
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -13,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -24,6 +26,7 @@ class ChromeKeyboardSmokeTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
     private val prefs get() = context.getSharedPreferences("phormi_tabs", Context.MODE_PRIVATE)
+    private var previousIme: String? = null
 
     @Before fun reset() {
         prefs.edit().remove(PhormiBrowserPreferences.BOTTOM_TOOLBAR).commit()
@@ -79,7 +82,17 @@ class ChromeKeyboardSmokeTest {
         }
     }
 
+    @After fun restoreKeyboard() {
+        val previous = previousIme
+        if (!previous.isNullOrBlank() && previous != "com.uong.phormi/.PhormiKeyboardServiceV2") {
+            device.executeShellCommand("ime set $previous")
+        }
+        device.pressHome()
+        previousIme = null
+    }
+
     private fun enableKeyboard() {
+        previousIme = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
         device.executeShellCommand("ime enable com.uong.phormi/.PhormiKeyboardServiceV2")
         device.executeShellCommand("ime set com.uong.phormi/.PhormiKeyboardServiceV2")
     }
