@@ -60,6 +60,7 @@ class TabOverviewSmokeTest {
                     (0 until root.childCount).mapNotNull { root.getChildAt(it).tag as? String }.filter { it == "current" || it.startsWith("group:") || it == "websites" || it == "new" })
                 assertEquals(4, tagged(root, "tab-card").size)
                 assertEquals("github.com", activity.findViewById<View>(R.id.tabs_vertical).let { firstCardTitle(it) })
+                device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "tab-overview-list.png"))
             }
         }
     }
@@ -97,6 +98,7 @@ class TabOverviewSmokeTest {
             device.findObject(By.desc("Grid layout")).click()
             assertEquals("grid", prefs.getString("tab_view_mode", null))
             assertTrue(device.hasObject(By.desc("Group News")) || device.hasObject(By.desc("Group github.com")))
+            device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "tab-overview-grid.png"))
         }
     }
 

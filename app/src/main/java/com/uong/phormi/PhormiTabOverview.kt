@@ -42,6 +42,7 @@ object PhormiTabOverview {
             }
             return host(url).ifBlank { value.ifBlank { "New tab" } }
         }
+        if (isNewTab(url) && placeholder) return "New tab"
         return value.ifBlank { "New tab" }
     }
 

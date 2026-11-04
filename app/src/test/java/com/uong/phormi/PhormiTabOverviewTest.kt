@@ -34,14 +34,14 @@ class PhormiTabOverviewTest {
         val sections = PhormiTabOverview.sections(listOf(site, blank, other, ghost), 1,
             listOf(PhormiTabOverview.GroupInfo("work", "Work")))
         assertEquals(listOf("current", "ghost", "websites", "new"), sections.map { it.key })
-        assertEquals(listOf(4, 3, 2), sections.flatMap { it.tabs }.map { it.id })
+        assertEquals(listOf(1, 4, 3, 2), sections.flatMap { it.tabs }.map { it.id })
     }
 
     @Test fun `named groups keep their manager order and contain only their members`() {
         val tabs = listOf(site, other.copy(groupId = "read", groupName = "Reading"), blank.copy(id = 5))
         val sections = PhormiTabOverview.sections(tabs, 5,
             listOf(PhormiTabOverview.GroupInfo("read", "Reading"), PhormiTabOverview.GroupInfo("work", "Work"), PhormiTabOverview.GroupInfo("empty", "Empty")))
-        assertEquals(listOf("current", "group:read", "group:work", "new"), sections.map { it.key })
+        assertEquals(listOf("current", "group:read", "group:work"), sections.map { it.key })
         assertEquals(listOf(5, 3, 1), sections.flatMap { it.tabs }.map { it.id })
     }
 

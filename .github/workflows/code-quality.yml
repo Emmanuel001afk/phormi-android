@@ -143,7 +143,18 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.uong.phormi.TabOverviewSmokeTest
+          script: |
+            set +e
+            gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.uong.phormi.TabOverviewSmokeTest > /tmp/phormi-device-tests.log 2>&1
+            result=$?
+            cat /tmp/phormi-device-tests.log
+            mkdir -p /tmp/phormi-device-screenshots
+            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-list.png /tmp/phormi-device-screenshots/ || true
+            adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-grid.png /tmp/phormi-device-screenshots/ || true
+            exit "$result"
+      - name: Annotate device test failures
+        if: failure()
+        run: python3 tools/annotate_device_failures.py
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,5 +163,6 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            /tmp/phormi-device-screenshots/
           if-no-files-found: ignore
           retention-days: 7
