@@ -14,9 +14,10 @@ object PhormiTabOverview {
         val profile: String = "Default",
         val groupId: String = "",
         val groupName: String = "",
+        val groupColor: Int = 0,
         val ghost: Boolean = false
     )
-    data class GroupInfo(val id: String, val name: String)
+    data class GroupInfo(val id: String, val name: String, val color: Int = 0, val collapsed: Boolean = false)
     data class Section(val key: String, val title: String, val tabs: List<TabEntry>, val groupId: String? = null)
 
     /**
@@ -47,6 +48,7 @@ object PhormiTabOverview {
     }
 
     fun address(url: String?): String = if (isNewTab(url)) "Ready to browse" else url.orEmpty().trim()
+    fun shortAddress(url: String?): String = if (isNewTab(url)) "New tab" else host(url).ifBlank { address(url) }
     fun monogram(url: String?): String = host(url).firstOrNull()?.uppercase(Locale.ROOT) ?: "+"
 
     fun filter(tabs: List<TabEntry>, query: String): List<TabEntry> {
@@ -84,9 +86,15 @@ object PhormiTabOverview {
         "grid" -> "grid"
         else -> "vertical"
     }
-    fun columns(mode: String, screenWidthDp: Int, fontScale: Float): Int =
-        if (mode == "grid" && screenWidthDp >= 360 && fontScale <= 1.3f) 2 else 1
-    fun carouselWidth(screenWidthDp: Int): Int = (screenWidthDp * 0.84f).toInt().coerceIn(240, 320)
+    fun columns(mode: String, screenWidthDp: Int, fontScale: Float): Int = when {
+        mode != "grid" || fontScale > 1.3f -> 1
+        screenWidthDp >= 840 -> 4
+        screenWidthDp >= 600 -> 3
+        screenWidthDp >= 320 -> 2
+        else -> 1
+    }
+    fun carouselWidth(screenWidthDp: Int): Int = (screenWidthDp * 0.78f).toInt().coerceIn(240, 300)
+    fun layoutTag(mode: String): String = "tab-card:" + when (mode) { "grid" -> "grid"; "horizontal" -> "cards"; else -> "list" }
     fun countLabel(count: Int): String = "$count ${if (count == 1) "tab" else "tabs"}"
     private fun clean(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 }

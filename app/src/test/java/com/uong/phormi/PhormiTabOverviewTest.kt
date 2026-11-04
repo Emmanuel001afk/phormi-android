@@ -57,12 +57,21 @@ class PhormiTabOverviewTest {
     @Test fun `layout adapts to width mode and large text`() {
         assertEquals(1, PhormiTabOverview.columns("vertical", 800, 1f))
         assertEquals(2, PhormiTabOverview.columns("grid", 390, 1f))
-        assertEquals(1, PhormiTabOverview.columns("grid", 320, 1f))
+        assertEquals(2, PhormiTabOverview.columns("grid", 320, 1f))
+        assertEquals(3, PhormiTabOverview.columns("grid", 600, 1f))
+        assertEquals(4, PhormiTabOverview.columns("grid", 840, 1f))
         assertEquals(1, PhormiTabOverview.columns("grid", 800, 1.5f))
         assertEquals(1, PhormiTabOverview.columns("horizontal", 800, 1f))
         assertEquals("grid", PhormiTabOverview.normalizeMode("grid"))
         assertEquals("vertical", PhormiTabOverview.normalizeMode("unknown"))
-        assertTrue(PhormiTabOverview.carouselWidth(390) in 240..320)
+        assertTrue(PhormiTabOverview.carouselWidth(390) in 240..300)
+    }
+
+    @Test fun `each overview mode has a distinct item form`() {
+        assertEquals("tab-card:list", PhormiTabOverview.layoutTag("vertical"))
+        assertEquals("tab-card:grid", PhormiTabOverview.layoutTag("grid"))
+        assertEquals("tab-card:cards", PhormiTabOverview.layoutTag("horizontal"))
+        assertEquals(3, setOf(PhormiTabOverview.layoutTag("vertical"), PhormiTabOverview.layoutTag("grid"), PhormiTabOverview.layoutTag("horizontal")).size)
     }
 
     @Test fun `counts and addresses are human readable`() {
@@ -70,5 +79,7 @@ class PhormiTabOverviewTest {
         assertEquals("4 tabs", PhormiTabOverview.countLabel(4))
         assertEquals("Ready to browse", PhormiTabOverview.address("about:blank"))
         assertEquals("https://github.com/", PhormiTabOverview.address(site.url))
+        assertEquals("github.com", PhormiTabOverview.shortAddress(site.url))
+        assertEquals("New tab", PhormiTabOverview.shortAddress("about:blank"))
     }
 }
