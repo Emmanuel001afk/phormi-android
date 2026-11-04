@@ -91,6 +91,8 @@ class MainActivity : AppCompatActivity() {
         var profileName: String = DEFAULT_PROFILE_NAME,
         var searchQuery: String? = null,
         var lastSearchHtml: String? = null,
+        var renderedSearchHtml: String? = null,
+        val searchDocuments: PhormiSearchDocumentCache = PhormiSearchDocumentCache(),
         var deferredUrl: String? = null,
         var savedState: String? = null,
         var savedScrollY: Int = 0,
@@ -608,7 +610,14 @@ class MainActivity : AppCompatActivity() {
 
 
         findViewById<TextView>(R.id.btn_menu).setOnClickListener {
-            startActivityForResult(Intent(this, MenuActivity::class.java), REQ_MENU)
+            val menuPage = activeWebView()
+            val menuUrl = menuPage?.url.orEmpty()
+            startActivityForResult(Intent(this, MenuActivity::class.java).apply {
+                putExtra(MenuActivity.EXTRA_PAGE_URL, menuUrl)
+                putExtra(MenuActivity.EXTRA_DESKTOP_ENABLED, isDesktopModeFor(menuUrl))
+                putExtra(MenuActivity.EXTRA_CAN_GO_BACK, menuPage?.canGoBack() == true)
+                putExtra(MenuActivity.EXTRA_CAN_GO_FORWARD, menuPage?.canGoForward() == true)
+            }, REQ_MENU)
         }
 
         findViewById<TextView>(R.id.btn_home).setOnClickListener {
@@ -616,17 +625,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.btn_back).setOnClickListener {
-            activeWebView()?.let { if (it.canGoBack()) it.goBack() }
+            activeWebView()?.let { navigateBack(it) }
         }
 
         findViewById<TextView>(R.id.btn_forward).setOnClickListener {
-            activeWebView()?.let { if (it.canGoForward()) it.goForward() }
+            activeWebView()?.let { navigateForward(it) }
         }
         findViewById<TextView>(R.id.btn_top_back).setOnClickListener {
-            activeWebView()?.let { if (it.canGoBack()) it.goBack() }
+            activeWebView()?.let { navigateBack(it) }
         }
         findViewById<TextView>(R.id.btn_top_forward).setOnClickListener {
-            activeWebView()?.let { if (it.canGoForward()) it.goForward() }
+            activeWebView()?.let { navigateForward(it) }
         }
         findViewById<TextView>(R.id.btn_top_ai).setOnClickListener { openAiFromBottom(it) }
         findViewById<TextView>(R.id.btn_top_downloads).setOnClickListener { openDownloadsFromBottom(it) }
@@ -1188,8 +1197,14 @@ class MainActivity : AppCompatActivity() {
 
         val providers = PhormiSearchProviders.all
 
+        val searchUrl = PhormiSearchHistory.searchUrl(query)
         val loadingHtml = unifiedSearchHtml(query, emptyList(), true, 0, providers.size)
-        webView.loadDataWithBaseURL("https://phormi.local/", loadingHtml, "text/html", "UTF-8", null)
+        tab.searchDocuments.put(searchUrl, loadingHtml)
+        tab.lastSearchHtml = loadingHtml
+        // A real local history URL lets Back/Forward restore this exact search entry.
+        // The document itself is served from the per-tab cache by shouldInterceptRequest;
+        // phormi.local is never resolved on the network.
+        if (webView.url == searchUrl) webView.reload() else webView.loadUrl(searchUrl)
 
         val remaining = AtomicInteger(providers.size)
         val all = java.util.Collections.synchronizedList(mutableListOf<PhormiSearchResult>())
@@ -1222,8 +1237,12 @@ class MainActivity : AppCompatActivity() {
                         query, mergedSnapshot, !finalPass, done, providers.size,
                         successfulSnapshot, finishedSnapshot
                     )
+                    tab.searchDocuments.put(searchUrl, html)
                     tab.lastSearchHtml = html
-                    webView.loadDataWithBaseURL("https://phormi.local/", html, "text/html", "UTF-8", null)
+                    // Reload the same history entry instead of pushing a new one for
+                    // every interim/final render. If the reader already opened a result,
+                    // keep the cache warm for Back without stealing the current page.
+                    if (webView.url == searchUrl && tab.searchQuery == query) webView.reload()
                     if (finalPass && mergedSnapshot.isNotEmpty() && aiController.isActive()) {
                         lifecycleScope.launch {
                             val evidence = mergedSnapshot.take(12).joinToString("\n") {
@@ -1232,7 +1251,9 @@ class MainActivity : AppCompatActivity() {
                             val answer = aiController.synthesizeSearchAnswer(query, evidence)
                             if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@launch
                             if (answer != null) {
-                                tab.lastSearchHtml = unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer)
+                                val aiHtml = unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer)
+                                tab.searchDocuments.put(searchUrl, aiHtml)
+                                tab.lastSearchHtml = aiHtml
                                 webView.evaluateJavascript("""
                                     (function(){var section=document.getElementById('ai-answer');var text=document.getElementById('ai-answer-text');if(section&&text){text.textContent=${JSONObject.quote(answer)};section.hidden=false;}})();
                                 """.trimIndent(), null)
@@ -1582,7 +1603,9 @@ class MainActivity : AppCompatActivity() {
             // The in-page "Refresh results" link explicitly requests new network data.
             val cached = tab.lastSearchHtml
             if (cached != null && page != null) {
-                page.loadDataWithBaseURL("https://phormi.local/", cached, "text/html", "UTF-8", null)
+                val searchUrl = PhormiSearchHistory.searchUrl(query)
+                tab.searchDocuments.put(searchUrl, cached)
+                if (page.url == searchUrl) page.reload() else page.loadUrl(searchUrl)
             } else runUnifiedSearch(query)
         } else {
             if (page == null || page.url.isNullOrBlank() || page.url == NEW_TAB_URL) {
@@ -2105,8 +2128,12 @@ class MainActivity : AppCompatActivity() {
         else urlBar.setText("")
         saveTabs()
         val searchTab = tabs.firstOrNull { it.id == id }
-        if (searchTab?.searchQuery != null && (searchTab.webView?.url ?: NEW_TAB_URL) == NEW_TAB_URL) {
-            runUnifiedSearch(searchTab.searchQuery.orEmpty())
+        val restoredSearchUrl = searchTab?.searchQuery?.let(PhormiSearchHistory::searchUrl)
+        if (searchTab?.searchQuery != null && restoredSearchUrl != null) {
+            val currentSearchUrl = searchTab.webView?.url ?: NEW_TAB_URL
+            val needsRestore = currentSearchUrl == NEW_TAB_URL ||
+                (currentSearchUrl == restoredSearchUrl && searchTab.searchDocuments.get(restoredSearchUrl) == null)
+            if (needsRestore) runUnifiedSearch(searchTab.searchQuery.orEmpty())
         }
     }
 
@@ -2196,17 +2223,17 @@ class MainActivity : AppCompatActivity() {
         val scrollPositions = JSONArray()
         val searchQueries = JSONArray()
         persistTabs.forEach { tab ->
-            val u = if (tab.searchQuery != null) NEW_TAB_URL else tab.currentUrl
+            val u = if (tab.searchQuery != null) PhormiSearchHistory.searchUrl(tab.searchQuery.orEmpty()) else tab.currentUrl
             urls.put(u)
             titles.put(tab.title.ifBlank { "Tab" })
             lastUsed.put(tab.lastUsed)
             createdAt.put(tab.createdAt)
             profiles.put(tab.profileName)
             ids.put(tab.id)
-            if (captureWebViewState && tab.searchQuery == null && tab.deferredUrl == null) {
+            if (captureWebViewState && tab.deferredUrl == null) {
                 tab.webView?.let(::saveWebViewState)?.let { tab.savedState = it }
             }
-            webViewStates.put(if (tab.searchQuery == null) tab.savedState.orEmpty() else "")
+            webViewStates.put(tab.savedState.orEmpty())
             scrollPositions.put(tab.webView?.scrollY ?: tab.savedScrollY)
             searchQueries.put(tab.searchQuery.orEmpty())
         }
@@ -3031,15 +3058,34 @@ class MainActivity : AppCompatActivity() {
                 request: android.webkit.WebResourceRequest?
             ): android.webkit.WebResourceResponse? {
                 val localSearch = request?.takeIf { it.isForMainFrame }?.url?.takeIf {
-                    it.host == "phormi.local" &&
-                        (it.path?.startsWith("/search") == true || it.path?.startsWith("/refresh") == true)
+                    PhormiSearchHistory.isLocalSearchUrl(it.toString())
                 }
                 if (localSearch != null) {
-                    val q = runCatching { localSearch.getQueryParameter("q") }.getOrNull().orEmpty()
-                    if (q.isNotBlank()) {
+                    val localUrl = localSearch.toString()
+                    val owner = tabs.firstOrNull { it.webView === view }
+                    val cached = owner?.searchDocuments?.get(localUrl)
+                    if (cached != null) {
+                        owner?.renderedSearchHtml = cached
+                        return android.webkit.WebResourceResponse(
+                            "text/html", "UTF-8",
+                            java.io.ByteArrayInputStream(cached.toByteArray(Charsets.UTF_8))
+                        )
+                    }
+                    val q = PhormiSearchHistory.queryFromUrl(localUrl)
+                    if (!q.isNullOrBlank()) {
+                        // Process death or LRU eviction can leave a restorable history URL
+                        // without its in-memory document. Reconstruct it locally; never
+                        // resolve phormi.local on the network.
+                        val loading = unifiedSearchHtml(q, emptyList(), true, 0, PhormiSearchProviders.all.size)
+                        owner?.searchDocuments?.put(PhormiSearchHistory.searchUrl(q), loading)
+                        owner?.renderedSearchHtml = loading
                         runOnUiThread {
-                            if (view == null || view == activeWebView()) runUnifiedSearch(q)
+                            if (view != null && tabs.any { it.webView === view } && view == activeWebView()) runUnifiedSearch(q)
                         }
+                        return android.webkit.WebResourceResponse(
+                            "text/html", "UTF-8",
+                            java.io.ByteArrayInputStream(loading.toByteArray(Charsets.UTF_8))
+                        )
                     }
                     return android.webkit.WebResourceResponse(
                         "text/html", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0))
@@ -3059,11 +3105,23 @@ class MainActivity : AppCompatActivity() {
                 // The generated Phormi Search document uses a local origin. A "Refresh
                 // results" link is an explicit request for fresh provider data; it must
                 // not be handed to WebView as a real (and non-existent) navigation.
-                if (targetUri.host == "phormi.local" &&
-                    (targetUri.path?.startsWith("/refresh") == true || targetUri.path?.startsWith("/search") == true)) {
-                    val q = runCatching { targetUri.getQueryParameter("q") }.getOrNull().orEmpty()
-                    if (q.isNotBlank()) runUnifiedSearch(q)
-                    return true
+                if (PhormiSearchHistory.isLocalSearchUrl(target)) {
+                    val q = PhormiSearchHistory.queryFromUrl(target)
+                    // An explicit Refresh link always asks for fresh provider data.
+                    // A gestured /search navigation is a new/refined search. A non-gestured
+                    // /search navigation is Back/Forward or a restored history entry: let
+                    // shouldInterceptRequest serve the cached document instead of refetching.
+                    if (!q.isNullOrBlank() && (PhormiSearchHistory.isRefreshUrl(target) || request?.hasGesture() == true)) {
+                        runUnifiedSearch(q)
+                        return true
+                    }
+                    return false
+                }
+                // Reconcile desktop/mobile before an ordinary link navigation commits.
+                // Omnibox/new-tab paths already do this; link clicks and cross-host
+                // redirects must not inherit the previous site's UA/viewport by accident.
+                if (view != null && request?.isForMainFrame == true && (scheme == "http" || scheme == "https")) {
+                    ensureDesktopModeFor(view, target)
                 }
                 val host = PhormiSiteLockManager.normalizeHost(target)
                 if (host != null) {
@@ -3171,9 +3229,17 @@ class MainActivity : AppCompatActivity() {
                 super.onPageStarted(view, url, favicon)
                 if (view == activeWebView()) updateSiteSecurityIndicator()
                 val target = url.orEmpty()
-                if (view != null && target.startsWith("http", true) &&
+                val startedTab = tabs.firstOrNull { it.webView === view }
+                if (PhormiSearchHistory.isSearchUrl(target)) {
+                    val restoredQuery = PhormiSearchHistory.queryFromUrl(target)
+                    startedTab?.searchQuery = restoredQuery
+                    startedTab?.lastSearchHtml = startedTab?.searchDocuments?.get(PhormiSearchHistory.searchUrl(restoredQuery.orEmpty()))
+                    if (view === activeWebView() && !urlBar.hasFocus() && restoredQuery != null) urlBar.setText(restoredQuery)
+                } else if (view != null && target.startsWith("http", true) &&
                     !target.startsWith("https://phormi.local/")) {
-                    tabs.firstOrNull { it.webView === view }?.searchQuery = null
+                    startedTab?.searchQuery = null
+                } else if (target == NEW_TAB_URL || target == "about:blank") {
+                    startedTab?.searchQuery = null
                 }
                 // Flicker fix: desktop mode now applied *before* loadUrl (navigate/createNewTab),
                 // not mid-navigation. Changing UA/textZoom here caused a re-layout flash on every URL.
@@ -3287,14 +3353,17 @@ class MainActivity : AppCompatActivity() {
 
                 if (view != null && url.orEmpty().startsWith("http", true) &&
                     desktopHost(url.orEmpty()) != "phormi.local" && isDesktopModeFor(url.orEmpty())) {
-                    view.evaluateJavascript("""
-                        (function(){
-                          var content='width=980';
-                          var m=document.querySelector('meta[name="viewport"]');
-                          if(!m){m=document.createElement('meta');m.name='viewport';document.head && document.head.appendChild(m);}
-                          if(m)m.setAttribute('content',content);
-                        })();
-                    """.trimIndent(), null)
+                    view.evaluateJavascript(PhormiDesktopMode.viewportScript(), null)
+                }
+                // A provider may finish while the initial local search navigation is still
+                // committing. If the served document is older than the latest render, reload
+                // the same history entry once instead of pushing a new one.
+                if (tab != null && PhormiSearchHistory.isSearchUrl(u) && tab.searchQuery != null) {
+                    val latest = tab.lastSearchHtml
+                    if (latest != null && latest != tab.renderedSearchHtml) {
+                        tab.searchDocuments.put(PhormiSearchHistory.searchUrl(tab.searchQuery.orEmpty()), latest)
+                        view?.reload()
+                    }
                 }
                 super.onPageFinished(view, url)
                 if (view == activeWebView()) {
@@ -3542,8 +3611,8 @@ class MainActivity : AppCompatActivity() {
                 MenuActivity.ACTION_TAB_ENVIRONMENT -> showTabEnvironmentChooser()
                 MenuActivity.ACTION_TABS_RESULT -> data?.let(::handleTabsOverviewResult)
                 MenuActivity.ACTION_HOME -> showStartPage()
-                MenuActivity.ACTION_BACK -> activeWebView()?.let { if (it.canGoBack()) it.goBack() }
-                MenuActivity.ACTION_FORWARD -> activeWebView()?.let { if (it.canGoForward()) it.goForward() }
+                MenuActivity.ACTION_BACK -> activeWebView()?.let { navigateBack(it) }
+                MenuActivity.ACTION_FORWARD -> activeWebView()?.let { navigateForward(it) }
                 MenuActivity.ACTION_REFRESH -> refreshActivePage()
                 MenuActivity.ACTION_SAVE_PDF -> saveCurrentPageAsPdf()
                 MenuActivity.ACTION_SPLIT_SCREEN -> setSplitMode(!splitMode)
@@ -3661,7 +3730,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val webView = activeWebView()
-        if (webView != null && webView.canGoBack()) webView.goBack()
+        if (webView != null) navigateBack(webView)
         else super.onBackPressed()
     }
 
@@ -4015,38 +4084,62 @@ class MainActivity : AppCompatActivity() {
         updateFavoriteButton()
     }
 
-    private fun desktopUserAgent(enabled: Boolean): String {
-        val mobile = WebSettings.getDefaultUserAgent(this)
-        if (!enabled) return mobile
-        val major = Regex("Chrome/(\\d+)").find(mobile)?.groupValues?.getOrNull(1) ?: "120"
-        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36"
-    }
+    private fun desktopUserAgent(enabled: Boolean): String =
+        PhormiDesktopMode.userAgent(WebSettings.getDefaultUserAgent(this), enabled)
 
-    private fun desktopHost(url: String): String? =
-        runCatching { Uri.parse(url).host?.lowercase(Locale.US)?.removePrefix("www.") }
-            .getOrNull()?.takeIf { it.isNotBlank() }
+    private fun desktopHost(url: String): String? = PhormiDesktopMode.normalizeHost(url)
 
     /**
      * Desktop mode is no longer restricted to a hand-picked site list. There is a
      * global default plus explicit per-host overrides in both directions, so a
      * site can opt out of a global desktop setting (or opt in on its own).
+     * Phormi Search's local results renderer is always mobile-first.
      */
     private fun isDesktopModeFor(url: String): Boolean {
-        val all = prefs.getBoolean(KEY_DESKTOP_ALL, false)
-        val host = desktopHost(url) ?: return all
-        if (host in prefs.getStringSet(KEY_DESKTOP_SITES_OFF, emptySet()).orEmpty()) return false
-        if (host in prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty()) return true
-        return all
+        if (desktopHost(url) == PhormiSearchHistory.HOST) return false
+        return PhormiDesktopMode.resolve(
+            url,
+            prefs.getBoolean(KEY_DESKTOP_ALL, false),
+            prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty(),
+            prefs.getStringSet(KEY_DESKTOP_SITES_OFF, emptySet()).orEmpty()
+        )
     }
 
     private fun setDesktopModeForHost(host: String, enabled: Boolean) {
-        val on = prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty().toMutableSet()
-        val off = prefs.getStringSet(KEY_DESKTOP_SITES_OFF, emptySet()).orEmpty().toMutableSet()
-        if (enabled) { on += host; off -= host } else { off += host; on -= host }
+        val (on, off) = PhormiDesktopMode.toggleHost(
+            host,
+            enabled,
+            prefs.getStringSet(KEY_DESKTOP_SITES, emptySet()).orEmpty(),
+            prefs.getStringSet(KEY_DESKTOP_SITES_OFF, emptySet()).orEmpty()
+        )
         prefs.edit()
             .putStringSet(KEY_DESKTOP_SITES, on)
             .putStringSet(KEY_DESKTOP_SITES_OFF, off)
             .apply()
+    }
+
+    /** Apply the resolved mode before a navigation when the target host differs. */
+    private fun ensureDesktopModeFor(webView: WebView, url: String) {
+        val enabled = isDesktopModeFor(url)
+        if (webView.settings.userAgentString != desktopUserAgent(enabled)) {
+            applyDesktopMode(webView, enabled)
+        }
+    }
+
+    private fun navigateBack(webView: WebView) {
+        if (!webView.canGoBack()) return
+        val history = webView.copyBackForwardList()
+        val target = history.getItemAtIndex(history.currentIndex - 1)?.url
+        if (target != null) ensureDesktopModeFor(webView, target)
+        webView.goBack()
+    }
+
+    private fun navigateForward(webView: WebView) {
+        if (!webView.canGoForward()) return
+        val history = webView.copyBackForwardList()
+        val target = history.getItemAtIndex(history.currentIndex + 1)?.url
+        if (target != null) ensureDesktopModeFor(webView, target)
+        webView.goForward()
     }
 
     private fun setDesktopModeForAll(enabled: Boolean) {
@@ -4057,24 +4150,45 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
-    /** Push the UA/viewport setting to every open tab; only the active tab is reloaded. */
-    private fun applyDesktopModeToAllTabs() {
+    /** Push the UA/viewport setting to every open tab. Live website tabs are reloaded
+     * so a global change is visible immediately; dormant tabs apply it on resume. */
+    private fun applyDesktopModeToAllTabs(reloadLiveSites: Boolean = false) {
         tabs.forEach { tab ->
-            tab.webView?.let { view -> runCatching { applyDesktopMode(view, isDesktopModeFor(tab.currentUrl)) } }
+            val view = tab.webView ?: return@forEach
+            val url = tab.currentUrl
+            runCatching {
+                applyDesktopMode(view, isDesktopModeFor(url))
+                if (reloadLiveSites && tab.deferredUrl == null &&
+                    (url.startsWith("https://") || url.startsWith("http://")) &&
+                    desktopHost(url) != PhormiSearchHistory.HOST) {
+                    view.reload()
+                }
+            }
         }
     }
 
     private fun applyDesktopUserAgentMetadata(settings: WebSettings, enabled: Boolean) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) return
         runCatching {
+            val major = Regex("Chrome/(\\d+)").find(WebSettings.getDefaultUserAgent(this))
+                ?.groupValues?.getOrNull(1) ?: "120"
             val builder = androidx.webkit.UserAgentMetadata.Builder()
                 .setMobile(!enabled)
-            if (enabled) {
-                builder
-                    .setPlatform("Linux")
-                    .setArchitecture("x86")
-                    .setBitness(64)
-            }
+                .setPlatform(if (enabled) "Linux" else "Android")
+                .setPlatformVersion("")
+                .setArchitecture(if (enabled) "x86" else "")
+                .setBitness(if (enabled) 64 else androidx.webkit.UserAgentMetadata.BITNESS_DEFAULT)
+                .setModel("")
+                .setBrandVersionList(
+                    listOf(
+                        androidx.webkit.UserAgentMetadata.BrandVersion.Builder()
+                            .setBrand("Chromium").setMajorVersion(major).setFullVersion("$major.0.0.0").build(),
+                        androidx.webkit.UserAgentMetadata.BrandVersion.Builder()
+                            .setBrand("Not.A/Brand").setMajorVersion("99").setFullVersion("99.0.0.0").build(),
+                        androidx.webkit.UserAgentMetadata.BrandVersion.Builder()
+                            .setBrand("Google Chrome").setMajorVersion(major).setFullVersion("$major.0.0.0").build()
+                    )
+                )
             if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA_FORM_FACTORS)) {
                 builder.setFormFactors(
                     listOf(
@@ -4232,7 +4346,7 @@ class MainActivity : AppCompatActivity() {
         val allSites = prefs.getBoolean(KEY_DESKTOP_ALL, false)
         val choices = mutableListOf<Pair<String, () -> Unit>>()
 
-        if (host != null) {
+        if (host != null && host != PhormiSearchHistory.HOST) {
             val next = !currentDesktop
             val label = if (next) "Desktop layout on $host only" else "Mobile layout on $host only"
             choices += label to {
@@ -4246,8 +4360,7 @@ class MainActivity : AppCompatActivity() {
         val globalLabel = if (globalNext) "Desktop layout on every site" else "Mobile layout on every site"
         choices += globalLabel to {
             setDesktopModeForAll(globalNext)
-            applyDesktopModeToAllTabs()
-            view.reload()
+            applyDesktopModeToAllTabs(reloadLiveSites = true)
             Toast.makeText(this, "$globalLabel · applied to ${tabs.size} tab${if (tabs.size == 1) "" else "s"}", Toast.LENGTH_SHORT).show()
         }
 
@@ -4279,8 +4392,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 "new_tab" -> { createNewTab(NEW_TAB_URL); JSONObject().put("ok", true) }
                 "ghost_tab" -> { createGhostTab(command.optString("url", NEW_TAB_URL)); JSONObject().put("ok", true) }
-                "back" -> { activeWebView()?.let { if (it.canGoBack()) it.goBack() }; JSONObject().put("ok", true) }
-                "forward" -> { activeWebView()?.let { if (it.canGoForward()) it.goForward() }; JSONObject().put("ok", true) }
+                "back" -> { activeWebView()?.let { navigateBack(it) }; JSONObject().put("ok", true) }
+                "forward" -> { activeWebView()?.let { navigateForward(it) }; JSONObject().put("ok", true) }
                 "reload" -> { activeWebView()?.reload(); JSONObject().put("ok", true) }
                 "read_page" -> {
                     val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")

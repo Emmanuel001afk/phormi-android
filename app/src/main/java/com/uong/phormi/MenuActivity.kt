@@ -13,6 +13,10 @@ import androidx.appcompat.app.AppCompatActivity
 class MenuActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_ACTION = "menu_action"
+        const val EXTRA_PAGE_URL = "menu_page_url"
+        const val EXTRA_DESKTOP_ENABLED = "menu_desktop_enabled"
+        const val EXTRA_CAN_GO_BACK = "menu_can_go_back"
+        const val EXTRA_CAN_GO_FORWARD = "menu_can_go_forward"
         const val ACTION_NEW_TAB = "new_tab"
         const val ACTION_GHOST = "ghost"
         const val ACTION_BROWSER_LOCK = "browser_lock"
@@ -57,6 +61,18 @@ class MenuActivity : AppCompatActivity() {
         val tabs = intArrayOf(R.id.menu_tab_browse, R.id.menu_tab_features, R.id.menu_tab_settings)
         tabs.forEachIndexed { index, id -> findViewById<TextView>(id).setOnClickListener { showPage(index) } }
         showPage(savedInstanceState?.getInt("menu_page", 0) ?: 0)
+        val desktopEnabled = intent.getBooleanExtra(EXTRA_DESKTOP_ENABLED, false)
+        findViewById<TextView>(R.id.menu_desktop_mode)?.text = PhormiDesktopMode.menuLabel(desktopEnabled)
+        findViewById<TextView>(R.id.menu_back)?.apply {
+            val enabled = intent.getBooleanExtra(EXTRA_CAN_GO_BACK, false)
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.45f
+        }
+        findViewById<TextView>(R.id.menu_forward)?.apply {
+            val enabled = intent.getBooleanExtra(EXTRA_CAN_GO_FORWARD, false)
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.45f
+        }
         wire(R.id.menu_browser_settings) { startActivity(Intent(this, PhormiBrowserSettingsActivity::class.java)) }
         wire(R.id.menu_home) { finishWith(ACTION_HOME) }
         wire(R.id.menu_back) { finishWith(ACTION_BACK) }

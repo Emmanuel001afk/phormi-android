@@ -24,6 +24,11 @@ aggregation pipeline. It is not a raw dump of engine telemetry.
 - The document is still rendered at loading, first nonempty interim results, and final pass.
 - Cached refresh, tab restoration, and local `phormi.local/search` / `phormi.local/refresh`
   navigation remain in the existing WebView flow.
+- Back/Forward now restore the actual results document. Search entries use stable local
+  history URLs (`https://phormi.local/search?q=…`) instead of `about:blank`, and a bounded
+  per-tab document cache serves the exact cached HTML through `shouldInterceptRequest`.
+  If the process was restarted or the cache was evicted, the query is reconstructed locally
+  without resolving `phormi.local` on the network.
 - Optional AI synthesis still uses the top merged results as evidence.
 
 ## Implementation
@@ -36,7 +41,10 @@ aggregation pipeline. It is not a raw dump of engine telemetry.
   performs single-pass template substitution.
 - `app/src/main/assets/search/results.html|css|js`: packaged results document, theme tokens,
   progressive enhancement, result menus, pagination, and scroll preservation.
-- `MainActivity.kt`: consent, fan-out, parsing, rendering, AI injection, and WebView routing.
+- `PhormiSearchHistory.kt`: stable local search/refresh URLs and the bounded per-tab
+  search-document cache used by Back/Forward restoration.
+- `MainActivity.kt`: consent, fan-out, parsing, rendering, AI injection, WebView routing,
+  and cached history restoration.
 
 ## Safety
 
@@ -55,7 +63,8 @@ aggregation pipeline. It is not a raw dump of engine telemetry.
 - `gradle testDebugUnitTest`
 - `gradle lintDebug`
 - Device/emulator pass: light/dark, loading/interim/final, empty/error, long lists,
-  result menus, in-page search refinement, refresh, tab switching, and AI overview.
+  result menus, in-page search refinement, refresh, tab switching, AI overview, and
+  Back/Forward from a result page to the exact search results page.
 
 The sandbox used for this change does not include Java/Gradle/Android SDK or an emulator,
 so compilation, unit tests, lint, and visual behavior are validated in CI rather than locally.
