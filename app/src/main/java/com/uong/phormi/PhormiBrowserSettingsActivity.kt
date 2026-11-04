@@ -77,11 +77,11 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         button(content, "Reset text size") { slider.progress = 4; updateZoom(4) }
 
         section(content, "Controls")
-        option(content, "Show bottom navigation bar", "Hide it to give websites more room. AI, Back and Forward remain in the browser menu.",
+        option(content, "Show bottom navigation bar", "When enabled, the bottom bar owns Back, Forward, AI and Downloads. When hidden, Back and Forward move into the top bar beside Home, the address field, Tabs and Menu; AI and Downloads stay in the menu on phones.",
             PhormiBrowserPreferences.BOTTOM_TOOLBAR, false)
         option(content, "Pull to refresh", "Off by default to avoid reloading while scrolling. If enabled, use a long deliberate pull at the top of a page.",
             PhormiBrowserPreferences.PULL_TO_REFRESH, false)
-        description(content, "The top-bar button stops a loading page or refreshes a completed page.")
+        description(content, "Top bar: ${PhormiBrowserChrome.topWithoutBottomSummary()} when the bottom bar is off. Refresh is available from the menu on phones; wide screens keep it inline. The top-bar refresh button stops a loading page or refreshes a completed page.")
 
         section(content, "Website layout")
         content.addView(CheckBox(this).apply {

@@ -11,6 +11,7 @@ object PhormiKeyboardPreferences {
     private const val HAPTIC = "haptic"
     private const val SOUND = "sound"
     private const val HEIGHT_SCALE = "keyboard_height_scale"
+    private const val TEXT_SCALE = "keyboard_text_scale"
     private const val WIDTH_SCALE = "keyboard_width_scale"
     private const val OFFSET_X = "keyboard_offset_x"
     private const val OFFSET_Y = "keyboard_offset_y"
@@ -56,6 +57,7 @@ object PhormiKeyboardPreferences {
         prefs(context).edit().putString(POLLINATIONS_KEY, value?.trim().orEmpty()).apply()
 
     fun heightScale(context: Context): Float = prefs(context).getFloat(HEIGHT_SCALE, 1.0f).coerceIn(0.60f, 1.40f)
+    fun keyTextScale(context: Context): Float = prefs(context).getFloat(TEXT_SCALE, 1.0f).coerceIn(0.85f, 1.25f)
     fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.55f, 1.00f)
     fun offsetX(context: Context): Float = prefs(context).getFloat(OFFSET_X, 0f).coerceIn(-0.9f, 0.9f)
     fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(-0.9f, 0.9f)
@@ -69,11 +71,13 @@ object PhormiKeyboardPreferences {
     }.apply()
     fun set(context: Context, key: String, value: Boolean) = prefs(context).edit().putBoolean(key, value).apply()
     fun setHeightScale(context: Context, value: Float) = prefs(context).edit().putFloat(HEIGHT_SCALE, value.coerceIn(0.60f, 1.40f)).apply()
+    fun setKeyTextScale(context: Context, value: Float) = prefs(context).edit().putFloat(TEXT_SCALE, value.coerceIn(0.85f, 1.25f)).apply()
     fun setWidthScale(context: Context, value: Float) = prefs(context).edit().putFloat(WIDTH_SCALE, value.coerceIn(0.55f, 1.00f)).apply()
     fun setOffsetX(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_X, value.coerceIn(-0.9f, 0.9f)).apply()
     fun setOffsetY(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_Y, value.coerceIn(-0.9f, 0.9f)).apply()
     fun resetSize(context: Context) = prefs(context).edit()
         .putFloat(HEIGHT_SCALE, 1.0f)
+        .putFloat(TEXT_SCALE, 1.0f)
         .putFloat(WIDTH_SCALE, 1.0f)
         .putFloat(OFFSET_X, 0f)
         .putFloat(OFFSET_Y, 0f)

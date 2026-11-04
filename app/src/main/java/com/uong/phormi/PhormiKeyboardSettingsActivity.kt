@@ -63,14 +63,33 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{
-            text="Use the Floating and Resize controls in Tools on the keyboard itself to position and resize it freely. Changes are saved automatically; there are no fixed percentage presets."
+            text="Pick a height preset, then use Floating/Resize in the keyboard Tools panel for fine positioning. Key lettering scales with the key box so narrow or short keyboards stay readable."
             textSize=13f;setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));setPadding(0,0,0,dp(8))
         })
+        fun presetRow(title: String, options: List<Pair<String, Float>>, current: () -> Float, setter: (Float) -> Unit) {
+            content.addView(TextView(this).apply { text = title; textSize = 14f; setTextColor(PhormiUiColors.text(this@PhormiKeyboardSettingsActivity)); setPadding(0, dp(4), 0, dp(4)) })
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            options.forEach { (label, value) ->
+                row.addView(Button(this).apply {
+                    val selected = kotlin.math.abs(current() - value) < 0.03f
+                    text = (if (selected) "✓ " else "") + label
+                    isAllCaps = false
+                    minimumHeight = dp(48)
+                    setOnClickListener { setter(value); render() }
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            content.addView(row)
+        }
+        presetRow("Height", listOf("Compact" to 0.85f, "Comfortable" to 1.0f, "Large" to 1.20f),
+            { PhormiKeyboardPreferences.heightScale(this) }, { PhormiKeyboardPreferences.setHeightScale(this, it) })
+        presetRow("Key lettering", listOf("Small" to 0.90f, "Default" to 1.0f, "Large" to 1.15f),
+            { PhormiKeyboardPreferences.keyTextScale(this) }, { PhormiKeyboardPreferences.setKeyTextScale(this, it) })
         content.addView(Button(this).apply{
             text="Reset keyboard position and size";isAllCaps=false
             setOnClickListener{
                 PhormiKeyboardPreferences.resetSize(this@PhormiKeyboardSettingsActivity)
                 ToastCompat.show(this@PhormiKeyboardSettingsActivity,"Keyboard position and size reset")
+                render()
             }
         })
 
