@@ -80,7 +80,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
             }
             content.addView(row)
         }
-        presetRow("Height", listOf("Compact" to 0.85f, "Comfortable" to 1.0f, "Large" to 1.20f),
+        presetRow("Height", listOf("Compact" to 0.90f, "Comfortable" to 1.0f, "Large" to 1.20f),
             { PhormiKeyboardPreferences.heightScale(this) }, { PhormiKeyboardPreferences.setHeightScale(this, it) })
         presetRow("Key lettering", listOf("Small" to 0.90f, "Default" to 1.0f, "Large" to 1.15f),
             { PhormiKeyboardPreferences.keyTextScale(this) }, { PhormiKeyboardPreferences.setKeyTextScale(this, it) })

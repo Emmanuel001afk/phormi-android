@@ -114,7 +114,7 @@ class ChromeKeyboardSmokeTest {
 
     @Test fun keyboardLetterKeysAreReadableAndHeightPresetIsReal() {
         enableKeyboard()
-        PhormiKeyboardPreferences.setHeightScale(context, 0.85f)
+        PhormiKeyboardPreferences.setHeightScale(context, 0.90f)
         val compact = ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val height = letterKeyHeight()

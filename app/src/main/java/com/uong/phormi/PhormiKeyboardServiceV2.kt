@@ -1099,7 +1099,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         }) {
             val next = when {
                 PhormiKeyboardPreferences.heightScale(this) < 0.93f -> 1.0f
-                PhormiKeyboardPreferences.heightScale(this) > 1.08f -> 0.85f
+                PhormiKeyboardPreferences.heightScale(this) > 1.08f -> 0.90f
                 else -> 1.20f
             }
             PhormiKeyboardPreferences.setHeightScale(this@PhormiKeyboardServiceV2, next)
