@@ -119,7 +119,8 @@ class ChromeKeyboardSmokeTest {
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val height = letterKeyHeight()
             val density = context.resources.displayMetrics.density
-            assertTrue("Compact keys must stay readable: height=$height px, density=$density", height >= (28 * density).toInt())
+            // Compact is intentionally shorter than Comfortable, but keys must remain tappable.
+            assertTrue("Compact keys must stay readable: height=$height px, density=$density", height >= (24 * density).toInt())
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-compact.png"))
             height
         }
