@@ -54,10 +54,13 @@ class TabOverviewSmokeTest {
         ActivityScenario.launch(TabsOverviewActivity::class.java).use { scenario ->
             assertTrue(device.wait(Until.hasObject(By.text("Current tab")), 7000))
             assertTrue(device.hasObject(By.text("github.com")))
+            assertTrue(device.hasObject(By.text("Work")))
             scenario.onActivity { activity ->
                 val root = activity.findViewById<ViewGroup>(R.id.tabs_vertical)
                 assertEquals(listOf("current", "group:", "websites", "new"),
-                    (0 until root.childCount).mapNotNull { root.getChildAt(it).tag as? String }.filter { it == "current" || it.startsWith("group:") || it == "websites" || it == "new" })
+                    (0 until root.childCount).mapNotNull { root.getChildAt(it).tag as? String }
+                        .filter { it == "current" || it.startsWith("group:") || it == "websites" || it == "new" }
+                        .map { if (it.startsWith("group:")) "group:" else it })
                 assertEquals(4, tagged(root, "tab-card").size)
                 assertEquals("github.com", activity.findViewById<View>(R.id.tabs_vertical).let { firstCardTitle(it) })
                 device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "tab-overview-list.png"))
