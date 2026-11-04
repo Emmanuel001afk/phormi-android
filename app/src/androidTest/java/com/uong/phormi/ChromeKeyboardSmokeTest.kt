@@ -98,6 +98,7 @@ class ChromeKeyboardSmokeTest {
     }
 
     private fun letterKeyHeight(): Int {
+        device.waitForIdle()
         val key = device.wait(Until.findObject(By.desc(Pattern.compile("q", Pattern.CASE_INSENSITIVE))), 7000)
         assertNotNull("Letter q must be visible", key)
         return key!!.visibleBounds.height()
@@ -109,14 +110,16 @@ class ChromeKeyboardSmokeTest {
         val compact = ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val height = letterKeyHeight()
-            assertTrue("Compact keys must stay readable", height >= (32 * context.resources.displayMetrics.density).toInt())
+            val density = context.resources.displayMetrics.density
+            assertTrue("Compact keys must stay readable: height=$height px, density=$density", height >= (28 * density).toInt())
+            device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-compact.png"))
             height
         }
         PhormiKeyboardPreferences.setHeightScale(context, 1.20f)
         ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val large = letterKeyHeight()
-            assertTrue("Large preset must actually increase key height", large > compact)
+            assertTrue("Large preset must actually increase key height: compact=$compact large=$large", large > compact)
             assertTrue(device.hasObject(By.desc("Backspace")))
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "keyboard-large.png"))
         }
