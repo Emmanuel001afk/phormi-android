@@ -66,7 +66,8 @@ if "unifiedSearchGenerations[tab.id] != generation" not in main:
     errors.append("per-tab search generation guard is missing")
 if "ai-answer-text" not in main or "ai-answer-text" not in renderer:
     errors.append("AI answer must inject into the text node, not replace the section heading")
-if "/search" not in main or "/refresh" not in main:
+history = read(SRC / "PhormiSearchHistory.kt")
+if "PhormiSearchHistory.isLocalSearchUrl" not in main or "/search" not in history or "/refresh" not in history:
     errors.append("local search/refresh routes are missing")
 if "PhormiSearchUrls.webUrlOrNull" not in renderer:
     errors.append("renderer must filter unsafe result URLs")
@@ -76,6 +77,12 @@ if "PhormiSearchRanking.merge" not in main:
     errors.append("MainActivity must use the testable ranking helper")
 if "PhormiSearchProviders.all" not in main:
     errors.append("MainActivity must use the shared provider list")
+if "PhormiSearchHistory.searchUrl" not in main or "PhormiSearchDocumentCache" not in main:
+    errors.append("MainActivity must use stable local search history URLs and a per-tab document cache")
+if "loadDataWithBaseURL(\"https://phormi.local/\"" in main:
+    errors.append("search documents must not be loaded with a null/about:blank history URL")
+if "shouldInterceptRequest" not in main or "searchDocuments" not in main:
+    errors.append("Back/Forward must restore cached search documents through shouldInterceptRequest")
 
 # JVM coverage for the new pure helpers.
 for name in (
@@ -84,6 +91,7 @@ for name in (
     "PhormiSearchTextTest.kt",
     "PhormiSearchRankingTest.kt",
     "PhormiSearchProvidersTest.kt",
+    "PhormiSearchHistoryTest.kt",
 ):
     if not (TESTS / name).is_file():
         errors.append(f"missing search test: {name}")
