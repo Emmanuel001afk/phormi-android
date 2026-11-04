@@ -1154,23 +1154,10 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private data class UnifiedResult(
-        val title: String,
-        val url: String,
-        val snippet: String,
-        val source: String,
-        val rank: Int
-    )
-
-    private data class SearchProvider(
-        val name: String,
-        val endpoint: (String) -> String
-    )
-
     private fun runUnifiedSearch(query: String) {
         if (!prefs.getBoolean("multi_engine_consent_v1", false)) {
             AlertDialog.Builder(this).setTitle("Use multi-engine search?")
-                .setMessage("Phormi Search sends your query to 11 providers, including Google, Bing and DuckDuckGo. This uses more data and providers may block automated results. You can change engines from the home search selector.")
+                .setMessage("Phormi Search sends your query to ${PhormiSearchProviders.all.size} providers, including Google, Bing and DuckDuckGo. This uses more data and providers may block automated results. You can change engines from the home search selector.")
                 .setNegativeButton("Use Google") { _, _ ->
                     prefs.edit().putString(KEY_SEARCH_PROVIDER, "Google").apply()
                     findViewById<TextView>(R.id.start_page_engine).text = "Google  ▾"
@@ -1199,25 +1186,13 @@ class MainActivity : AppCompatActivity() {
         hideKeyboard()
         urlBar.clearFocus()
 
-        val providers = listOf(
-            SearchProvider("Google") { q -> "https://www.google.com/search?q=${URLEncoder.encode(q, "UTF-8")}&num=8" },
-            SearchProvider("Bing") { q -> "https://www.bing.com/search?q=${URLEncoder.encode(q, "UTF-8")}&count=8" },
-            SearchProvider("DuckDuckGo") { q -> "https://html.duckduckgo.com/html/?q=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Brave") { q -> "https://search.brave.com/search?q=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Yahoo") { q -> "https://search.yahoo.com/search?p=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Ecosia") { q -> "https://www.ecosia.org/search?q=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Mojeek") { q -> "https://www.mojeek.com/search?q=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Startpage") { q -> "https://www.startpage.com/sp/search?query=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Qwant") { q -> "https://www.qwant.com/?q=${URLEncoder.encode(q, "UTF-8")}&t=web" },
-            SearchProvider("Yandex") { q -> "https://yandex.com/search/?text=${URLEncoder.encode(q, "UTF-8")}" },
-            SearchProvider("Swisscows") { q -> "https://swisscows.com/en/web?query=${URLEncoder.encode(q, "UTF-8")}" }
-        )
+        val providers = PhormiSearchProviders.all
 
         val loadingHtml = unifiedSearchHtml(query, emptyList(), true, 0, providers.size)
         webView.loadDataWithBaseURL("https://phormi.local/", loadingHtml, "text/html", "UTF-8", null)
 
         val remaining = AtomicInteger(providers.size)
-        val all = java.util.Collections.synchronizedList(mutableListOf<UnifiedResult>())
+        val all = java.util.Collections.synchronizedList(mutableListOf<PhormiSearchResult>())
         val successfulEngines = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         val finishedEngines = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         // The old code reloaded the whole document after every provider finished (up to
@@ -1237,7 +1212,7 @@ class MainActivity : AppCompatActivity() {
                 val snapshot = synchronized(unifiedSearchLock) { all.toList() }
                 val successfulSnapshot = synchronized(unifiedSearchLock) { successfulEngines.toList() }
                 val finishedSnapshot = synchronized(unifiedSearchLock) { finishedEngines.toList() }
-                val mergedSnapshot = mergeUnifiedResults(snapshot, query)
+                val mergedSnapshot = mergePhormiSearchResults(snapshot, query)
                 runOnUiThread {
                     if (unifiedSearchGenerations[tab.id] != generation || tabs.none { it.webView === webView } || tab.searchQuery != query) return@runOnUiThread
                     val finalPass = done == providers.size
@@ -1259,7 +1234,7 @@ class MainActivity : AppCompatActivity() {
                             if (answer != null) {
                                 tab.lastSearchHtml = unifiedSearchHtml(query, mergedSnapshot, false, providers.size, providers.size, successfulSnapshot, finishedSnapshot, answer)
                                 webView.evaluateJavascript("""
-                                    (function(){var el=document.getElementById('ai-answer');if(el){el.textContent=${JSONObject.quote(answer)};el.style.display='block';}})();
+                                    (function(){var section=document.getElementById('ai-answer');var text=document.getElementById('ai-answer-text');if(section&&text){text.textContent=${JSONObject.quote(answer)};section.hidden=false;}})();
                                 """.trimIndent(), null)
                             }
                         }
@@ -1270,9 +1245,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun fetchProviderResults(provider: SearchProvider, query: String): List<UnifiedResult> {
+    private fun fetchProviderResults(provider: PhormiSearchProvider, query: String): List<PhormiSearchResult> {
         return try {
-            val connection = (URL(provider.endpoint(query)).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(provider.fetchUrl(query)).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 6000
                 readTimeout = 8000
@@ -1314,7 +1289,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun parseSearchHtml(source: String, html: String): List<UnifiedResult> {
+    private fun parseSearchHtml(source: String, html: String): List<PhormiSearchResult> {
         return when (source) {
             "DuckDuckGo" -> parseDuckDuckGo(html, source)
             "Bing" -> parseBing(html, source)
@@ -1331,79 +1306,102 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun parseDuckDuckGo(html: String, source: String): List<UnifiedResult> {
-        val results = mutableListOf<UnifiedResult>()
-        val pattern = Regex("""(?is)<a[^>]+class=[\"']result__a[\"'][^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>""")
+    private fun parseDuckDuckGo(html: String, source: String): List<PhormiSearchResult> {
+        val results = mutableListOf<PhormiSearchResult>()
+        val pattern = Regex("""(?is)<a[^>]+class=["']result__a["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""")
+        val snippetPattern = Regex("""(?is)<(?:a|div|p)[^>]+class=["'][^"']*result__snippet[^"']*["'][^>]*>(.*?)</(?:a|div|p)>""")
         pattern.findAll(html).take(12).forEachIndexed { index, match ->
             val url = normalizeSearchUrl(match.groupValues[1])
             val title = cleanHtmlText(match.groupValues[2])
             if (isUsableSearchResult(url, title, source, results)) {
-                results += UnifiedResult(title, url, "", source, index)
+                val tail = html.substring(match.range.last + 1, (match.range.last + 1800).coerceAtMost(html.length))
+                val snippet = PhormiSearchText.cleanSnippet(
+                    cleanHtmlText(snippetPattern.find(tail)?.groupValues?.get(1).orEmpty()), title
+                )
+                results += PhormiSearchResult(title, url, snippet, source, index)
             }
         }
         return results
     }
 
-    private fun parseBing(html: String, source: String): List<UnifiedResult> {
-        val results = mutableListOf<UnifiedResult>()
-        val blockPattern = Regex("""(?is)<li[^>]+class=[\"'][^\"']*b_algo[^\"']*[\"'][^>]*>(.*?)</li>""")
-        val titlePattern = Regex("""(?is)<h2[^>]*>\s*<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>""")
+    private fun parseBing(html: String, source: String): List<PhormiSearchResult> {
+        val results = mutableListOf<PhormiSearchResult>()
+        val blockPattern = Regex("""(?is)<li[^>]+class=["'][^"']*b_algo[^"']*["'][^>]*>(.*?)</li>""")
+        val titlePattern = Regex("""(?is)<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""")
         blockPattern.findAll(html).take(12).forEachIndexed { index, block ->
             val m = titlePattern.find(block.groupValues[1]) ?: return@forEachIndexed
             val url = normalizeSearchUrl(m.groupValues[1])
             val title = cleanHtmlText(m.groupValues[2])
-            val snippet = cleanHtmlText(Regex("""(?is)<p[^>]*>(.*?)</p>""").find(block.groupValues[1])?.groupValues?.get(1).orEmpty()).take(220)
-            if (isUsableSearchResult(url, title, source, results)) results += UnifiedResult(title, url, snippet, source, index)
+            val snippet = PhormiSearchText.cleanSnippet(
+                cleanHtmlText(Regex("""(?is)<p[^>]*>(.*?)</p>""").find(block.groupValues[1])?.groupValues?.get(1).orEmpty()),
+                title
+            )
+            if (isUsableSearchResult(url, title, source, results)) results += PhormiSearchResult(title, url, snippet, source, index)
         }
         return results
     }
 
-    private fun parseBrave(html: String, source: String): List<UnifiedResult> {
-        val results = mutableListOf<UnifiedResult>()
-        val pattern = Regex("""(?is)<a[^>]+href=[\"']([^\"']+)[\"'][^>]*class=[\"'][^\"']*(?:result-header|snippet-title)[^\"']*[\"'][^>]*>(.*?)</a>""")
+    private fun parseBrave(html: String, source: String): List<PhormiSearchResult> {
+        val results = mutableListOf<PhormiSearchResult>()
+        val pattern = Regex("""(?is)<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*(?:result-header|snippet-title)[^"']*["'][^>]*>(.*?)</a>""")
+        val snippetPattern = Regex("""(?is)<(?:div|p|span)[^>]+class=["'][^"']*(?:snippet-description|snippet-content)[^"']*["'][^>]*>(.*?)</(?:div|p|span)>""")
         pattern.findAll(html).take(12).forEachIndexed { index, match ->
             val url = normalizeSearchUrl(match.groupValues[1])
             val title = cleanHtmlText(match.groupValues[2])
-            if (isUsableSearchResult(url, title, source, results)) results += UnifiedResult(title, url, "", source, index)
+            if (isUsableSearchResult(url, title, source, results)) {
+                val tail = html.substring(match.range.last + 1, (match.range.last + 2200).coerceAtMost(html.length))
+                val snippet = PhormiSearchText.cleanSnippet(
+                    cleanHtmlText(snippetPattern.find(tail)?.groupValues?.get(1).orEmpty()), title
+                )
+                results += PhormiSearchResult(title, url, snippet, source, index)
+            }
         }
         return results.ifEmpty { parseGenericSearch(html, source) }
     }
 
-    private fun parseYahoo(html: String, source: String): List<UnifiedResult> {
-        val results = mutableListOf<UnifiedResult>()
-        val pattern = Regex("""(?is)<h3[^>]*>\s*<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>""")
+    private fun parseYahoo(html: String, source: String): List<PhormiSearchResult> {
+        val results = mutableListOf<PhormiSearchResult>()
+        val pattern = Regex("""(?is)<h3[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""")
+        val snippetPattern = Regex("""(?is)<(?:div|p|span)[^>]+class=["'][^"']*(?:compText|c-line-clamp)[^"']*["'][^>]*>(.*?)</(?:div|p|span)>""")
         pattern.findAll(html).take(12).forEachIndexed { index, match ->
             val url = normalizeSearchUrl(match.groupValues[1])
             val title = cleanHtmlText(match.groupValues[2])
-            if (isUsableSearchResult(url, title, source, results)) results += UnifiedResult(title, url, "", source, index)
+            if (isUsableSearchResult(url, title, source, results)) {
+                val tail = html.substring(match.range.last + 1, (match.range.last + 2200).coerceAtMost(html.length))
+                val snippet = PhormiSearchText.cleanSnippet(
+                    cleanHtmlText(snippetPattern.find(tail)?.groupValues?.get(1).orEmpty()), title
+                )
+                results += PhormiSearchResult(title, url, snippet, source, index)
+            }
         }
         return results.ifEmpty { parseGenericSearch(html, source) }
     }
 
-    private fun parseGoogle(html: String, source: String): List<UnifiedResult> {
-        val results = mutableListOf<UnifiedResult>()
-        val pattern = Regex("""(?is)<a[^>]+href=[\"'](/url\?q=[^\"']+|https?://[^\"']+)[\"'][^>]*>(.*?)</a>""")
+    private fun parseGoogle(html: String, source: String): List<PhormiSearchResult> {
+        val results = mutableListOf<PhormiSearchResult>()
+        val pattern = Regex("""(?is)<a[^>]+href=["'](/url\?q=[^"']+|https?://[^"']+)["'][^>]*>(.*?)</a>""")
         pattern.findAll(html).take(30).forEach { match ->
             val url = normalizeSearchUrl(match.groupValues[1])
             val title = cleanHtmlText(match.groupValues[2])
             if (isUsableSearchResult(url, title, source, results)) {
-                results += UnifiedResult(title, url, "", source, results.size)
+                val snippet = extractNearbySnippet(html, match.range.last + 1, title)
+                results += PhormiSearchResult(title, url, snippet, source, results.size)
             }
         }
         return results
     }
 
-    private fun parseGenericSearch(html: String, source: String): List<UnifiedResult> {
-        val results = mutableListOf<UnifiedResult>()
-        val anchorRegex = Regex("""(?is)<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>""")
+    private fun parseGenericSearch(html: String, source: String): List<PhormiSearchResult> {
+        val results = mutableListOf<PhormiSearchResult>()
+        val anchorRegex = Regex("""(?is)<a\b[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>""")
         for (match in anchorRegex.findAll(html)) {
             if (results.size >= 12) break
             val rawUrl = Html.fromHtml(match.groupValues[1], Html.FROM_HTML_MODE_LEGACY).toString().trim()
             val title = cleanHtmlText(match.groupValues[2])
             val url = normalizeSearchUrl(rawUrl)
             if (isUsableSearchResult(url, title, source, results)) {
-                val snippet = extractNearbySnippet(html, match.range.last)
-                results += UnifiedResult(title, url, snippet, source, results.size)
+                val snippet = extractNearbySnippet(html, match.range.last + 1, title)
+                results += PhormiSearchResult(title, url, snippet, source, results.size)
             }
         }
         return results
@@ -1413,47 +1411,19 @@ class MainActivity : AppCompatActivity() {
         url: String,
         title: String,
         source: String,
-        existing: List<UnifiedResult>
+        existing: List<PhormiSearchResult>
     ): Boolean {
-        if (title.length < 3 || url.isBlank() || !url.startsWith("http")) return false
-        val host = try { URL(url).host.lowercase(Locale.US).removePrefix("www.") } catch (_: Exception) { return false }
-        if (host.isBlank()) return false
-        val blocked = setOf(
-            "google.com", "bing.com", "duckduckgo.com", "brave.com", "search.yahoo.com",
-            "ecosia.org", "mojeek.com", "startpage.com", "qwant.com", "yandex.com", "swisscows.com"
-        )
-        if (blocked.any { host == it || host.endsWith(".$it") }) return false
-        if (title.equals("Images", true) || title.equals("Videos", true) || title.equals("Maps", true)) return false
-        if (existing.any { canonicalUrl(it.url) == canonicalUrl(url) }) return false
+        val safeUrl = PhormiSearchUrls.webUrlOrNull(url) ?: return false
+        if (PhormiSearchText.isNavigationTitle(title)) return false
+        if (PhormiSearchUrls.isProviderNavigation(safeUrl)) return false
+        if (existing.any { PhormiSearchUrls.canonical(it.url) == PhormiSearchUrls.canonical(safeUrl) }) return false
         return true
     }
 
-    private fun canonicalUrl(raw: String): String {
-        return try {
-            URL(raw).run {
-                val hostPart = host.lowercase(Locale.US).removePrefix("www.")
-                val pathPart = path.ifBlank { "/" }.trimEnd('/').lowercase(Locale.US)
-                val cleanQuery = query.orEmpty().split('&')
-                    .filter { it.isNotBlank() }
-                    .filterNot { it.substringBefore('=').lowercase(Locale.US) in setOf(
-                        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-                        "gclid", "fbclid", "msclkid", "ref", "ref_src"
-                    ) }
-                    .sorted()
-                    .joinToString("&")
-                buildString {
-                    append(hostPart).append(pathPart)
-                    if (cleanQuery.isNotBlank()) append('?').append(cleanQuery.lowercase(Locale.US))
-                }
-            }
-        } catch (_: Exception) { raw.lowercase(Locale.US).substringBefore('#') }
-    }
+    private fun canonicalUrl(raw: String): String = PhormiSearchUrls.canonical(raw)
 
-    private fun cleanHtmlText(value: String): String {
-        return Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString()
-            .replace(Regex("\\s+"), " ")
-            .trim()
-    }
+    private fun cleanHtmlText(value: String): String =
+        PhormiSearchText.collapseWhitespace(Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString())
 
     private fun normalizeSearchUrl(raw: String): String {
         var value = Html.fromHtml(raw, Html.FROM_HTML_MODE_LEGACY).toString().trim()
@@ -1469,149 +1439,64 @@ class MainActivity : AppCompatActivity() {
         return value.substringBefore('#')
     }
 
-    private fun extractNearbySnippet(html: String, position: Int): String {
-        val end = (position + 700).coerceAtMost(html.length)
-        val text = cleanHtmlText(html.substring(position, end))
-        return text.take(220)
+    /** Extract a short description after a result anchor without swallowing the next result. */
+    private fun extractNearbySnippet(html: String, position: Int, title: String): String {
+        if (position >= html.length) return ""
+        val end = (position + 1400).coerceAtMost(html.length)
+        var tail = html.substring(position, end)
+        val nextResult = Regex("""(?is)<(?:a\b[^>]+href|h[1-3]\b)""").find(tail)
+        if (nextResult != null && nextResult.range.first > 0) tail = tail.substring(0, nextResult.range.first)
+        tail = tail.replace(Regex("""(?is)<(script|style|noscript|template|svg)\b[^>]*>.*?</\1>"""), " ")
+        return PhormiSearchText.cleanSnippet(cleanHtmlText(tail), title)
     }
 
-    private fun mergeUnifiedResults(raw: List<UnifiedResult>, query: String): List<UnifiedResult> {
-        val grouped = linkedMapOf<String, MutableList<UnifiedResult>>()
-        raw.forEach { result ->
-            grouped.getOrPut(canonicalUrl(result.url)) { mutableListOf() }.add(result)
-        }
+    private fun mergePhormiSearchResults(raw: List<PhormiSearchResult>, query: String): List<PhormiSearchResult> =
+        PhormiSearchRanking.merge(raw, query)
 
-        return grouped.values
-            .map { group ->
-                // Treat every search engine as a contributor, rather than using a fallback chain.
-                // A page earns points from each engine that independently found it. Earlier
-                // positions contribute more, while cross-engine agreement gives an additional
-                // signal that the page is broadly relevant. No single engine is authoritative.
-                val best = group.minByOrNull { it.rank } ?: group.first()
-                val sourceNames = group.map { it.source }.distinct()
-                // Every responding provider contributes equally. Hardcoded brand weights
-                // (Google 100, Bing 92, ...) contradicted the "independent evidence"
-                // claim: several of these providers syndicate the same upstream index.
-                val engineContribution = group.sumOf { result ->
-                    (80 - (result.rank * 7)).coerceAtLeast(15)
-                }
-                val agreementBonus = ((sourceNames.size - 1) * 24)
-                val queryTokens = query.lowercase(Locale.US)
-                    .split(Regex("[^a-z0-9]+"))
-                    .filter { it.length >= 2 }
-                    .distinct()
-                val searchable = "${best.title} ${best.snippet}".lowercase(Locale.US)
-                val queryMatchBonus = queryTokens.sumOf { token ->
-                    when {
-                        Regex("\\b${Regex.escape(token)}\\b").containsMatchIn(searchable) -> 35
-                        searchable.contains(token) -> 15
-                        else -> 0
-                    }
-                }
-                // Ranking uses result position, cross-provider agreement and actual query
-                // terms. No provider is treated as authoritative; this prevents unrelated
-                // pages outranking direct matches.
-                val domain = try {
-                    URL(best.url).host.lowercase(Locale.US).removePrefix("www.")
-                } catch (_: Exception) { "" }
-                val score = engineContribution + agreementBonus + queryMatchBonus
-                best.copy(
-                    source = sourceNames.joinToString(" · "),
-                    rank = score,
-                    title = if (domain.isNotBlank()) best.title else best.title
-                )
-            }
-            .sortedByDescending { it.rank }
-            .take(30)
-            .let { ranked ->
-                // Apply a small diversity adjustment after relevance has been established.
-                // This does not choose one engine over another; it only prevents repeated
-                // results from the same site from crowding out independent answers.
-                val domainCounts = mutableMapOf<String, Int>()
-                ranked.sortedByDescending { result ->
-                    val domain = try { URL(result.url).host.lowercase(Locale.US).removePrefix("www.") }
-                    catch (_: Exception) { "" }
-                    val seen = domainCounts.getOrDefault(domain, 0)
-                    domainCounts[domain] = seen + 1
-                    result.rank - (seen * 8)
-                }
-            }
-            .mapIndexed { index, result -> result.copy(rank = index) }
+    private val searchAssets by lazy {
+        PhormiSearchAssets(
+            template = assets.open("search/results.html").bufferedReader(Charsets.UTF_8).use { it.readText() },
+            css = assets.open("search/results.css").bufferedReader(Charsets.UTF_8).use { it.readText() },
+            script = assets.open("search/results.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        )
     }
+
+    private fun searchPalette(): PhormiSearchPalette = PhormiSearchPalette(
+        background = cssColor(PhormiUiColors.background(this)),
+        surface = cssColor(PhormiUiColors.surface(this)),
+        surfaceSoft = cssColor(PhormiUiColors.surfaceSoft(this)),
+        text = cssColor(PhormiUiColors.text(this)),
+        secondary = cssColor(PhormiUiColors.secondary(this)),
+        accent = cssColor(PhormiUiColors.accent(this)),
+        accentSoft = cssColor(PhormiUiColors.accentSoft(this)),
+        onAccent = cssColor(PhormiUiColors.onAccent(this)),
+        coral = cssColor(PhormiUiColors.coral(this)),
+        border = cssColor(PhormiUiColors.border(this))
+    )
 
     private fun unifiedSearchHtml(
         query: String,
-        results: List<UnifiedResult>,
+        results: List<PhormiSearchResult>,
         loading: Boolean,
         completed: Int,
         total: Int,
         successfulEngines: List<String> = emptyList(),
         finishedEngines: List<String> = emptyList(),
         aiAnswer: String? = null
-    ): String {
-        val q = Html.escapeHtml(query)
-        val body = if (results.isEmpty() && loading) {
-            "<div class='status'>Searching across $total engines…</div>"
-        } else if (results.isEmpty()) {
-            "<div class='status'>No results could be collected. You can open an engine directly below.</div>"
-        } else {
-            results.joinToString("\n") { result ->
-                val title = Html.escapeHtml(result.title)
-                val url = Html.escapeHtml(result.url)
-                val snippet = Html.escapeHtml(result.snippet)
-                """
-                <article class='result'>
-                  <a class='title' href='$url'>$title</a>
-                  <div class='url'>$url</div>
-                  <div class='snippet'>$snippet</div>
-                  <button class='source-badge' aria-label='Search sources' onclick='toggleSources(this)'>${result.source.split(" · ").take(5).joinToString("") { it.firstOrNull()?.uppercase() ?: "?" }}</button>
-                  <span class='source-details'>${Html.escapeHtml(result.source)}</span>
-                </article>
-                """.trimIndent()
-            }
-        }
-        val aiSection = aiAnswer?.takeIf { it.isNotBlank() }?.let { answer ->
-            val escaped = Html.escapeHtml(answer)
-            "<section class='ai'><div class='ai-title'>AI synthesis</div><div>$escaped</div></section>"
-        }.orEmpty()
-        val bg = cssColor(PhormiUiColors.background(this))
-        val surface = cssColor(PhormiUiColors.surface(this))
-        val text = cssColor(PhormiUiColors.text(this))
-        val muted = cssColor(PhormiUiColors.secondary(this))
-        val accent = cssColor(PhormiUiColors.accent(this))
-        val border = cssColor(PhormiUiColors.border(this))
-        return """
-            <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
-            <style>
-            body{margin:0;background:$bg;color:$text;font-family:sans-serif}
-            .top{padding:18px 18px 12px;position:sticky;top:0;background:$bg;border-bottom:1px solid $border}
-            .brand{font-size:22px;font-weight:700}.query{margin-top:5px;color:$muted;font-size:13px}.status{padding:28px 18px;color:$muted}
-            .result{padding:17px 18px;border-bottom:1px solid $border;position:relative}.title{font-size:17px;color:$accent;text-decoration:none;font-weight:600}.url{font-size:11px;color:$muted;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.snippet{font-size:13px;line-height:1.45;margin-top:7px;color:$text}.source-badge{margin-top:8px;min-width:28px;height:24px;padding:0 7px;border:1px solid $border;border-radius:12px;background:$surface;color:$muted;font-size:9px;font-weight:700}.source-details{display:none;margin-left:7px;color:$muted;font-size:10px;vertical-align:middle}.source-details.show{display:inline-block}
-            .coverage{padding:8px 14px;color:$muted;font-size:11px;border-bottom:1px solid $border}.ai{margin:10px 14px;padding:12px;border:1px solid $border;border-radius:14px;background:$surface;color:$text}.ai-title{color:$accent;font-weight:700}.ai div{margin-top:8px;line-height:1.5;font-size:13px}.contributors{display:none;margin-top:5px;color:$muted}.footer{padding:18px;color:$muted;font-size:12px}.engine{display:inline-block;margin:4px 4px 0 0;padding:8px 10px;border:1px solid $border;border-radius:14px;color:$text;text-decoration:none}
-            </style></head><body>
-            <div class='top'><div class='brand'>Phormi Search</div><div class='query'>$q</div><div class='query'>${if (loading) "Collecting $completed/$total engines…" else "Unified results · $total engines"}</div></div>
-            <div class='coverage'>${if (loading) "${finishedEngines.size}/$total answered" else "${successfulEngines.size}/$total answered"}</div>
-            $body
-            <section id='ai-answer' class='ai' style='display:none' aria-live='polite'></section>
-            <div class='footer'>
-              Phormi fetches public search-result pages from several providers, merges matching pages, removes duplicates and ranks them by position, cross-provider agreement and your search terms. This is client-side aggregation of result pages, not an independent search index or a licensed search API; results can be incomplete when a provider blocks automated requests.<br><br>
-              <a class='engine' href='https://phormi.local/refresh?q=${URLEncoder.encode(query, "UTF-8")}'>↻ Refresh results</a><br><br>
-              <a class='engine' href='https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Google</a>
-              <a class='engine' href='https://www.bing.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Bing</a>
-              <a class='engine' href='https://duckduckgo.com/?q=${URLEncoder.encode(query, "UTF-8")}'>DuckDuckGo</a>
-              <a class='engine' href='https://search.brave.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Brave</a>
-              <a class='engine' href='https://search.yahoo.com/search?p=${URLEncoder.encode(query, "UTF-8")}'>Yahoo</a>
-              <a class='engine' href='https://www.ecosia.org/search?q=${URLEncoder.encode(query, "UTF-8")}'>Ecosia</a>
-              <a class='engine' href='https://www.mojeek.com/search?q=${URLEncoder.encode(query, "UTF-8")}'>Mojeek</a>
-              <a class='engine' href='https://www.startpage.com/sp/search?query=${URLEncoder.encode(query, "UTF-8")}'>Startpage</a>
-              <a class='engine' href='https://www.qwant.com/?q=${URLEncoder.encode(query, "UTF-8")}&t=web'>Qwant</a>
-              <a class='engine' href='https://yandex.com/search/?text=${URLEncoder.encode(query, "UTF-8")}'>Yandex</a>
-              <a class='engine' href='https://swisscows.com/en/web?query=${URLEncoder.encode(query, "UTF-8")}'>Swisscows</a>
-            </div>
-            <script>function toggleSources(btn){var d=btn.nextElementSibling; if(d){d.classList.toggle('show');}}</script>
-            </body></html>
-        """.trimIndent()
-    }
+    ): String = PhormiSearchRenderer.render(
+        PhormiSearchRenderState(
+            query = query,
+            results = results,
+            loading = loading,
+            completed = completed,
+            total = total,
+            successfulEngines = successfulEngines,
+            finishedEngines = finishedEngines,
+            aiAnswer = aiAnswer
+        ),
+        searchPalette(),
+        searchAssets
+    )
 
     private fun openShortcut(url: String) {
         createNewTab(url)
@@ -3145,6 +3030,21 @@ class MainActivity : AppCompatActivity() {
                 view: WebView?,
                 request: android.webkit.WebResourceRequest?
             ): android.webkit.WebResourceResponse? {
+                val localSearch = request?.takeIf { it.isForMainFrame }?.url?.takeIf {
+                    it.host == "phormi.local" &&
+                        (it.path?.startsWith("/search") == true || it.path?.startsWith("/refresh") == true)
+                }
+                if (localSearch != null) {
+                    val q = runCatching { localSearch.getQueryParameter("q") }.getOrNull().orEmpty()
+                    if (q.isNotBlank()) {
+                        runOnUiThread {
+                            if (view == null || view == activeWebView()) runUnifiedSearch(q)
+                        }
+                    }
+                    return android.webkit.WebResourceResponse(
+                        "text/html", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0))
+                    )
+                }
                 request?.url?.toString()?.let {
                     PhormiDownloadEngine.rememberWebRequestHeaders(it, request.requestHeaders)
                 }
@@ -3155,6 +3055,16 @@ class MainActivity : AppCompatActivity() {
                 val targetUri = request?.url ?: return false
                 val target = targetUri.toString()
                 if (target.isBlank()) return false
+                val scheme = targetUri.scheme?.lowercase(Locale.US).orEmpty()
+                // The generated Phormi Search document uses a local origin. A "Refresh
+                // results" link is an explicit request for fresh provider data; it must
+                // not be handed to WebView as a real (and non-existent) navigation.
+                if (targetUri.host == "phormi.local" &&
+                    (targetUri.path?.startsWith("/refresh") == true || targetUri.path?.startsWith("/search") == true)) {
+                    val q = runCatching { targetUri.getQueryParameter("q") }.getOrNull().orEmpty()
+                    if (q.isNotBlank()) runUnifiedSearch(q)
+                    return true
+                }
                 val host = PhormiSiteLockManager.normalizeHost(target)
                 if (host != null) {
                     val sourceTabId = tabs.firstOrNull { it.webView === view }?.id ?: activeTabId
@@ -3165,15 +3075,6 @@ class MainActivity : AppCompatActivity() {
                         showSiteUnlockDialog(host)
                         return true
                     }
-                }
-                val scheme = targetUri.scheme?.lowercase(Locale.US).orEmpty()
-                // The generated Phormi Search document uses a local origin. A "Refresh
-                // results" link is an explicit request for fresh provider data; it must
-                // not be handed to WebView as a real (and non-existent) navigation.
-                if (targetUri.host == "phormi.local" && targetUri.path?.startsWith("/refresh") == true) {
-                    val q = runCatching { targetUri.getQueryParameter("q") }.getOrNull().orEmpty()
-                    if (q.isNotBlank()) runUnifiedSearch(q)
-                    return true
                 }
                 // File access is disabled in WebSettings, so allowing file: navigation
                 // was contradictory. javascript: navigation is never a legitimate page
@@ -3384,7 +3285,8 @@ class MainActivity : AppCompatActivity() {
                         HistoryActivity.record(this@MainActivity, t, u)
                     }
 
-                if (view != null && url.orEmpty().startsWith("http", true) && isDesktopModeFor(url.orEmpty())) {
+                if (view != null && url.orEmpty().startsWith("http", true) &&
+                    desktopHost(url.orEmpty()) != "phormi.local" && isDesktopModeFor(url.orEmpty())) {
                     view.evaluateJavascript("""
                         (function(){
                           var content='width=980';
@@ -3989,6 +3891,11 @@ class MainActivity : AppCompatActivity() {
         val page = activeWebView()
         val url = page?.url.orEmpty()
         when {
+            url.startsWith("https://phormi.local/") -> {
+                indicator.text = "⌕"
+                indicator.contentDescription = "Phormi Search results"
+                indicator.setTextColor(PhormiUiColors.accent(this))
+            }
             url.startsWith("https://") && page?.certificate != null -> {
                 indicator.text = "🔒"
                 indicator.contentDescription = "Secure HTTPS connection. Tap for site information."
@@ -4017,9 +3924,14 @@ class MainActivity : AppCompatActivity() {
         val geo = PhormiSitePermissions.decision(sitePermissionStore.read(origin))
         val geoLabel = when (geo) { true -> "Allowed"; false -> "Blocked"; else -> "Ask every time" }
         val message = buildString {
-            append(if (url.isBlank()) "No page loaded." else url)
-            append("\n\nConnection: ")
-            append(if (url.isBlank()) "—" else if (secure) "HTTPS (encrypted)" else "Not secure (HTTP or local content)")
+            if (url.startsWith("https://phormi.local/")) {
+                append("Phormi Search results are generated on this device from public search-provider pages.")
+                append("\n\nConnection: Local results page (no remote site certificate)")
+            } else {
+                append(if (url.isBlank()) "No page loaded." else url)
+                append("\n\nConnection: ")
+                append(if (url.isBlank()) "—" else if (secure) "HTTPS (encrypted)" else "Not secure (HTTP or local content)")
+            }
             append("\nLocation for this site: ").append(geoLabel)
             append("\n\nSite permission decisions are stored on this device only.")
         }

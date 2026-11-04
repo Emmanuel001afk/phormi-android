@@ -42,6 +42,7 @@ jobs:
           python3 tools/audit_project.py
           python3 tools/audit_app_icon.py
           python3 tools/audit_app_ui.py
+          python3 tools/audit_search.py
       - name: Run unit tests
         run: |
           set +e
@@ -54,6 +55,7 @@ jobs:
             grep -E '^e: |^> Task .*FAILED|^FAILURE:|^\* What went wrong:|^Could not|^    > |^Caused by:' /tmp/phormi-gradle-test.log | head -60 | while IFS= read -r line; do
               echo "::error title=Gradle test output::$line"
             done
+            python3 tools/annotate_test_failures.py
           fi
           exit "$result"
       - name: Build committed source for CodeQL extraction

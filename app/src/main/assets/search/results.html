@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>{{TITLE}}</title>
+  <style>{{PALETTE}}
+{{CSS}}</style>
+</head>
+<body class="{{BODY_CLASS}}">
+  <a class="skip-link" href="#main">Skip to results</a>
+  <header class="search-header">
+    <div class="header-inner">
+      <span class="brand" aria-label="Phormi Search">
+        <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false">
+          <rect width="108" height="108" rx="24" fill="var(--accent)"/>
+          <path fill="var(--surface-soft)" d="M36 26C43 23.8 54.5 24.2 63 25.5L77 38C80 43 80 50 76.5 55.5C72.5 62 65.5 65.5 58 65C53.5 64.8 49.5 63.5 46 61.5L46.2 73.5C46.3 77.8 47.8 79.6 51.2 80.4C54.2 81.1 54 84.2 50.8 84.7C46.2 85.4 41.8 84.1 37.5 83C32 82.5 29.5 79 29.7 73.5L30.2 37C30.3 31.5 32 27.4 36 26Z"/>
+          <path fill="var(--coral)" d="M63 25.5L63.3 34.2C63.4 37.2 64.8 38.5 67.8 38.4L77 38Z"/>
+          <path fill="var(--accent)" d="M47 36.5C51.5 33 59 33.5 63.5 37.5C68 41.5 66.5 48.5 62 52.5C57.5 56.5 50 55 46 50.5C42 46 42.5 40 47 36.5Z"/>
+          <path fill="var(--text)" d="M58.5 37.5C61.8 37.2 64 39.6 64 43C64 46.5 62 49 58.8 49C55.5 49 53.5 46.7 53.5 43.5C53.5 40.2 55.3 37.8 58.5 37.5Z"/>
+        </svg>
+        <span class="brand-name">Phormi</span>
+      </span>
+      <form id="search-form" class="search-form" action="https://phormi.local/search" method="get" role="search">
+        <label class="visually-hidden" for="search-input">Search the web</label>
+        <input id="search-input" name="q" type="search" value="{{QUERY}}"
+               autocomplete="off" autocapitalize="off" spellcheck="false"
+               enterkeyhint="search" placeholder="Search the web" required>
+        <button id="clear-search" class="icon-button clear-button" type="button" aria-label="Clear search" hidden>×</button>
+        <button class="icon-button submit-button" type="submit" aria-label="Search">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </form>
+    </div>
+  </header>
+  <main id="main" class="page">
+    {{CONTENT}}
+  </main>
+  <script>{{SCRIPT}}</script>
+</body>
+</html>
