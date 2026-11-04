@@ -45,6 +45,7 @@ jobs:
           python3 tools/audit_search.py
           python3 tools/audit_desktop.py
           python3 tools/audit_tabs.py
+          python3 tools/audit_chrome_keyboard.py
       - name: Run unit tests
         run: |
           set +e
@@ -145,12 +146,16 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             set +e
-            gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.uong.phormi.TabOverviewSmokeTest > /tmp/phormi-device-tests.log 2>&1
+            gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.uong.phormi.TabOverviewSmokeTest,com.uong.phormi.ChromeKeyboardSmokeTest > /tmp/phormi-device-tests.log 2>&1
             cat /tmp/phormi-device-tests.log
             mkdir -p /tmp/phormi-device-screenshots
             adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-list.png /tmp/phormi-device-screenshots/ || true
             adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-grid.png /tmp/phormi-device-screenshots/ || true
             adb pull /sdcard/Android/data/com.uong.phormi/files/tab-overview-cards.png /tmp/phormi-device-screenshots/ || true
+            adb pull /sdcard/Android/data/com.uong.phormi/files/chrome-top-only.png /tmp/phormi-device-screenshots/ || true
+            adb pull /sdcard/Android/data/com.uong.phormi/files/chrome-bottom-enabled.png /tmp/phormi-device-screenshots/ || true
+            adb pull /sdcard/Android/data/com.uong.phormi/files/keyboard-compact.png /tmp/phormi-device-screenshots/ || true
+            adb pull /sdcard/Android/data/com.uong.phormi/files/keyboard-large.png /tmp/phormi-device-screenshots/ || true
             exit 0
       - name: Validate device test results
         if: always()

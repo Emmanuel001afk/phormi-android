@@ -569,6 +569,7 @@ class MainActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         updateResponsiveChrome()
+        if (::startPageContainer.isInitialized) updateHomeChromeVisibility()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1544,7 +1545,8 @@ class MainActivity : AppCompatActivity() {
     private fun updateResponsiveChrome() {
         val tabStrip = findViewById<View>(R.id.tab_strip) ?: return
         val wide = resources.configuration.screenWidthDp >= 900
-        tabStrip.visibility = if (wide) View.VISIBLE else View.GONE
+        val chromeVisible = customView == null && !isInPictureInPictureMode && !splitChromeLocked
+        tabStrip.visibility = if (wide && chromeVisible) View.VISIBLE else View.GONE
     }
 
     private fun showStartPage() {
@@ -1569,27 +1571,42 @@ class MainActivity : AppCompatActivity() {
         saveTabsImmediate(false)
     }
 
-    private fun updateHomeChromeVisibility() {
+    private fun currentChromeState(): PhormiBrowserChrome.State {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
         val wide = resources.configuration.screenWidthDp >= 900
-        findViewById<View>(R.id.home_toolbar_spacer)?.visibility = if (onHome) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.btn_new_tab)?.visibility = if (wide || onHome) View.VISIBLE else View.GONE
         val fullscreen = customView != null || isInPictureInPictureMode
-        findViewById<View>(R.id.top_toolbar)?.visibility = if (fullscreen || splitChromeLocked) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.url_toolbar)?.visibility = if (onHome) View.GONE else View.VISIBLE
+        val activeDownloads = if (::prefs.isInitialized) PhormiDownloadEngine.items(this).count {
+            it.state == PhormiDownloadEngine.State.RUNNING || it.state == PhormiDownloadEngine.State.QUEUED
+        } else 0
+        return PhormiBrowserChrome.State(
+            onHome = onHome,
+            wide = wide,
+            bottomEnabled = PhormiBrowserPreferences.showBottomToolbar(this),
+            fullscreen = fullscreen,
+            splitLocked = splitChromeLocked,
+            activeDownloads = activeDownloads
+        )
+    }
+
+    private fun updateHomeChromeVisibility() {
+        val state = currentChromeState()
+        val visibility = PhormiBrowserChrome.resolve(state)
+        findViewById<View>(R.id.home_toolbar_spacer)?.visibility = if (state.onHome && visibility.top) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_new_tab)?.visibility = if (visibility.newTab) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.top_toolbar)?.visibility = if (visibility.top) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.url_toolbar)?.visibility = if (visibility.url) View.VISIBLE else View.GONE
         // Home is a primary escape hatch on every screen size, not a tablet-only control.
-        findViewById<View>(R.id.btn_home)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_refresh)?.visibility = if (onHome) View.GONE else View.VISIBLE
-        val bottom = PhormiBrowserPreferences.showBottomToolbar(this)
-        // Favorite remains in the Browse menu; reserve more width for the address field.
-        findViewById<View>(R.id.btn_favorite)?.visibility = if (onHome || !bottom || !wide) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.bottom_toolbar)?.visibility =
-            if (onHome || !bottom || splitChromeLocked || fullscreen) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_ai)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_back)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.btn_top_forward)?.visibility = if (onHome || bottom || !wide) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_home)?.visibility = if (visibility.home) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_refresh)?.visibility = if (visibility.refresh) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_favorite)?.visibility = if (visibility.favorite) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.bottom_toolbar)?.visibility = if (visibility.bottom) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.tab_strip)?.visibility = if (visibility.tabStrip) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_top_ai)?.visibility = if (visibility.topAi) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_top_back)?.visibility = if (visibility.topBack) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_top_forward)?.visibility = if (visibility.topForward) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_top_downloads)?.visibility = if (visibility.topDownloads) View.VISIBLE else View.GONE
         updateDownloadBadge()
-        swipeRefresh.isEnabled = !onHome && PhormiBrowserPreferences.pullToRefresh(this)
+        swipeRefresh.isEnabled = !state.onHome && PhormiBrowserPreferences.pullToRefresh(this)
     }
 
     private fun updateStartPageVisibility() {
@@ -1667,9 +1684,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(if (count == 0) PhormiUiColors.text(this@MainActivity) else PhormiUiColors.accent(this@MainActivity))
         }
         findViewById<TextView>(R.id.btn_top_downloads)?.apply {
-            visibility = if (resources.configuration.screenWidthDp >= 900 && count > 0 && (startPageContainer.visibility == View.VISIBLE ||
-                !PhormiBrowserPreferences.showBottomToolbar(this@MainActivity)) &&
-                customView == null && !isInPictureInPictureMode) View.VISIBLE else View.GONE
+            visibility = if (PhormiBrowserChrome.resolve(currentChromeState()).topDownloads) View.VISIBLE else View.GONE
             contentDescription = "$count downloads in progress"
         }
         findViewById<TextView>(R.id.download_status_chip)?.apply {

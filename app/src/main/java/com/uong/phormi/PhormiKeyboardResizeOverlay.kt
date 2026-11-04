@@ -109,7 +109,9 @@ class PhormiKeyboardResizeOverlay(
                 if (handle == Handle.NONE || handle == Handle.DONE) return true
                 val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(1).toFloat()
                 val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(1).toFloat()
-                val keyboardBase = dp(312f)
+                val keyboardBase = dp(PhormiKeyboardMetrics.baseHeightDp(
+                    resources.configuration.screenWidthDp, resources.configuration.screenHeightDp
+                ).toFloat())
                 val dx = event.rawX - startRawX
                 val dy = event.rawY - startRawY
                 var widthScale = startWidth
