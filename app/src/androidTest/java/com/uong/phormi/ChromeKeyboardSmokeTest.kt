@@ -93,14 +93,14 @@ class ChromeKeyboardSmokeTest {
     @Test fun keyboardLetterKeysAreReadableAndHeightPresetIsReal() {
         enableKeyboard()
         PhormiKeyboardPreferences.setHeightScale(context, 0.85f)
-        val compact = ActivityScenario.launch(Intent(context, KeyboardTestActivity::class.java)
+        val compact = ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val height = letterKeyHeight()
             assertTrue("Compact keys must stay readable", height >= (32 * context.resources.displayMetrics.density).toInt())
             height
         }
         PhormiKeyboardPreferences.setHeightScale(context, 1.20f)
-        ActivityScenario.launch(Intent(context, KeyboardTestActivity::class.java)
+        ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val large = letterKeyHeight()
             assertTrue("Large preset must actually increase key height", large > compact)
