@@ -94,9 +94,16 @@ class ChromeKeyboardSmokeTest {
     }
 
     private fun enableKeyboard() {
-        previousIme = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        if (previousIme == null) {
+            previousIme = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        }
         device.executeShellCommand("ime enable com.uong.phormi/.PhormiKeyboardServiceV2")
         device.executeShellCommand("ime set com.uong.phormi/.PhormiKeyboardServiceV2")
+    }
+
+    private fun restartKeyboard() {
+        device.executeShellCommand("ime disable com.uong.phormi/.PhormiKeyboardServiceV2")
+        enableKeyboard()
     }
 
     private fun letterKeyHeight(): Int {
@@ -125,6 +132,8 @@ class ChromeKeyboardSmokeTest {
             height
         }
         PhormiKeyboardPreferences.setHeightScale(context, 1.20f)
+        // Restart the IME so the new height preset is applied to a fresh input view/window.
+        restartKeyboard()
         ActivityScenario.launch<KeyboardTestActivity>(Intent(context, KeyboardTestActivity::class.java)
             .putExtra("input_type", InputType.TYPE_CLASS_TEXT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {
             val large = letterKeyHeight()
