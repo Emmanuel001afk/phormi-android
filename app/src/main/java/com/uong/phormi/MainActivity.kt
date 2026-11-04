@@ -179,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_DAILY_ACCENT = "daily_accent"
         private const val KEY_WALLPAPER_URI = "wallpaper_uri"
-        private const val KEY_DESKTOP_SITES = "desktop_sites"
+        private const val KEY_DESKTOP_SITES = PhormiDesktopMode.KEY_DESKTOP_HOSTS
         private const val KEY_CUSTOM_SHORTCUTS = "custom_shortcuts"
         private const val KEY_PULL_TO_REFRESH = "pull_to_refresh"
         private const val KEY_TAB_VIEW_MODE = "tab_view_mode"
@@ -196,8 +196,8 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_OPEN_NEW_TAB = 4
         private const val MENU_OPEN_BACKGROUND_TAB = 5
         private const val MENU_OPEN_GHOST_TAB = 6
-        private const val KEY_DESKTOP_ALL = "desktop_mode_all"
-        private const val KEY_DESKTOP_SITES_OFF = "desktop_sites_off"
+        private const val KEY_DESKTOP_ALL = PhormiDesktopMode.KEY_GLOBAL
+        private const val KEY_DESKTOP_SITES_OFF = PhormiDesktopMode.KEY_MOBILE_HOSTS
         private const val REQ_NEWS = 1008
 
         // Sensitive permissions are deliberately requested at the moment a feature
@@ -247,6 +247,10 @@ class MainActivity : AppCompatActivity() {
             downloadBadgeHandler.removeCallbacks(downloadBadgePoll)
             downloadBadgeHandler.post(downloadBadgePoll)
             applyKeepScreenOn(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
+            if (prefs.getBoolean(PhormiDesktopMode.KEY_POLICY_DIRTY, false)) {
+                prefs.edit().putBoolean(PhormiDesktopMode.KEY_POLICY_DIRTY, false).apply()
+                applyDesktopModeToAllTabs(reloadLiveSites = true)
+            }
             PhormiEnvironmentManager.cleanupExpired(this, tabs.map { it.profileName }.toSet())
             pruneExpiredTabs()
             runPendingAiTask()
@@ -3043,10 +3047,11 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             val desktop = isDesktopModeFor(webView.url.orEmpty())
             userAgentString = desktopUserAgent(desktop)
-            // A mobile browser still honours the viewport meta tag; overview
-            // scaling is what shrinks a desktop-width page to the screen.
+            // Mobile pages keep their device-width viewport. Desktop pages get a
+            // wide layout viewport and overview scaling so the full desktop page
+            // fits the screen instead of requiring immediate horizontal scrolling.
             useWideViewPort = true
-            loadWithOverviewMode = !desktop
+            loadWithOverviewMode = true
             layoutAlgorithm = if (desktop) WebSettings.LayoutAlgorithm.NORMAL
             else WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             applyDesktopUserAgentMetadata(this, desktop)
@@ -4147,6 +4152,7 @@ class MainActivity : AppCompatActivity() {
             .putBoolean(KEY_DESKTOP_ALL, enabled)
             .putStringSet(KEY_DESKTOP_SITES, emptySet())
             .putStringSet(KEY_DESKTOP_SITES_OFF, emptySet())
+            .putBoolean(PhormiDesktopMode.KEY_POLICY_DIRTY, true)
             .apply()
     }
 
@@ -4205,9 +4211,9 @@ class MainActivity : AppCompatActivity() {
         val settings = webView.settings
         settings.userAgentString = desktopUserAgent(enabled)
         settings.useWideViewPort = true
-        // Desktop layouts should render at their intended CSS width instead of
-        // being shrunk to fit the phone; mobile layouts keep overview scaling.
-        settings.loadWithOverviewMode = !enabled
+        // Overview scaling fits the wide desktop layout to the screen; pinch zoom
+        // remains available. Mobile pages still use their device-width viewport.
+        settings.loadWithOverviewMode = true
         settings.textZoom = PhormiBrowserPreferences.textZoom(this)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
@@ -4338,41 +4344,34 @@ class MainActivity : AppCompatActivity() {
         connection.inputStream.use { BitmapFactory.decodeStream(it) }.also { connection.disconnect() }
     }.getOrNull()
 
+    /**
+     * One-tap desktop-site toggle for the current website. This intentionally does
+     * not open a scope chooser: the menu row is the switch. The global default lives
+     * in Browser settings so the common action stays immediate and predictable.
+     */
     private fun toggleDesktopMode() {
         val view = activeWebView() ?: return
         val currentUrl = view.url.orEmpty()
         val host = desktopHost(currentUrl)
-        val currentDesktop = isDesktopModeFor(currentUrl)
-        val allSites = prefs.getBoolean(KEY_DESKTOP_ALL, false)
-        val choices = mutableListOf<Pair<String, () -> Unit>>()
-
-        if (host != null && host != PhormiSearchHistory.HOST) {
-            val next = !currentDesktop
-            val label = if (next) "Desktop layout on $host only" else "Mobile layout on $host only"
-            choices += label to {
-                setDesktopModeForHost(host, next)
-                applyDesktopMode(view, next)
-                view.reload()
-                Toast.makeText(this, "$label · applied", Toast.LENGTH_SHORT).show()
+        if (host == null || host == PhormiSearchHistory.HOST ||
+            (!currentUrl.startsWith("https://") && !currentUrl.startsWith("http://"))) {
+            Toast.makeText(this, "Open a website first, then use Desktop site.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val next = !isDesktopModeFor(currentUrl)
+        setDesktopModeForHost(host, next)
+        tabs.forEach { tab ->
+            val target = tab.webView ?: return@forEach
+            if (target === view || desktopHost(tab.currentUrl) == host) {
+                applyDesktopMode(target, next)
+                if (tab.deferredUrl == null &&
+                    (tab.currentUrl.startsWith("https://") || tab.currentUrl.startsWith("http://"))) {
+                    target.reload()
+                }
             }
         }
-        val globalNext = !allSites
-        val globalLabel = if (globalNext) "Desktop layout on every site" else "Mobile layout on every site"
-        choices += globalLabel to {
-            setDesktopModeForAll(globalNext)
-            applyDesktopModeToAllTabs(reloadLiveSites = true)
-            Toast.makeText(this, "$globalLabel · applied to ${tabs.size} tab${if (tabs.size == 1) "" else "s"}", Toast.LENGTH_SHORT).show()
-        }
-
-        val state = if (currentDesktop) "desktop" else "mobile"
-        AlertDialog.Builder(this)
-            .setTitle("Desktop mode")
-            .setMessage("This tab is using the $state layout. Scope: ${if (allSites) "all sites" else "per site"}.")
-            .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
-                choices.getOrNull(which)?.second?.invoke()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        val state = if (next) "on" else "off"
+        Toast.makeText(this, "Desktop site $state for $host", Toast.LENGTH_SHORT).show()
     }
 
     fun handleCentralHubCommand(command: JSONObject): JSONObject {

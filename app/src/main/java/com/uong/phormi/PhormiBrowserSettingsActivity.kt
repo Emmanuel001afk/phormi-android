@@ -83,6 +83,24 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
             PhormiBrowserPreferences.PULL_TO_REFRESH, false)
         description(content, "The top-bar button stops a loading page or refreshes a completed page.")
 
+        section(content, "Website layout")
+        content.addView(CheckBox(this).apply {
+            text = "Use desktop sites by default"
+            textSize = 16f
+            minHeight = dp(48)
+            setTextColor(PhormiUiColors.text(this@PhormiBrowserSettingsActivity))
+            isChecked = prefs.getBoolean(PhormiDesktopMode.KEY_GLOBAL, false)
+            setOnCheckedChangeListener { _, value ->
+                prefs.edit()
+                    .putBoolean(PhormiDesktopMode.KEY_GLOBAL, value)
+                    .putStringSet(PhormiDesktopMode.KEY_DESKTOP_HOSTS, emptySet())
+                    .putStringSet(PhormiDesktopMode.KEY_MOBILE_HOSTS, emptySet())
+                    .putBoolean(PhormiDesktopMode.KEY_POLICY_DIRTY, true)
+                    .apply()
+            }
+        })
+        description(content, "The Desktop site menu item switches the current website between desktop and mobile. Changing this default clears per-site choices and reloads open websites when you return to the browser.")
+
         section(content, "Tabs and sessions")
         button(content, "Live page budget · ${PhormiBrowserPreferences.liveTabBudget(this)}") {
             val choices = intArrayOf(2, 3, 4, 6, 8)

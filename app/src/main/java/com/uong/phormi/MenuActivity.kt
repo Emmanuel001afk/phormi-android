@@ -62,7 +62,12 @@ class MenuActivity : AppCompatActivity() {
         tabs.forEachIndexed { index, id -> findViewById<TextView>(id).setOnClickListener { showPage(index) } }
         showPage(savedInstanceState?.getInt("menu_page", 0) ?: 0)
         val desktopEnabled = intent.getBooleanExtra(EXTRA_DESKTOP_ENABLED, false)
-        findViewById<TextView>(R.id.menu_desktop_mode)?.text = PhormiDesktopMode.menuLabel(desktopEnabled)
+        findViewById<TextView>(R.id.menu_desktop_mode)?.apply {
+            text = PhormiDesktopMode.menuLabel(desktopEnabled)
+            contentDescription = if (desktopEnabled) "Desktop site is on for this page. Tap to use the mobile site."
+            else "Desktop site is off for this page. Tap to use the desktop site."
+            isSelected = desktopEnabled
+        }
         findViewById<TextView>(R.id.menu_back)?.apply {
             val enabled = intent.getBooleanExtra(EXTRA_CAN_GO_BACK, false)
             isEnabled = enabled

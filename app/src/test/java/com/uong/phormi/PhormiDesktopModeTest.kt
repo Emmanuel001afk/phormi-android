@@ -62,9 +62,15 @@ class PhormiDesktopModeTest {
     @Test
     fun `viewport reconciliation script is idempotent and local`() {
         val script = PhormiDesktopMode.viewportScript()
-        assertTrue(script.contains("width=980"))
+        assertTrue(script.contains("width=" + PhormiDesktopMode.DESKTOP_VIEWPORT_WIDTH))
         assertTrue(script.contains("meta[name=\"viewport\"]"))
         assertFalse(script.contains("http://"))
         assertFalse(script.contains("https://"))
+    }
+
+    @Test
+    fun `desktop viewport clears common responsive desktop breakpoints`() {
+        assertTrue(PhormiDesktopMode.DESKTOP_VIEWPORT_WIDTH >= 1024)
+        assertTrue(PhormiDesktopMode.viewportScript().contains("width=1280"))
     }
 }

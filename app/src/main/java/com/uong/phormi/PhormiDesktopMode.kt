@@ -10,6 +10,14 @@ import java.util.Locale
  * global default is desktop. Host matching ignores a leading `www.` and case.
  */
 object PhormiDesktopMode {
+    const val KEY_GLOBAL = "desktop_mode_all"
+    const val KEY_DESKTOP_HOSTS = "desktop_sites"
+    const val KEY_MOBILE_HOSTS = "desktop_sites_off"
+    const val KEY_POLICY_DIRTY = "desktop_policy_dirty"
+
+    /** Wide enough for common desktop breakpoints (GitHub switches at 1012px). */
+    const val DESKTOP_VIEWPORT_WIDTH = 1280
+
     fun normalizeHost(url: String?): String? {
         if (url.isNullOrBlank()) return null
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return null
@@ -66,7 +74,7 @@ object PhormiDesktopMode {
      */
     fun viewportScript(): String = """
         (function(){
-          var content='width=980';
+          var content='width=$DESKTOP_VIEWPORT_WIDTH';
           var m=document.querySelector('meta[name="viewport"]');
           if(!m){m=document.createElement('meta');m.name='viewport';document.head && document.head.appendChild(m);}
           if(m)m.setAttribute('content',content);
