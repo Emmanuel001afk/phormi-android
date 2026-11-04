@@ -27,44 +27,44 @@
         <package android:name="com.openvpn.client" />
     </queries>
     <application android:name=".PhormiRepairApplication" android:allowBackup="false" android:fullBackupContent="@xml/backup_rules" android:dataExtractionRules="@xml/data_extraction_rules" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:label="@string/app_name" android:theme="@style/Theme.Phormi" android:networkSecurityConfig="@xml/network_security_config" android:usesCleartextTraffic="false" android:requestLegacyExternalStorage="true">
-        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:supportsPictureInPicture="true" android:screenOrientation="unspecified">
+        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" android:supportsPictureInPicture="true" android:screenOrientation="fullUser">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="http" /><data android:scheme="https" /></intent-filter>
         </activity>
-        <activity android:name=".AiActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".AiActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
         <receiver android:name=".PhormiAiReminderReceiver" android:exported="false" />
         <receiver android:name=".PhormiAiBootReceiver" android:exported="true">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
-        <activity android:name=".DownloadsActivity" android:exported="false" android:label="@string/downloads_title" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".MenuActivity" android:exported="false" android:theme="@style/Theme.Phormi.Translucent" android:windowSoftInputMode="adjustNothing" />
-        <activity android:name=".PhormiBrowserSettingsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".TabsOverviewActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".VpnActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".BookmarksActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".FavoritesActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".HistoryActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".NewsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".AccountsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".TabEnvironmentActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiDisposableEmailActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".HelpActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiSecurityCenterActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".GhostActivity" android:exported="false" android:process=":ghost" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".DownloadsActivity" android:exported="false" android:label="@string/downloads_title" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".MenuActivity" android:exported="false" android:theme="@style/Theme.Phormi.Translucent" android:windowSoftInputMode="adjustNothing" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiBrowserSettingsActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".TabsOverviewActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".VpnActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".BookmarksActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".FavoritesActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".HistoryActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".NewsActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".AccountsActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".TabEnvironmentActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiDisposableEmailActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".HelpActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiSecurityCenterActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".GhostActivity" android:exported="false" android:process=":ghost" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
         <service android:name=".PhormiKeyboardServiceV2" android:label="Phormi Keyboard" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod" /></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method_phormi_keyboard" /></service>
-        <activity android:name=".PhormiKeyboardSettingsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiKeyboardVoiceActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiKeyboardMediaActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiAiEmojiActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiKeyboardStickerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiCapsuleActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".TabGroupsActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".PhormiKeyboardSettingsActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiKeyboardVoiceActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiKeyboardMediaActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiAiEmojiActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiKeyboardStickerActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiCapsuleActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".TabGroupsActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
         <service android:name=".PhormiDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".PhormiAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="false"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" /></service>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" /></provider>
         <activity android:name=".PhormiMediaViewerActivity" android:exported="false" android:supportsPictureInPicture="true" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiPdfViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiZipViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
-        <activity android:name=".PhormiCodeViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" />
+        <activity android:name=".PhormiPdfViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiZipViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
+        <activity android:name=".PhormiCodeViewerActivity" android:exported="false" android:theme="@style/Theme.Phormi" android:screenOrientation="fullUser" />
     </application>
 </manifest>

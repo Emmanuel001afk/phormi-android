@@ -2,6 +2,7 @@ package com.uong.phormi
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
@@ -46,6 +47,7 @@ class ChromeKeyboardSmokeTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             openSite(scenario)
             scenario.onActivity { activity ->
+                assertEquals(ActivityInfo.SCREEN_ORIENTATION_FULL_USER, activity.requestedOrientation)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.top_toolbar).visibility)
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.bottom_toolbar).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_home).visibility)
@@ -102,8 +104,12 @@ class ChromeKeyboardSmokeTest {
         device.waitForIdle()
         val key = device.wait(Until.findObject(By.desc(Pattern.compile("q", Pattern.CASE_INSENSITIVE))), 7000)
         assertNotNull("Letter q must be visible", key)
-        key!!.refresh()
-        return key.visibleBounds.height()
+        var height = key!!.visibleBounds.height()
+        if (height <= 0) {
+            device.waitForIdle()
+            height = device.findObject(By.desc(Pattern.compile("q", Pattern.CASE_INSENSITIVE)))?.visibleBounds?.height() ?: 0
+        }
+        return height
     }
 
     @Test fun keyboardLetterKeysAreReadableAndHeightPresetIsReal() {

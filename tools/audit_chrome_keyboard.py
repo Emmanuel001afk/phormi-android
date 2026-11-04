@@ -27,6 +27,13 @@ kbsettings = read(SRC / "PhormiKeyboardSettingsActivity.kt")
 
 for token in ("PhormiBrowserChrome.resolve", "currentChromeState", "btn_top_back", "btn_top_forward"):
     if token not in main: errors.append(f"MainActivity must use {token}")
+manifest = read(ROOT / "app/src/main/AndroidManifest.xml")
+if 'android:screenOrientation="portrait"' in manifest or 'android:screenOrientation="sensorPortrait"' in manifest:
+    errors.append("Phormi screens must not be locked to portrait")
+if '.MainActivity' not in manifest or 'android:screenOrientation="fullUser"' not in manifest:
+    errors.append("MainActivity must follow the user's rotation preference")
+if "if (::startPageContainer.isInitialized) updateHomeChromeVisibility()" not in main:
+    errors.append("MainActivity must recompute chrome ownership after rotation")
 for token in ("topBack = navInTop", "bottom = browsing && state.bottomEnabled", "topWithoutBottomSummary"):
     if token not in chrome: errors.append(f"chrome policy missing {token}")
 if "Back and Forward move into the top bar" not in settings:

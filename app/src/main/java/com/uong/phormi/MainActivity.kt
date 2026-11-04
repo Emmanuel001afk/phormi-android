@@ -569,6 +569,7 @@ class MainActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         updateResponsiveChrome()
+        if (::startPageContainer.isInitialized) updateHomeChromeVisibility()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -50,3 +50,7 @@ gradle connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.cl
 ```
 
 Device checks cover top-only navigation, bottom-bar ownership, compact chrome height, readable letter keys and a real height-preset change.
+
+## Rotation
+
+Phormi screens now declare `android:screenOrientation="fullUser"` instead of relying on an unspecified/portrait-biased default. The browser also recomputes top/bottom chrome ownership when the device rotates, so the address bar and navigation controls stay usable in landscape.
