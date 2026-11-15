@@ -39,7 +39,8 @@ object PhormiKeyboardMetrics {
 
     fun keyHeightDp(windowHeightDp: Int, heightScale: Float, rowCount: Int = 3): Float {
         val scale = heightScale.coerceIn(MIN_HEIGHT_SCALE, MAX_HEIGHT_SCALE)
-        val strips = (34 + 38 + 48) * scale
+        // Strips above the key rows: suggestion strip 36 + toolbar 40 + bottom row 48.
+        val strips = (36 + 40 + 48) * scale
         val padding = 8 * scale
         return ((windowHeightDp - strips - padding) / rowCount.coerceAtLeast(1)).coerceAtLeast(32f)
     }

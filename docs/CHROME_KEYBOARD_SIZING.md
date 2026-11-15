@@ -35,7 +35,8 @@ The keyboard no longer uses one fixed 312dp base height and fixed key lettering.
 - Key lettering presets: **Small / Default / Large**.
 - Lettering is computed from the actual key box, so narrow/reduced-width keyboards shrink text instead of overflowing.
 - Home-row inset and key margins adapt to row length.
-- Floating/resize uses the same shared base-height metric.
+- **Docked keyboards are flush with the bottom screen edge**: the IME window extends behind the system navigation zone by the navigation-bar inset (estimated synchronously, refined from real window insets), and the keyboard's own bottom padding keeps the lowest key row clear of the gesture pill / navigation bar. No visible gap, and the bottom row is never hidden behind the system bar.
+- **Floating keyboard is a free Gboard-style panel**: it resizes the app nothing, sits over a transparent window with room to spare. Drag the grab bar on the top edge to move it; drag a corner handle to reshape it. Everything outside the handle zones types normally. Moving/resizing updates the window live and commits (re-renders key geometry) only when the gesture ends.
 - Reset restores height, width, position and lettering.
 
 Settings are available both in **Phormi Keyboard settings** and in the keyboard's **Tools → Settings** panel.
