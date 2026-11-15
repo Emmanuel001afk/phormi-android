@@ -495,7 +495,7 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
         layoutParams=LinearLayout.LayoutParams(-1,-1).apply{gravity=Gravity.CENTER_HORIZONTAL}
         minimumHeight=0
         // Refine the bottom inset once the real system insets reach the IME window.
-        setOnApplyWindowInsetsListener { view, insets ->
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
             val floatingNow = PhormiKeyboardPreferences.floating(this@PhormiKeyboardServiceV2)
             val bars = insets.getInsets(
                 androidx.core.view.WindowInsetsCompat.Type.systemBars() or
