@@ -506,8 +506,9 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 appliedDockedInsetPx = target
                 view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, target)
                 // The estimate used at show-time may be off; re-size the window so the
-                // keyboard stays flush with the screen edge.
-                applyKeyboardWindowSize()
+                // keyboard stays flush with the screen edge. Posted, not done inline,
+                // to keep this off the insets dispatch path.
+                view.post { applyKeyboardWindowSize() }
             }
             insets
         }
