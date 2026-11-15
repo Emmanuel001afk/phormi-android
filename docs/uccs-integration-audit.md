@@ -2,8 +2,8 @@
 
 **Audit status:** source-inspected; documentation only  
 **Audited base:** `main` at `3eda85f1b4d9e468b0cafac5aa4bb4bf05567468`  
-**UCCS target:** AEO Universal Cross-Platform Coordination System, draft 0.1  
-**Important:** Phormi remains an independent browser application. This audit does not make it a UCCS authority or change runtime behavior.
+**Framework target:** AEO Ecosystem Framework (AEF), using UCCS as its internal coordination protocol, draft 0.1  
+**Architecture clarification:** AEO Ecosystem Framework (AEF) is the umbrella system; UCCS is its internal coordination protocol. The shared directory is optional, and Phormi remains independently responsible for its own permissions and data.\n\n**Important:** Phormi remains an independent browser application. This audit does not make it a UCCS authority or change runtime behavior.
 
 ## 1. Existing Phormi integration observed
 
