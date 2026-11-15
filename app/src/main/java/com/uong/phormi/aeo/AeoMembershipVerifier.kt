@@ -11,7 +11,7 @@ import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 
 /**
- * Local AEO membership verifier for EMA.
+ * Local AEO membership verifier for Phormi.
  *
  * Membership proves ecosystem registration only. It does not authenticate a
  * live device, grant capability access, or represent user consent.
