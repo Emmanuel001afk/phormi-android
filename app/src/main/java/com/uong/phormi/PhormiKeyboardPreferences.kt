@@ -59,8 +59,13 @@ object PhormiKeyboardPreferences {
     fun heightScale(context: Context): Float = prefs(context).getFloat(HEIGHT_SCALE, 1.0f).coerceIn(0.60f, 1.40f)
     fun keyTextScale(context: Context): Float = prefs(context).getFloat(TEXT_SCALE, 1.0f).coerceIn(0.85f, 1.25f)
     fun widthScale(context: Context): Float = prefs(context).getFloat(WIDTH_SCALE, 1.00f).coerceIn(0.55f, 1.00f)
+    /**
+     * offsetX: horizontal position of a floating keyboard, -1 (screen start) .. +1 (screen end).
+     * offsetY: how high a floating keyboard is raised from its bottom rest position,
+     * 0 (resting on the bottom edge) .. 1 (pinned to the top edge).
+     */
     fun offsetX(context: Context): Float = prefs(context).getFloat(OFFSET_X, 0f).coerceIn(-0.9f, 0.9f)
-    fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(-0.9f, 0.9f)
+    fun offsetY(context: Context): Float = prefs(context).getFloat(OFFSET_Y, 0f).coerceIn(0f, 1f)
     fun floating(context: Context): Boolean = prefs(context).getBoolean(FLOATING, false)
     fun setFloating(context: Context, value: Boolean) = prefs(context).edit().putBoolean(FLOATING, value).apply()
     fun theme(context: Context): Int = prefs(context).getInt(THEME, 0).coerceIn(0, 7)
@@ -74,7 +79,7 @@ object PhormiKeyboardPreferences {
     fun setKeyTextScale(context: Context, value: Float) = prefs(context).edit().putFloat(TEXT_SCALE, value.coerceIn(0.85f, 1.25f)).apply()
     fun setWidthScale(context: Context, value: Float) = prefs(context).edit().putFloat(WIDTH_SCALE, value.coerceIn(0.55f, 1.00f)).apply()
     fun setOffsetX(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_X, value.coerceIn(-0.9f, 0.9f)).apply()
-    fun setOffsetY(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_Y, value.coerceIn(-0.9f, 0.9f)).apply()
+    fun setOffsetY(context: Context, value: Float) = prefs(context).edit().putFloat(OFFSET_Y, value.coerceIn(0f, 1f)).apply()
     fun resetSize(context: Context) = prefs(context).edit()
         .putFloat(HEIGHT_SCALE, 1.0f)
         .putFloat(TEXT_SCALE, 1.0f)

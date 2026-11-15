@@ -6,195 +6,169 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.abs
 
-/** Gboard-style keyboard resize/move frame. */
+/**
+ * Gboard-style frame for the floating keyboard.
+ *
+ * A slim grab bar centred on the top edge moves the panel; the four corner handles
+ * resize it. Edges of the keyboard remain live typing surface — only the handle zones
+ * are intercepted, so keys keep working exactly as in the docked layout.
+ *
+ * Every change is applied straight to the IME window via [onLiveRect] (no view
+ * rebuilds mid-gesture) and committed once when the finger lifts via [onCommit],
+ * which persists the geometry and re-renders the keys once. This keeps dragging
+ * and resizing fluid instead of stiff.
+ */
 class PhormiKeyboardResizeOverlay(
     context: Context,
-    private val allowMove: Boolean,
-    private val allowResize: Boolean,
-    private val onChange: (widthScale: Float, heightScale: Float, offsetX: Float, offsetY: Float) -> Unit,
-    private val onDone: () -> Unit
+    /** Current window rect as [x, y, width, height] in pixels. */
+    private val startRect: () -> IntArray,
+    private val onLiveRect: (x: Int, y: Int, width: Int, height: Int) -> Unit,
+    private val onCommit: () -> Unit
 ) : View(context) {
-    private enum class Handle { NONE, LEFT, RIGHT, TOP, BOTTOM, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, MOVE, DONE }
 
+    private enum class Handle { NONE, MOVE, LEFT, RIGHT, TOP, BOTTOM, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+    private val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = PhormiUiColors.accent(context)
+    }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(2f)
+        strokeWidth = dp(1.5f)
         color = PhormiUiColors.accent(context)
-    }
-    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = PhormiUiColors.accent(context)
-    }
-    private val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = PhormiUiColors.accent(context)
-    }
-    private val checkText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = PhormiUiColors.onAccent(context)
-        textAlign = Paint.Align.CENTER
-        textSize = dp(16f)
+        alpha = 200
     }
     private var handle = Handle.NONE
     private var startRawX = 0f
     private var startRawY = 0f
-    private var startWidth = 1f
-    private var startHeight = 1f
-    private var startOffsetX = 0f
-    private var startOffsetY = 0f
+    private var rectX = 0
+    private var rectY = 0
+    private var rectW = 0
+    private var rectH = 0
 
     init {
         isClickable = true
         setWillNotDraw(false)
-        contentDescription = if (allowResize) "Resize and move keyboard" else "Move floating keyboard"
+        contentDescription = "Floating keyboard. Drag the bar on the top edge to move; drag a corner to resize."
     }
+
+    private val grabHalfWidth get() = dp(52f)
+    private val grabHalfHeight get() = dp(26f)
+    private val cornerRadius get() = dp(28f)
+    private val edgeZone get() = dp(20f)
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val inset = dp(8f)
-        val rect = RectF(inset, inset, width - inset, height - inset)
-        borderPaint.alpha = if (allowResize) 255 else 150
-        canvas.drawRoundRect(rect, dp(8f), dp(8f), borderPaint)
-
-        if (allowResize) {
-            drawHandle(canvas, rect.left, rect.top)
-            drawHandle(canvas, rect.centerX(), rect.top)
-            drawHandle(canvas, rect.right, rect.top)
-            drawHandle(canvas, rect.left, rect.centerY())
-            drawHandle(canvas, rect.right, rect.centerY())
-            drawHandle(canvas, rect.left, rect.bottom)
-            drawHandle(canvas, rect.centerX(), rect.bottom)
-            drawHandle(canvas, rect.right, rect.bottom)
-            canvas.drawCircle(rect.right - dp(22f), rect.top + dp(22f), dp(15f), checkPaint)
-            canvas.drawText("✓", rect.right - dp(22f), rect.top + dp(28f), checkText)
-        }
-
-        if (allowMove) {
-            val cx = rect.centerX()
-            val cy = rect.bottom
-            canvas.drawCircle(cx, cy, dp(18f), checkPaint)
-            canvas.drawText("⠿", cx, cy + dp(6f), checkText)
-        }
-    }
-
-    private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
-        canvas.drawCircle(x, y, dp(6f), handlePaint)
+        val inset = dp(4f)
+        canvas.drawRoundRect(RectF(inset, inset, width - inset, height - inset), dp(16f), dp(16f), borderPaint)
+        // Grab bar, top centre — mirrors the handle of a Gboard floating keyboard.
+        val barWidth = dp(56f)
+        val barHeight = dp(6f)
+        val barLeft = (width - barWidth) / 2f
+        val barTop = inset + dp(7f)
+        val bar = RectF(barLeft, barTop, barLeft + barWidth, barTop + barHeight)
+        val fill = Paint(accentPaint).apply { alpha = 235 }
+        canvas.drawRoundRect(bar, barHeight / 2f, barHeight / 2f, fill)
+        // Corner resize dots.
+        val dot = Paint(accentPaint).apply { alpha = 235 }
+        val dotInset = inset + dp(2f)
+        val r = dp(5.5f)
+        canvas.drawCircle(dotInset, dotInset, r, dot)
+        canvas.drawCircle(width - dotInset, dotInset, r, dot)
+        canvas.drawCircle(dotInset, height - dotInset, r, dot)
+        canvas.drawCircle(width - dotInset, height - dotInset, r, dot)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val inset = dp(8f)
-        val left = inset
-        val right = width - inset
-        val top = inset
-        val bottom = height - inset
-        val cx = (left + right) / 2f
-        val cy = (top + bottom) / 2f
-        val radius = dp(28f)
-
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                handle = pickHandle(event.x, event.y, left, right, top, bottom, cx, cy, radius)
+                handle = pickHandle(event.x, event.y)
                 if (handle == Handle.NONE) return false
                 startRawX = event.rawX
                 startRawY = event.rawY
-                val p = context.getSharedPreferences("phormi_keyboard", Context.MODE_PRIVATE)
-                startWidth = p.getFloat("keyboard_width_scale", 1f).coerceIn(0.55f, 1f)
-                startHeight = p.getFloat("keyboard_height_scale", 1f).coerceIn(0.60f, 1.40f)
-                startOffsetX = p.getFloat("keyboard_offset_x", 0f).coerceIn(-0.9f, 0.9f)
-                startOffsetY = p.getFloat("keyboard_offset_y", 0f).coerceIn(-0.9f, 0.9f)
+                val start = startRect()
+                rectX = start.getOrElse(0) { 0 }
+                rectY = start.getOrElse(1) { 0 }
+                rectW = start.getOrElse(2) { width }
+                rectH = start.getOrElse(3) { height }
+                parent?.requestDisallowInterceptTouchEvent(true)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (handle == Handle.NONE || handle == Handle.DONE) return true
-                val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(1).toFloat()
-                val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(1).toFloat()
-                val keyboardBase = dp(PhormiKeyboardMetrics.baseHeightDp(
-                    resources.configuration.screenWidthDp, resources.configuration.screenHeightDp
-                ).toFloat())
-                val dx = event.rawX - startRawX
-                val dy = event.rawY - startRawY
-                var widthScale = startWidth
-                var heightScale = startHeight
-                var offsetX = startOffsetX
-                var offsetY = startOffsetY
-
-                when (handle) {
-                    Handle.MOVE -> {
-                        offsetX = (startOffsetX + dx / screenW * 1.8f).coerceIn(-0.9f, 0.9f)
-                        offsetY = (startOffsetY + dy / screenH * 1.8f).coerceIn(-0.9f, 0.9f)
-                    }
-                    Handle.LEFT -> {
-                        widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
-                        // Width changes only; position remains independent.
-                    }
-                    Handle.RIGHT -> widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
-                    Handle.TOP -> {
-                        heightScale = (startHeight - dy / keyboardBase).coerceIn(0.60f, 1.40f)
-                        // Height changes only; position remains independent.
-                    }
-                    Handle.BOTTOM -> heightScale = (startHeight + dy / keyboardBase).coerceIn(0.60f, 1.40f)
-                    Handle.TOP_LEFT -> {
-                        widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight - dy / keyboardBase).coerceIn(0.60f, 1.40f)
-                        val widthDeltaPx = (widthScale - startWidth) * screenW
-                        val heightDeltaPx = (heightScale - startHeight) * keyboardBase
-                        offsetX = (startOffsetX - widthDeltaPx / screenW * 1.8f).coerceIn(-0.9f, 0.9f)
-                        if (allowMove) offsetY = (startOffsetY - heightDeltaPx / screenH * 1.8f).coerceIn(-0.9f, 0.9f)
-                    }
-                    Handle.TOP_RIGHT -> {
-                        widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight - dy / keyboardBase).coerceIn(0.60f, 1.40f)
-                        val heightDeltaPx = (heightScale - startHeight) * keyboardBase
-                        if (allowMove) offsetY = (startOffsetY - heightDeltaPx / screenH * 1.8f).coerceIn(-0.9f, 0.9f)
-                    }
-                    Handle.BOTTOM_LEFT -> {
-                        widthScale = (startWidth - dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight + dy / keyboardBase).coerceIn(0.60f, 1.40f)
-                        // Width changes only; position remains independent.
-                    }
-                    Handle.BOTTOM_RIGHT -> {
-                        widthScale = (startWidth + dx / screenW).coerceIn(0.55f, 1f)
-                        heightScale = (startHeight + dy / keyboardBase).coerceIn(0.60f, 1.40f)
-                    }
-                    else -> Unit
-                }
-                onChange(widthScale, heightScale, offsetX, offsetY)
-                invalidate()
+                if (handle == Handle.NONE) return true
+                applyDrag(event.rawX - startRawX, event.rawY - startRawY)
                 return true
             }
-            MotionEvent.ACTION_UP -> {
-                if (handle == Handle.DONE) onDone()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (handle != Handle.NONE) onCommit()
                 handle = Handle.NONE
-                return true
-            }
-            MotionEvent.ACTION_CANCEL -> {
-                handle = Handle.NONE
+                parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }
         }
         return true
     }
 
-    private fun pickHandle(x: Float, y: Float, left: Float, right: Float, top: Float, bottom: Float, cx: Float, cy: Float, radius: Float): Handle {
-        if (allowResize && distance(x, y, right - dp(22f), top + dp(22f)) <= radius) return Handle.DONE
-        if (allowMove && distance(x, y, cx, bottom) <= radius) return Handle.MOVE
-        if (!allowResize) return Handle.NONE
-        return when {
-            distance(x, y, left, top) <= radius -> Handle.TOP_LEFT
-            distance(x, y, cx, top) <= radius -> Handle.TOP
-            distance(x, y, right, top) <= radius -> Handle.TOP_RIGHT
-            distance(x, y, left, cy) <= radius -> Handle.LEFT
-            distance(x, y, right, cy) <= radius -> Handle.RIGHT
-            distance(x, y, left, bottom) <= radius -> Handle.BOTTOM_LEFT
-            distance(x, y, cx, bottom) <= radius -> Handle.BOTTOM
-            distance(x, y, right, bottom) <= radius -> Handle.BOTTOM_RIGHT
-            else -> Handle.NONE
+    private fun applyDrag(dx: Float, dy: Float) {
+        val screenW = resources.displayMetrics.widthPixels.coerceAtLeast(1)
+        val screenH = resources.displayMetrics.heightPixels.coerceAtLeast(1)
+        val screenHeightDp = (screenH / resources.displayMetrics.density).toInt().coerceAtLeast(240)
+        val screenWidthDp = (screenW / resources.displayMetrics.density).toInt().coerceAtLeast(240)
+        // Floating floor: 60% of the shared base height, same rule the docked minimum uses.
+        val minHeight = (PhormiKeyboardMetrics.baseHeightDp(screenWidthDp, screenHeightDp) * PhormiKeyboardMetrics.MIN_HEIGHT_SCALE * resources.displayMetrics.density).toInt().coerceAtLeast(dp(180))
+        val minWidth = dp(220)
+        var x = rectX
+        var y = rectY
+        var w = rectW
+        var h = rectH
+        when (handle) {
+            Handle.MOVE -> { x += dx.toInt(); y += dy.toInt() }
+            Handle.LEFT -> { x += dx.toInt(); w -= dx.toInt() }
+            Handle.RIGHT -> w += dx.toInt()
+            Handle.TOP -> { y += dy.toInt(); h -= dy.toInt() }
+            Handle.BOTTOM -> h += dy.toInt()
+            Handle.TOP_LEFT -> { x += dx.toInt(); w -= dx.toInt(); y += dy.toInt(); h -= dy.toInt() }
+            Handle.TOP_RIGHT -> { w += dx.toInt(); y += dy.toInt(); h -= dy.toInt() }
+            Handle.BOTTOM_LEFT -> { x += dx.toInt(); w -= dx.toInt(); h += dy.toInt() }
+            Handle.BOTTOM_RIGHT -> { w += dx.toInt(); h += dy.toInt() }
+            Handle.NONE -> return
         }
+        w = w.coerceIn(minWidth, screenW)
+        h = h.coerceIn(minHeight, screenH)
+        x = x.coerceIn(0, (screenW - w).coerceAtLeast(0))
+        y = y.coerceIn(0, (screenH - h).coerceAtLeast(0))
+        onLiveRect(x, y, w, h)
+        invalidate()
+    }
+
+    private fun pickHandle(x: Float, y: Float): Handle {
+        val inset = dp(4f)
+        val left = inset
+        val top = inset
+        val right = width - inset
+        val bottom = height - inset
+        val cx = width / 2f
+        val corner = cornerRadius
+        if (distance(x, y, left, top) <= corner) return Handle.TOP_LEFT
+        if (distance(x, y, right, top) <= corner) return Handle.TOP_RIGHT
+        if (distance(x, y, left, bottom) <= corner) return Handle.BOTTOM_LEFT
+        if (distance(x, y, right, bottom) <= corner) return Handle.BOTTOM_RIGHT
+        // Grab bar on the top edge moves the panel.
+        if (abs(x - cx) <= grabHalfWidth && y <= grabHalfHeight) return Handle.MOVE
+        if (abs(x - cx) <= grabHalfWidth * 0.75f && abs(y - top) <= edgeZone) return Handle.TOP
+        if (abs(y - bottom) <= edgeZone && abs(x - cx) <= grabHalfWidth * 1.6f) return Handle.BOTTOM
+        if (abs(x - left) <= edgeZone) return Handle.LEFT
+        if (abs(x - right) <= edgeZone) return Handle.RIGHT
+        if (abs(y - top) <= edgeZone) return Handle.TOP
+        if (abs(y - bottom) <= edgeZone) return Handle.BOTTOM
+        return Handle.NONE
     }
 
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float =
         kotlin.math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt().coerceAtLeast(1)
 }

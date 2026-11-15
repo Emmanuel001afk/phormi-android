@@ -63,7 +63,7 @@ class PhormiKeyboardSettingsActivity : AppCompatActivity() {
 
         content.addView(sectionTitle("Keyboard size"))
         content.addView(TextView(this).apply{
-            text="Pick a height preset, then use Floating/Resize in the keyboard Tools panel for fine positioning. Key lettering scales with the key box so narrow or short keyboards stay readable."
+            text="Pick a height preset, then use Float keyboard in the keyboard Tools panel to move it anywhere and resize it with the corner handles. Key lettering scales with the key box so narrow or short keyboards stay readable."
             textSize=13f;setTextColor(PhormiUiColors.secondary(this@PhormiKeyboardSettingsActivity));setPadding(0,0,0,dp(8))
         })
         fun presetRow(title: String, options: List<Pair<String, Float>>, current: () -> Float, setter: (Float) -> Unit) {
