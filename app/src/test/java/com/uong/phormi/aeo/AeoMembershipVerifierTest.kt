@@ -145,7 +145,7 @@ class AeoMembershipVerifierTest {
             .put("ecosystem", "AEO")
             .put("protocol", AeoMembershipVerifier.PROTOCOL)
             .put("platformId", "com.uong.phormi")
-            .put("displayName", "EMA")
+            .put("displayName", "Phormi")
             .put("membershipCredential", token)
         assertTrue(AeoMembershipVerifier.verifyRegistration(
             registration, listOf(key), { _, _, _ -> false }, now, apiLevel = 33
