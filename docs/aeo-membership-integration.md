@@ -12,7 +12,7 @@ Built-in JCA Ed25519 is enabled only on Android API 33+. API 26–32 fail closed
 
 ## Trust bundles
 
-The adapter verifies root-signed trust bundles against pinned Ed25519 root public keys, validates issuer-key records and credential revocation IDs, and enforces expiry and a caller-supplied minimum version. Phormi must persist the highest accepted version in Phormi-owned secure storage and pass it as `minimumVersion`. The verifier performs no network or database access. Root custody, rotation/recovery, live issuer/revocation distribution, and initial platform registration remain production prerequisites.
+The adapter verifies root-signed trust bundles against pinned Ed25519 root public keys, validates issuer-key records and credential revocation IDs, and enforces expiry and a caller-supplied minimum version. Phormi must persist the highest accepted version in Phormi-owned secure storage and pass it as `minimumVersion`. The verifier performs no network or database access. Root custody, rotation/recovery, live issuer/revocation distribution, and initial platform registration remain production prerequisites. The test fixtures use Phormi's Android application ID, while production publisher/root material remains out-of-band.
 
 ## Validation
 
