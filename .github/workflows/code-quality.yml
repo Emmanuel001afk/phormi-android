@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, aeo/phormi-membership-adapter ]
   pull_request:
     branches: [ main ]
   workflow_dispatch: {}
