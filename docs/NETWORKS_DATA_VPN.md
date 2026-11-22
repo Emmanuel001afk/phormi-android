@@ -32,15 +32,35 @@ the site-information sheet explains the connection state.
 
 ## Data saver
 
-WebView has no compression proxy, so Phormi does not claim one. Data saver is a real
-local subset, chosen from **Features → Data saver** or **Browser settings → Networks and data**:
+WebView has no compression proxy, so Phormi does not claim one and shows no invented
+percentage. Data saver is a real local subset, chosen from **Features → Data saver**
+(the browser owns the setting; Browser settings only reports the current mode).
 
 | Mode | What changes |
 | --- | --- |
-| **Off** | Normal browsing. |
-| **Standard** | Cache-first loading (`LOAD_CACHE_ELSE_NETWORK`), the last copy stays usable offline, media requires a tap to start. |
-| **Text only** | Standard + images blocked (`blockNetworkImage` plus a document-start CSS guard). Layout is preserved. |
-| **Always** | Standard + blocked images for every site. |
+| **Off** | Normal browsing. `LOAD_DEFAULT`, autoplay allowed, images load. |
+| **Standard** | Prefer the disk cache (`LOAD_CACHE_ELSE_NETWORK`), and media requires a tap before it starts. Images still load. |
+| **Text only** | Standard + image requests are **refused before download**, plus a CSS guard so existing documents hide image boxes without collapsing the layout. |
+
+The old `always` value written by earlier builds is still read as Text only.
+
+### Three details that make it real
+
+- **Images are refused at request time.** `WebSettings.blockNetworkImage` is deprecated
+  and does nothing from API 30, so the previous build hid images that had already been
+  downloaded — saving layout, not data. `shouldInterceptRequest` now returns a 1×1 PNG
+  for image requests, so the bytes never cross the network. Main-frame documents are
+  never blocked, and `data:`/`blob:` images are left alone because they cost nothing.
+- **A refresh still refreshes.** `LOAD_CACHE_ELSE_NETWORK` will happily serve an expired
+  copy forever. Tapping ↻ (or pulling) reloads with the cache bypassed and restores the
+  saving preference on the next page start, so a stale page is never un-refreshable.
+- **Turning the saver off actually restores images.** The block is a document-start
+  script, and those are permanent unless removed. Each WebView keeps its
+  `ScriptHandler`, and switching to Off or Standard calls `remove()`, so a page cannot
+  stay image-less because it once ran under Text only.
+- **The mode change says what it costs.** A live document cannot be un-blocked in
+  place, so switching mode reloads the current page. The chooser states that instead of
+  letting the user discover a jump. Picking the mode already active does not reload.
 
 The mode applies to every live tab immediately and to new tabs on creation. It never
 proxies, rewrites or uploads browsing data.

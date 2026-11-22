@@ -55,6 +55,11 @@ for path in (*layouts, *(RES / "xml").glob("*.xml"), *(RES / "values").glob("*.x
             value = element.get(android_ns + "id", "")
             if value.startswith("@+id/"):
                 ids.add(value.removeprefix("@+id/"))
+            # `values/*.xml` can declare ids with <item type="id" name="..."/>. Only
+            # `@+id/` attributes were recognised, so a real, valid id declared that way
+            # was reported as unknown.
+            if element.tag == "item" and element.get("type") == "id" and element.get("name"):
+                ids.add(element.get("name"))
     except ET.ParseError as exc:
         errors.append(f"invalid XML: {path.relative_to(ROOT)}: {exc}")
 
