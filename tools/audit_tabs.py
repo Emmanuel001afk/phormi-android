@@ -29,6 +29,8 @@ for name, maximum in (("top_toolbar", 48), ("bottom_toolbar", 48)):
         errors.append(f"{name} must stay <= {maximum}dp; found {value}")
 if 'if (onHome || !wide) View.GONE else View.VISIBLE' in main:
     errors.append("Home must not be hidden on phones")
+if "R.id.btn_go" in main:
+    errors.append("the removed per-segment Go button must not come back")
 if "PhormiTabOverview.navigationUrl(deferredUrl, lastKnownUrl, webView?.url)" not in main:
     errors.append("tab URL must not let a temporary about:blank erase the requested destination")
 if main.count("saveTabsImmediate(true)") < 2 or "recordTabNavigation(tab, url)" not in main:

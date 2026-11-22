@@ -168,7 +168,7 @@ class TabOverviewSmokeTest {
         assertTrue(manager.groupForId(read.id)!!.tabIds.isEmpty())
     }
 
-    @Test fun typedUrlSurvivesImmediateSnapshotAndHomeIsAlwaysReachable() {
+    @Test fun typedUrlSurvivesImmediateSnapshotAndHomeClearsTheAddress() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val input = activity.findViewById<EditText>(R.id.url_bar)
@@ -178,14 +178,19 @@ class TabOverviewSmokeTest {
                 val titles = JSONArray(prefs.getString("tab_titles", "[]"))
                 assertEquals("https://example.com", urls.optString(urls.length() - 1))
                 assertEquals("example.com", titles.optString(titles.length() - 1))
-                val home = activity.findViewById<View>(R.id.btn_home)
-                assertEquals(View.VISIBLE, home.visibility)
+                // Home now lives in the ⋮ menu, so the test drives the same browser
+                // path the menu result uses. Coming back Home must clear the address
+                // and the tab destination - the "stuck YouTube URL" regression.
+                activity.onActivityResult(
+                    MenuActivity.REQUEST_CODE,
+                    android.app.Activity.RESULT_OK,
+                    android.content.Intent().putExtra(MenuActivity.EXTRA_ACTION, MenuActivity.ACTION_HOME)
+                )
+                assertEquals("", activity.findViewById<EditText>(R.id.url_bar).text.toString())
+                assertEquals("", activity.findViewById<android.widget.TextView>(R.id.btn_refresh).text.toString())
                 val density = activity.resources.displayMetrics.density
                 assertTrue(activity.findViewById<View>(R.id.top_toolbar).layoutParams.height <= (48 * density).toInt())
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.bottom_toolbar).visibility)
-                home.performClick()
-                val afterHome = JSONArray(prefs.getString("tab_urls", "[]"))
-                assertEquals("about:blank", afterHome.optString(afterHome.length() - 1))
             }
         }
     }

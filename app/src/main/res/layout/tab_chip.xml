@@ -2,8 +2,8 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="30dp"
-    android:minWidth="76dp"
-    android:maxWidth="180dp"
+    android:minWidth="92dp"
+    android:maxWidth="200dp"
     android:layout_marginStart="2dp"
     android:layout_marginEnd="2dp"
     android:paddingStart="8dp"
@@ -22,12 +22,12 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:maxWidth="145dp"
+        android:maxWidth="164dp"
         android:ellipsize="end"
         android:maxLines="1"
         android:text="New tab"
         android:textColor="@color/phormi_text"
-        android:textSize="11sp" />
+        android:textSize="12sp" />
 
     <TextView
         android:id="@+id/tab_chip_close"

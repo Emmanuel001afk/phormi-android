@@ -4,48 +4,90 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhormiBrowserChromeTest {
-    @Test fun `phone without bottom bar keeps navigation in the top bar`() {
-        val v = PhormiBrowserChrome.resolve(PhormiBrowserChrome.State(onHome = false, wide = false, bottomEnabled = false))
+    private fun state(
+        onHome: Boolean = false,
+        wide: Boolean = false,
+        blank: Boolean = false,
+        bottom: Boolean = false,
+        fullscreen: Boolean = false,
+        splitLocked: Boolean = false,
+        downloads: Int = 0
+    ) = PhormiBrowserChrome.State(onHome, wide, blank, bottom, fullscreen, splitLocked, downloads)
+
+    @Test fun `phone top bar keeps Chrome order and a permanent refresh`() {
+        val v = PhormiBrowserChrome.resolve(state())
         assertTrue(v.top)
         assertFalse(v.bottom)
-        assertTrue(v.home)
         assertTrue(v.url)
         assertTrue(v.topBack)
         assertTrue(v.topForward)
-        assertFalse(v.refresh)
+        // The refresh control must exist on every phone screen size now.
+        assertTrue(v.refresh)
+        assertTrue(v.stop)
+        assertTrue(v.newTab)
         assertFalse(v.topAi)
         assertFalse(v.topDownloads)
     }
 
-    @Test fun `bottom bar owns navigation when enabled`() {
-        val v = PhormiBrowserChrome.resolve(PhormiBrowserChrome.State(onHome = false, wide = false, bottomEnabled = true))
-        assertTrue(v.top)
+    @Test fun `blank tab shows empty chrome instead of a reload arrow`() {
+        val blank = PhormiBrowserChrome.resolve(state(blank = true))
+        assertTrue(blank.refresh)
+        assertFalse(blank.stop)
+        val home = PhormiBrowserChrome.resolve(state(onHome = true))
+        assertTrue(home.top)
+        assertTrue(home.refresh)
+        assertFalse(home.url)
+    }
+
+    @Test fun `fullscreen and split lock hide the chrome entirely`() {
+        val fullscreen = PhormiBrowserChrome.resolve(state(wide = true, bottom = true, fullscreen = true))
+        assertFalse(fullscreen.top)
+        assertFalse(fullscreen.bottom)
+        assertFalse(fullscreen.refresh)
+        val locked = PhormiBrowserChrome.resolve(state(wide = true, splitLocked = true))
+        assertFalse(locked.top)
+        assertFalse(locked.refresh)
+    }
+
+    @Test fun `bottom bar owns back forward without removing the top row`() {
+        val v = PhormiBrowserChrome.resolve(state(wide = true, bottom = true, downloads = 2))
         assertTrue(v.bottom)
         assertFalse(v.topBack)
         assertFalse(v.topForward)
+        assertTrue(v.url)
         assertTrue(v.refresh)
-        assertFalse(v.favorite)
-    }
-
-    @Test fun `home and fullscreen do not show browsing chrome`() {
-        val home = PhormiBrowserChrome.resolve(PhormiBrowserChrome.State(onHome = true, wide = false, bottomEnabled = true))
-        assertTrue(home.top)
-        assertFalse(home.bottom)
-        assertFalse(home.url)
-        assertFalse(home.home)
-        assertTrue(home.newTab)
-        val fullscreen = PhormiBrowserChrome.resolve(PhormiBrowserChrome.State(onHome = false, wide = true, bottomEnabled = true, fullscreen = true))
-        assertFalse(fullscreen.top)
-        assertFalse(fullscreen.bottom)
-    }
-
-    @Test fun `wide screens may expose inline extras without duplicating the bottom bar`() {
-        val v = PhormiBrowserChrome.resolve(PhormiBrowserChrome.State(onHome = false, wide = true, bottomEnabled = false, activeDownloads = 2))
+        assertTrue(v.newTab)
+        // Wide screens still get the strip and inline extras; the bottom bar only
+        // owns Back/Forward, so nothing else is removed from the top row.
         assertTrue(v.tabStrip)
-        assertTrue(v.refresh)
         assertTrue(v.topAi)
         assertTrue(v.topDownloads)
+    }
+
+    @Test fun `blank tab still exposes back forward and new tab`() {
+        val v = PhormiBrowserChrome.resolve(state(blank = true))
         assertTrue(v.topBack)
-        assertFalse(v.bottom)
+        assertTrue(v.topForward)
+        assertTrue(v.newTab)
+        assertFalse(v.stop)
+    }
+
+    @Test fun `a cleared tab has an empty address, not the previous site`() {
+        assertEquals("", PhormiBrowserChrome.addressText("about:blank", null))
+        assertEquals("", PhormiBrowserChrome.addressText("https://youtube.com", ""))
+        assertEquals("", PhormiBrowserChrome.addressText(null, null))
+        assertTrue(PhormiBrowserChrome.isBlankUrl("about:blank"))
+        assertTrue(PhormiBrowserChrome.isBlankUrl(""))
+        assertFalse(PhormiBrowserChrome.isBlankUrl("https://youtube.com"))
+        assertEquals("example.com", PhormiBrowserChrome.tabLabel("New tab", "https://www.example.com/watch"))
+        assertEquals("A video", PhormiBrowserChrome.tabLabel("A video", "https://www.example.com/watch"))
+    }
+
+    @Test fun `desktop user agent never reports Mobile`() {
+        val ua = PhormiBrowserChrome.sanitizeDesktopUserAgent(
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"
+        )
+        assertFalse(ua.contains("Mobile"))
+        assertTrue(ua.contains("Chrome/141"))
     }
 }

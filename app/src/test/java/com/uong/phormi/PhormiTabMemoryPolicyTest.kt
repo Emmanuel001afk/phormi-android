@@ -19,4 +19,15 @@ class PhormiTabMemoryPolicyTest {
     @Test fun malformedBudgetNeverRequestsLastLivePage() {
         assertTrue(PhormiTabMemoryPolicy.candidates(listOf(entry(1)), -1).isEmpty())
     }
+    @Test fun recentlyUsedTabsKeepTheirPageInsideTheGraceWindow() {
+        val now = 10_000_000L
+        val entries = listOf(
+            PhormiTabMemoryPolicy.Entry(1, true, now - 1_000, false),
+            PhormiTabMemoryPolicy.Entry(2, true, now - 2_000, false)
+        )
+        // Nothing is safe to discard yet: keep the pages rather than blank a tab.
+        assertTrue(PhormiTabMemoryPolicy.candidates(entries, 1, now, 60_000).isEmpty())
+        // Once the window has passed, the oldest page is the candidate.
+        assertEquals(listOf(1, 2), PhormiTabMemoryPolicy.candidates(entries, 1, now + 120_000, 60_000))
+    }
 }

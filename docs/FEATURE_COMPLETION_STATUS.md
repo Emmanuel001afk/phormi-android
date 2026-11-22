@@ -131,3 +131,25 @@ The responsive themed tab cards and Ghost isolation/private-editor flags are ret
 Ghost title updates share the same WebChromeClient as permission/file/fullscreen
 handling, rather than replacing that security-aware client. A bulk-selection result
 regression test was added; the combined tree requires a new validation run.
+
+## Chrome-parity browser pass (2026-11-22)
+
+Reported issues and what changed:
+
+| Report | Fix |
+| --- | --- |
+| Top bar did not feel like Chrome | Back · Forward · rounded address · permanent Refresh · Tabs · Menu, no inline Home (it lives in the menu, as Chrome does on phones), tab strip on wide screens. |
+| Refresh icon appeared/disappeared | Refresh is permanent chrome; Stop while loading, empty/inert on a blank tab. |
+| Scrolling down reloaded the page | `SwipeRefreshLayout` no longer wraps the WebView by default; pull-to-refresh is opt-in and installed on demand. A still **two-finger hold (~1 s)** refreshes without any setting and can never be triggered by a scroll or a pinch (`PhormiHoldToRefresh`). |
+| Website "closed itself", URL left in the field | Omnibox, tab chips and refresh state are rendered from one policy (`PhormiBrowserChrome.addressText`); Home/close/clear resets all of them. Recently used tabs are inside a 10-minute memory grace window. |
+| Menu/tab access from the tab page | Menu starts with New tab · Close current tab · Tab overview · Tab groups, then THIS PAGE (Back · Forward · Refresh · Find · Share · Desktop site · Home); `REQUEST_CODE` is shared with tests. |
+| Desktop mode hid parts of the page | Viewport is the real screen width at scale 1 (no 1280px slab), UA no longer contains `Mobile`, rotation re-applies it without reloading. |
+| Video fullscreen did not rotate | HTML5 fullscreen uses `full_sensor`; leaving it restores `fullUser`. |
+| Keyboard floats above a gap | Docked IME inset no longer collapses to 0 on gesture navigation; window reaches the physical edge with a 24dp pill clearance. |
+| LAN transfer server could not open | `PhormiNetworkPolicy` allows loopback/LAN/`.local` HTTP, asks before public HTTP, and `network_security_config` permits the browser to make the request. |
+| Data saver wanted | Cache-first, no autoplay, optional image blocking, stated honestly (no compression proxy). |
+| VPN "can it live in the browser?" | Documented: engine needs `VpnService` + a server. `OpenVpnController` API path kept, engine validator exposed, one-tap reconnect added. |
+
+Validation: all audit scripts pass locally, including the new chrome-order, refresh,
+LAN-policy, rotation-reflow and grace-window guardrails. JVM/emulator runs are CI-only
+from this sandbox.

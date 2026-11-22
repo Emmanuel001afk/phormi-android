@@ -104,7 +104,9 @@ class MainActivity : AppCompatActivity() {
         val currentUrl: String get() = PhormiTabOverview.navigationUrl(deferredUrl, lastKnownUrl, webView?.url)
     }
 
-    private lateinit var swipeRefresh: SwipeRefreshLayout
+    // Pull-to-refresh is created only when the user enables it; a scroll must never
+    // be able to reload the page by accident.
+    private var swipeRefresh: SwipeRefreshLayout? = null
     private lateinit var webViewContainer: FrameLayout
     private lateinit var tabStripContainer: LinearLayout
     private lateinit var prefs: SharedPreferences
@@ -129,6 +131,8 @@ class MainActivity : AppCompatActivity() {
     private var splitBottomTabId = -1
     private var splitChromeLocked = false
     private var splitRatio = 0.5f
+    private var cachedDownloadCount = 0
+    private var cachedDownloadCountAt = 0L
 
     private val sitePermissions by lazy { PhormiSitePermissions(this,
         isActive = { it === activeWebView() },
@@ -145,7 +149,6 @@ class MainActivity : AppCompatActivity() {
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
-    private var originalOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var fullscreenContainer: FrameLayout? = null
 
     companion object {
@@ -189,7 +192,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQ_FILE_CHOOSER = 1002
         private const val REQ_GEOLOCATION = 1006
         private const val REQ_TABS_OVERVIEW = 1004
-        private const val REQ_MENU = 1007
+        private const val REQ_MENU = MenuActivity.REQUEST_CODE
         private const val MENU_OPEN = 1
         private const val MENU_COPY = 2
         private const val MENU_DOWNLOAD = 3
@@ -217,6 +220,27 @@ class MainActivity : AppCompatActivity() {
     private var tabSaveRunnable: Runnable? = null
     private var threeFingerStartX = 0f
     private var threeFingerTracking = false
+    private val holdToRefresh = PhormiHoldToRefresh()
+    /** Pointer origins and the drift budget for the two-finger hold. */
+    private val holdStartPoints = HashMap<Int, android.graphics.PointF>()
+    private val holdDriftLimitPx by lazy {
+        PhormiHoldToRefresh.MAX_DRIFT_DP * resources.displayMetrics.density
+    }
+    /** One reload per gesture: set when a hold fires, cleared when the fingers lift. */
+    private var holdFired = false
+    /** Screen position of the finger that started the current gesture. */
+    private var holdOriginRaw: android.graphics.PointF? = null
+    /** Latest measured drift for the hold, in dp; recomputed on every move. */
+    private var holdDriftDp = 0f
+    /**
+     * Fingers held perfectly still produce no MOVE events, so the hold needs its own
+     * tick at the deadline. Re-armed for each new two-finger gesture.
+     */
+    private val holdTick = Runnable {
+        if (holdStartPoints.size == 2 &&
+            holdToRefresh.check(android.os.SystemClock.elapsedRealtime(), holdDriftDp)
+        ) fireHoldToRefresh()
+    }
     private val unifiedSearchExecutor = Executors.newFixedThreadPool(11)
     private val aiController by lazy { AiController(applicationContext) }
     private var aiTaskRunning = false
@@ -570,6 +594,24 @@ class MainActivity : AppCompatActivity() {
         super.onConfigurationChanged(newConfig)
         updateResponsiveChrome()
         if (::startPageContainer.isInitialized) updateHomeChromeVisibility()
+        if (::prefs.isInitialized) {
+            // Chrome's behaviour: turning the phone re-lays-out the page, it does not
+            // reload it. State, form values and media playback survive the rotation.
+            tabs.forEach { tab -> tab.webView?.let(::reflowWebView) }
+        }
+        updateRefreshButton()
+        syncOmnibox()
+        if (::prefs.isInitialized) applyRefreshGestureLook()
+    }
+
+    /** Re-run layout at the new width without a navigation. */
+    private fun reflowWebView(webView: WebView) {
+        runCatching { webView.evaluateJavascript(PhormiDesktopMode.reflowScript(), null) }
+        // The desktop viewport is width-aware, so it is re-applied at the new width.
+        val url = webView.url.orEmpty()
+        if (url.startsWith("http", true) && isDesktopModeFor(url)) {
+            runCatching { webView.evaluateJavascript(PhormiDesktopMode.viewportScript(), null) }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -583,7 +625,6 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         PhormiNotificationManager.ensureChannels(this)
 
-        swipeRefresh = findViewById(R.id.swipe_refresh)
         webViewContainer = findViewById(R.id.webview_container)
         tabStripContainer = findViewById<View>(R.id.tab_strip).findViewById(R.id.tab_strip_container)
         urlBar = findViewById(R.id.url_bar)
@@ -604,6 +645,9 @@ class MainActivity : AppCompatActivity() {
             isFocusable = false
         }
         updateResponsiveChrome()
+        // Pull-to-refresh is created only when the user has enabled it. Deferred so a
+        // restored startup does not rebuild the page host mid-restore.
+        findViewById<View>(R.id.main_root)?.post { installPullToRefresh() }
 
         // Appearance, wallpaper, and Browser Lock are menu features.
         applyStartPageAppearance()
@@ -623,10 +667,6 @@ class MainActivity : AppCompatActivity() {
                 putExtra(MenuActivity.EXTRA_CAN_GO_BACK, menuPage?.canGoBack() == true)
                 putExtra(MenuActivity.EXTRA_CAN_GO_FORWARD, menuPage?.canGoForward() == true)
             }, REQ_MENU)
-        }
-
-        findViewById<TextView>(R.id.btn_home).setOnClickListener {
-            showStartPage()
         }
 
         findViewById<TextView>(R.id.btn_back).setOnClickListener {
@@ -705,7 +745,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btn_favorite).setOnClickListener { addCurrentPageToBookmarks() }
         splitLockButton.setOnClickListener { setSplitChromeLocked(!splitChromeLocked) }
         installSplitDividerResize()
-        findViewById<TextView>(R.id.btn_go).setOnClickListener { navigateFromUrlBar() }
         urlBar.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO ||
                 actionId == EditorInfo.IME_ACTION_DONE ||
@@ -716,13 +755,9 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
 
-        swipeRefresh.setOnRefreshListener { refreshActivePage() }
-        swipeRefresh.setDistanceToTriggerSync(160.dp())
-        swipeRefresh.isEnabled = PhormiBrowserPreferences.pullToRefresh(this)
-        swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            val wv = activeWebView() ?: return@setOnChildScrollUpCallback false
-            wv.canScrollVertically(-1)
-        }
+        // Pull-to-refresh was installed at startup only if the user enabled it. A long,
+        // deliberate pull at the very top of a page may then refresh; ordinary
+        // scrolling never triggers a reload.
 
         // Sensitive permissions are requested only when a site actually needs them.
 
@@ -787,14 +822,54 @@ class MainActivity : AppCompatActivity() {
         val current = if (PhormiBrowserPreferences.pullToRefresh(this)) 1 else 0
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Refresh gesture")
+            .setMessage("The ↻ button and a two-finger hold (about one second) always work. " +
+                "Pull-to-refresh is the optional extra below.")
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 val enabled = which == 1
                 prefs.edit().putBoolean(KEY_PULL_TO_REFRESH, enabled).apply()
-                swipeRefresh.isEnabled = enabled
+                installPullToRefresh()
+                updateHomeChromeVisibility()
                 dialog.dismiss()
                 Toast.makeText(this, if (enabled) "Pull-to-refresh enabled" else "Arrow refresh only", Toast.LENGTH_SHORT).show()
             }
             .show()
+    }
+
+    /**
+     * Data saver that states what it really does. WebView has no compression proxy, so
+     * this is cache/media/image control, applied to every live tab immediately.
+     */
+    private fun showDataSaverChooser() {
+        val current = dataSaverMode()
+        val labels = PhormiDataSaver.modes.map { PhormiDataSaver.label(it) }.toTypedArray()
+        val checked = PhormiDataSaver.modes.indexOf(current).coerceAtLeast(0)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 8)
+        }
+        content.addView(TextView(this).apply {
+            text = "Data saver works inside the browser only. It prefers cached copies, stops " +
+                "media autoplay and can block images. Image blocking is what saves the most " +
+                "data; there is no server-side compression proxy."
+            setTextColor(PhormiUiColors.secondary(this@MainActivity))
+            setPadding(0, 0, 0, 8)
+        })
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Data saver").setView(content).create()
+        PhormiDataSaver.modes.forEachIndexed { index, mode ->
+            val button = Button(this).apply {
+                text = if (index == checked) "✓ " + labels[index] else labels[index]
+                isAllCaps = false
+                setOnClickListener {
+                    prefs.edit().putString(PhormiDataSaver.KEY_MODE, mode).apply()
+                    tabs.forEach { tab -> tab.webView?.let(::applyLiveWebSettings) }
+                    tabs.forEach { tab -> tab.webView?.let { view -> runCatching { view.reload() } } }
+                    dialog.dismiss()
+                    Toast.makeText(this@MainActivity, "Data saver: " + PhormiDataSaver.label(mode), Toast.LENGTH_SHORT).show()
+                }
+            }
+            content.addView(button, LinearLayout.LayoutParams(-1, 52).apply { topMargin = 4; bottomMargin = 4 })
+        }
+        dialog.show()
     }
 
     private fun showAppearanceChooser() {
@@ -915,24 +990,26 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.main_root)?.setBackgroundColor(background)
         findViewById<View>(R.id.top_toolbar)?.setBackgroundColor(toolbar)
         findViewById<View>(R.id.tab_strip)?.setBackgroundColor(background)
-        styleSurface(findViewById(R.id.url_toolbar), PhormiUiColors.surfaceSoft(this), PhormiUiColors.border(this), 24)
+        // The omnibox keeps its rounded field shape; only its fill follows the theme.
+        (findViewById<View>(R.id.url_toolbar)?.background as? android.graphics.drawable.GradientDrawable)?.let { field ->
+            field.setColor(PhormiUiColors.surfaceSoft(this))
+            field.cornerRadius = 20 * resources.displayMetrics.density
+        }
         findViewById<View>(R.id.bottom_toolbar)?.setBackgroundColor(toolbar)
-        listOf(R.id.btn_home, R.id.btn_new_tab, R.id.btn_menu, R.id.btn_refresh,
+        val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
+        listOf(R.id.btn_new_tab, R.id.btn_menu, R.id.btn_refresh,
             R.id.btn_back, R.id.btn_forward, R.id.btn_top_back, R.id.btn_top_forward,
             R.id.btn_top_ai, R.id.btn_bottom_ai, R.id.btn_bottom_downloads).forEach { id ->
             findViewById<TextView>(id)?.setTextColor(if (id == R.id.btn_new_tab || id == R.id.btn_bottom_ai || id == R.id.btn_top_ai)
-                (if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)) else text)
+                accent else text)
         }
-        findViewById<TextView>(R.id.tab_count)?.setTextColor(
-            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
-        )
+        findViewById<TextView>(R.id.tab_count)?.setTextColor(accent)
         findViewById<EditText>(R.id.url_bar)?.apply {
             setTextColor(text)
             setHintTextColor(secondary)
         }
-        findViewById<TextView>(R.id.btn_go)?.setTextColor(
-            if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
-        )
+        updateSiteSecurityIndicator()
+        updateRefreshButton()
     }
 
     private fun cssColor(color: Int): String = String.format(java.util.Locale.ROOT, "#%06X", 0xFFFFFF and color)
@@ -1567,6 +1644,8 @@ class MainActivity : AppCompatActivity() {
         startPageSearch.clearFocus()
         hideKeyboard()
         updateHomeChromeVisibility()
+        updateRefreshButton()
+        syncOmnibox()
         loadQuickAccessRows()
         saveTabsImmediate(false)
     }
@@ -1575,12 +1654,25 @@ class MainActivity : AppCompatActivity() {
         val onHome = startPageContainer.visibility == View.VISIBLE && !splitMode
         val wide = resources.configuration.screenWidthDp >= 900
         val fullscreen = customView != null || isInPictureInPictureMode
-        val activeDownloads = if (::prefs.isInitialized) PhormiDownloadEngine.items(this).count {
-            it.state == PhormiDownloadEngine.State.RUNNING || it.state == PhormiDownloadEngine.State.QUEUED
-        } else 0
+        // Download history can be large and this runs on every chrome update, so it is
+        // measured once per short interval instead of on each keystroke/animation tick.
+        val now = System.currentTimeMillis()
+        if (now - cachedDownloadCountAt > 2_000L) {
+            cachedDownloadCount = if (::prefs.isInitialized) runCatching {
+                PhormiDownloadEngine.items(this).count {
+                    it.state == PhormiDownloadEngine.State.RUNNING || it.state == PhormiDownloadEngine.State.QUEUED
+                }
+            }.getOrDefault(0) else 0
+            cachedDownloadCountAt = now
+        }
+        val activeDownloads = cachedDownloadCount
+        // A blank active tab (or every tab cleared) is the "empty chrome" state: the
+        // refresh control reads as empty and the address field truly is empty.
+        val activeUrl = tabs.firstOrNull { it.id == activeTabId }?.currentUrl ?: activeWebView()?.url
         return PhormiBrowserChrome.State(
             onHome = onHome,
             wide = wide,
+            blankPage = PhormiBrowserChrome.isBlankUrl(activeUrl),
             bottomEnabled = PhormiBrowserPreferences.showBottomToolbar(this),
             fullscreen = fullscreen,
             splitLocked = splitChromeLocked,
@@ -1591,13 +1683,15 @@ class MainActivity : AppCompatActivity() {
     private fun updateHomeChromeVisibility() {
         val state = currentChromeState()
         val visibility = PhormiBrowserChrome.resolve(state)
-        findViewById<View>(R.id.home_toolbar_spacer)?.visibility = if (state.onHome && visibility.top) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.home_toolbar_spacer)?.visibility =
+            if (state.onHome && visibility.top && visibility.newTab) View.VISIBLE else View.GONE
         findViewById<View>(R.id.btn_new_tab)?.visibility = if (visibility.newTab) View.VISIBLE else View.GONE
         findViewById<View>(R.id.top_toolbar)?.visibility = if (visibility.top) View.VISIBLE else View.GONE
         findViewById<View>(R.id.url_toolbar)?.visibility = if (visibility.url) View.VISIBLE else View.GONE
-        // Home is a primary escape hatch on every screen size, not a tablet-only control.
-        findViewById<View>(R.id.btn_home)?.visibility = if (visibility.home) View.VISIBLE else View.GONE
+        // Home is a row in the ⋮ menu (Chrome keeps it inside the overflow on phones);
+        // no inline button means the address field gets the whole row width.
         findViewById<View>(R.id.btn_refresh)?.visibility = if (visibility.refresh) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_refresh)?.isEnabled = visibility.stop
         findViewById<View>(R.id.btn_favorite)?.visibility = if (visibility.favorite) View.VISIBLE else View.GONE
         findViewById<View>(R.id.bottom_toolbar)?.visibility = if (visibility.bottom) View.VISIBLE else View.GONE
         findViewById<View>(R.id.tab_strip)?.visibility = if (visibility.tabStrip) View.VISIBLE else View.GONE
@@ -1606,7 +1700,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_top_forward)?.visibility = if (visibility.topForward) View.VISIBLE else View.GONE
         findViewById<View>(R.id.btn_top_downloads)?.visibility = if (visibility.topDownloads) View.VISIBLE else View.GONE
         updateDownloadBadge()
-        swipeRefresh.isEnabled = !state.onHome && PhormiBrowserPreferences.pullToRefresh(this)
+        // `visibility.stop` is true exactly when there is a real page to reload:
+        // pulling is pointless on the start page and while a load is already running.
+        swipeRefresh?.isEnabled = !state.onHome && visibility.stop
+        updateRefreshButton()
+        syncOmnibox()
     }
 
     private fun updateStartPageVisibility() {
@@ -1644,10 +1742,90 @@ class MainActivity : AppCompatActivity() {
                 if (page.url == searchUrl) page.reload() else page.loadUrl(searchUrl)
             } else runUnifiedSearch(query)
         } else {
-            if (page == null || page.url.isNullOrBlank() || page.url == NEW_TAB_URL) {
-                swipeRefresh.isRefreshing = false
+            if (page == null || PhormiBrowserChrome.isBlankUrl(page.url ?: tab?.currentUrl)) {
+                // Chrome's refresh is a no-op on a blank tab: no spinner, no stray reload.
+                swipeRefresh?.isRefreshing = false
+                updateRefreshButton()
             } else page.reload()
         }
+        syncOmnibox()
+    }
+
+    /**
+     * Refresh is always visible. It reads as Stop while the active page loads and as
+     * a reload arrow otherwise; on a blank tab it is empty chrome and inert.
+     */
+    private fun updateRefreshButton() {
+        val button = findViewById<TextView>(R.id.btn_refresh) ?: return
+        val state = currentChromeState()
+        val visibility = PhormiBrowserChrome.resolve(state)
+        val loading = visibility.stop && (activeWebView()?.progress ?: 100) in 1..99
+        button.text = when {
+            state.blankPage || !visibility.stop -> ""
+            loading -> "×"
+            else -> "↻"
+        }
+        button.contentDescription = when {
+            state.blankPage -> "Nothing to refresh on a blank tab"
+            !visibility.stop -> "Refresh page"
+            loading -> "Stop loading"
+            else -> "Refresh page"
+        }
+    }
+
+    /**
+     * The address field always mirrors the active tab. Clearing every tab resets it,
+     * and a tab whose page has not committed keeps the address the user asked for
+     * instead of silently showing an old website.
+     */
+    private fun syncOmnibox() {
+        if (!::urlBar.isInitialized || urlBar.hasFocus()) return
+        val tab = tabs.firstOrNull { it.id == activeTabId }
+        val desired = PhormiBrowserChrome.addressText(tab?.currentUrl ?: activeWebView()?.url, tab?.searchQuery)
+        if (urlBar.text?.toString().orEmpty() != desired) urlBar.setText(desired)
+        updateSiteSecurityIndicator()
+    }
+
+    /**
+     * Builds the pull-to-refresh gesture only when it is enabled. The default browser
+     * has no SwipeRefreshLayout at all, so swiping up/down while reading a long page
+     * scrolls the page and never reloads it.
+     */
+    private fun installPullToRefresh() {
+        val host = findViewById<FrameLayout>(R.id.swipe_refresh_host) ?: return
+        val wanted = PhormiBrowserPreferences.pullToRefresh(this)
+        if (!wanted) {
+            swipeRefresh?.let { existing ->
+                (existing.parent as? android.view.ViewGroup)?.removeView(existing)
+                if (webViewContainer.parent !== host) {
+                    (webViewContainer.parent as? android.view.ViewGroup)?.removeView(webViewContainer)
+                    host.addView(webViewContainer, FrameLayout.LayoutParams(-1, -1))
+                }
+            }
+            swipeRefresh = null
+            return
+        }
+        if (swipeRefresh != null) return
+        val layout = SwipeRefreshLayout(this).apply {
+            setOnRefreshListener { refreshActivePage() }
+            setDistanceToTriggerSync(160.dp())
+            // A pull may only refresh when the active page is already at its very top.
+            // An up/down scroll inside a page therefore can never become a reload.
+            setOnChildScrollUpCallback { _, _ -> activeWebView()?.canScrollVertically(-1) != false }
+        }
+        (webViewContainer.parent as? android.view.ViewGroup)?.removeView(webViewContainer)
+        layout.addView(webViewContainer, FrameLayout.LayoutParams(-1, -1))
+        host.addView(layout, FrameLayout.LayoutParams(-1, -1))
+        swipeRefresh = layout
+        applyRefreshGestureLook()
+    }
+
+    /** The pull indicator uses the theme accent, matching the rest of the chrome. */
+    private fun applyRefreshGestureLook() {
+        val accent = if (prefs.getBoolean(KEY_DAILY_ACCENT, false)) dailyAccent() else PhormiUiColors.accent(this)
+        val surface = PhormiUiColors.surface(this)
+        swipeRefresh?.setColorSchemeColors(accent)
+        swipeRefresh?.setProgressBackgroundColorSchemeColor(surface)
     }
 
     private fun updateTabCount() {
@@ -1761,11 +1939,43 @@ class MainActivity : AppCompatActivity() {
             this.progress = progress
             visibility = if (progress in 1..99 && startPageContainer.visibility != View.VISIBLE) View.VISIBLE else View.GONE
         }
-        findViewById<TextView>(R.id.btn_refresh)?.apply {
-            text = if (progress in 1..99) "×" else "↻"
-            contentDescription = if (progress in 1..99) "Stop loading" else "Refresh page"
-        }
+        updateRefreshButton()
     }
+    private fun trustedCleartextHosts(): Set<String> =
+        prefs.getStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, emptySet()).orEmpty()
+
+    private fun trustCleartextHost(url: String) {
+        val next = PhormiNetworkPolicy.withTrustedHost(trustedCleartextHosts(), url)
+        prefs.edit().putStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, next).apply()
+    }
+
+    /**
+     * Applies the address policy before a load. HTTPS is always allowed. HTTP on a
+     * phone's own network (LAN transfer servers, routers, NAS) is allowed and marked
+     * "not secure". A public HTTP address asks once, with a Continue button, instead
+     * of the page silently failing the way it used to.
+     */
+    private fun requestLoadUrl(webView: WebView, url: String) {
+        val reach = PhormiNetworkPolicy.reach(
+            url,
+            trustedCleartextHosts(),
+            prefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+        )
+        if (reach.allowed) {
+            webView.loadUrl(url)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Open this address over HTTP?")
+            .setMessage(PhormiNetworkPolicy.warningMessage(url))
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ ->
+                trustCleartextHost(url)
+                webView.loadUrl(url)
+            }
+            .show()
+    }
+
     private fun navigateFromUrlBar() {
         val raw = urlBar.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
@@ -1788,12 +1998,13 @@ class MainActivity : AppCompatActivity() {
             startPageContainer.isClickable = false
             webView.visibility = View.VISIBLE
             webView.isClickable = true
-            webView.loadUrl(url)
+            requestLoadUrl(webView, url)
         } else createNewTab(url)
         updateHomeChromeVisibility()
         saveTabsImmediate(false)
         hideKeyboard()
         urlBar.clearFocus()
+        updateRefreshButton()
     }
 
     private fun focusNewTabSearch() {
@@ -1858,8 +2069,8 @@ class MainActivity : AppCompatActivity() {
         tabs.find { it.id == tabId }?.lastUsed = System.currentTimeMillis()
         updateNavButtons()
         updateFavoriteButton()
-        val url = tabs.find { it.id == tabId }?.currentUrl.orEmpty()
-        urlBar.setText(url.takeIf { it.isNotBlank() && it != NEW_TAB_URL } ?: "")
+        syncOmnibox()
+        updateRefreshButton()
         tabs.forEach { it.chipView.alpha = if (it.id == tabId) 1f else 0.55f }
     }
 
@@ -2045,7 +2256,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshTabIdentity(tab: Tab) {
         tab.title = PhormiTabOverview.displayTitle(tab.title, tab.currentUrl)
-        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text = tab.title
+        // A chip that only says "New tab" on a phone gives no way to tell tabs apart.
+        // Show the page title, or the host once the title is still pending, the way a
+        // Chrome tab strip does.
+        tab.chipView.findViewById<TextView>(R.id.tab_chip_title)?.text =
+            PhormiBrowserChrome.tabLabel(tab.title, tab.currentUrl)
         tab.chipView.contentDescription = "${tab.title}, ${PhormiTabOverview.address(tab.currentUrl)}"
     }
 
@@ -2095,7 +2310,7 @@ class MainActivity : AppCompatActivity() {
         val candidates = PhormiTabMemoryPolicy.candidates(tabs.map {
             PhormiTabMemoryPolicy.Entry(it.id, it.webView != null, it.lastUsed,
                 it.id in keep || it.hasDeviceAccess || it.isGhost || it.searchQuery != null)
-        }, limit)
+        }, limit, now = System.currentTimeMillis(), graceMillis = PhormiTabMemoryPolicy.DEFAULT_GRACE_MILLIS)
         candidates.forEach { id ->
             val tab = tabs.firstOrNull { it.id == id } ?: return@forEach
             val view = tab.webView ?: return@forEach
@@ -2178,11 +2393,8 @@ class MainActivity : AppCompatActivity() {
         scheduleTabBudget()
         updateSiteSecurityIndicator()
         updatePageProgress(activeWebView(), activeWebView()?.progress ?: 100)
-        val current = tabs.find { it.id == id }?.currentUrl
-        val query = tabs.firstOrNull { it.id == id }?.searchQuery
-        if (query != null) urlBar.setText(query)
-        else if (!current.isNullOrBlank() && current != NEW_TAB_URL) urlBar.setText(current)
-        else urlBar.setText("")
+        syncOmnibox()
+        updateRefreshButton()
         saveTabs()
         val searchTab = tabs.firstOrNull { it.id == id }
         val restoredSearchUrl = searchTab?.searchQuery?.let(PhormiSearchHistory::searchUrl)
@@ -2251,7 +2463,9 @@ class MainActivity : AppCompatActivity() {
 
         if (tabs.isEmpty()) {
             createNewTab(NEW_TAB_URL)
+            // Every URL cleared: the address and the refresh state reset with it.
             urlBar.setText("")
+            updateRefreshButton()
         } else if (activeTabId == id) {
             switchToTab((tabs.getOrNull(index - 1) ?: tabs.first()).id)
         }
@@ -3051,12 +3265,26 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun dataSaverMode(): String = prefs.getString(PhormiDataSaver.KEY_MODE, PhormiDataSaver.OFF) ?: PhormiDataSaver.OFF
+
     private fun applyLiveWebSettings(webView: WebView) {
+        val saver = PhormiDataSaver.settings(dataSaverMode())
         webView.settings.apply {
             textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
             javaScriptEnabled = prefs.getBoolean("security_javascript", true)
             mixedContentMode = if (prefs.getBoolean("security_mixed_content", false))
                 WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            // Data saver: read from the disk cache first, keep the last copy usable
+            // offline, and never let media start on its own.
+            cacheMode = if (saver.cacheFirst) WebSettings.LOAD_CACHE_ELSE_NETWORK else WebSettings.LOAD_DEFAULT
+            mediaPlaybackRequiresUserGesture = saver.mediaGestureRequired
+            @Suppress("DEPRECATION")
+            blockNetworkImage = saver.blockImages
+        }
+        if (saver.blockImages && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            runCatching {
+                WebViewCompat.addDocumentStartJavaScript(webView, PhormiDataSaver.imageBlockScript(), setOf("*"))
+            }
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean("security_third_party_cookies", true))
     }
@@ -3065,6 +3293,11 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView(webView: WebView) {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, PhormiTabMemoryPolicy.INSTALL_DIRTY_TRACKER, setOf("*"))
+            if (PhormiDataSaver.settings(dataSaverMode()).blockImages) {
+                runCatching {
+                    WebViewCompat.addDocumentStartJavaScript(webView, PhormiDataSaver.imageBlockScript(), setOf("*"))
+                }
+            }
         }
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             webView.setRendererPriorityPolicy(
@@ -3072,18 +3305,21 @@ class MainActivity : AppCompatActivity() {
                 true
             )
         }
+        val saver = PhormiDataSaver.settings(dataSaverMode())
         webView.settings.apply {
             javaScriptEnabled = prefs.getBoolean("security_javascript", true)
             domStorageEnabled = true
             databaseEnabled = true
-            cacheMode = WebSettings.LOAD_DEFAULT
+            cacheMode = if (saver.cacheFirst) WebSettings.LOAD_CACHE_ELSE_NETWORK else WebSettings.LOAD_DEFAULT
             if (WebViewFeature.isFeatureSupported(WebViewFeature.COOKIE_INTERCEPT)) {
                 runCatching { WebSettingsCompat.setCookiesIncludedInShouldInterceptRequest(this, true) }
             }
             if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
                 runCatching { WebSettingsCompat.setBackForwardCacheEnabled(this, true) }
             }
-            mediaPlaybackRequiresUserGesture = false
+            mediaPlaybackRequiresUserGesture = saver.mediaGestureRequired
+            @Suppress("DEPRECATION")
+            blockNetworkImage = saver.blockImages
             setGeolocationEnabled(true)
             textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
             mixedContentMode = if (prefs.getBoolean("security_mixed_content", false)) {
@@ -3228,7 +3464,7 @@ class MainActivity : AppCompatActivity() {
             ) {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true && view != null && view == activeWebView()) {
-                    swipeRefresh.isRefreshing = false
+                    swipeRefresh?.isRefreshing = false
                     val description = error?.description?.toString()?.trim().orEmpty()
                     val failedUrl = request.url?.toString().orEmpty()
                     if (failedUrl.startsWith("http", true)) {
@@ -3247,7 +3483,7 @@ class MainActivity : AppCompatActivity() {
             ) {
                 super.onReceivedHttpError(view, request, errorResponse)
                 if (request?.isForMainFrame == true && view != null && view == activeWebView()) {
-                    swipeRefresh.isRefreshing = false
+                    swipeRefresh?.isRefreshing = false
                     val code = errorResponse?.statusCode ?: 0
                     if (code >= 400) {
                         val pageUrl = request?.url?.toString().orEmpty()
@@ -3430,7 +3666,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 super.onPageFinished(view, url)
                 if (view == activeWebView()) {
-                    swipeRefresh.isRefreshing = false
+                    swipeRefresh?.isRefreshing = false
                     updateStartPageVisibility()
                     // Do not let an old/current page completion overwrite text while
                     // the user is actively editing the unified URL/search field. WebView can
@@ -3533,7 +3769,6 @@ class MainActivity : AppCompatActivity() {
                 fullscreenOwner = tabs.firstOrNull { it.webView === source }?.id ?: -1
                 customView = view
                 customViewCallback = callback
-                originalOrientation = requestedOrientation
 
                 val container = FrameLayout(this@MainActivity).apply {
                     setBackgroundColor(Color.BLACK)
@@ -3554,11 +3789,13 @@ class MainActivity : AppCompatActivity() {
                     )
                 )
                 window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                // Do not force landscape: onShowCustomView is also used for non-video
-                // HTML fullscreen content, and rotating the whole activity was disruptive.
+                // Follow the device sensor while a player is fullscreen (the 16:9 movie
+                // case): turning the phone gives landscape and turning it back gives
+                // portrait, exactly like Chrome. Nothing is forced on the user.
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                 findViewById<View>(R.id.top_toolbar)?.visibility = View.GONE
                 findViewById<View>(R.id.bottom_toolbar)?.visibility = View.GONE
-                swipeRefresh.visibility = View.GONE
+                swipeRefresh?.visibility = View.GONE
             }
 
             override fun onHideCustomView() {
@@ -3713,6 +3950,8 @@ class MainActivity : AppCompatActivity() {
                     ).show()
                 }
                 MenuActivity.ACTION_THEME -> showAppearanceChooser()
+                MenuActivity.ACTION_CLOSE_TAB -> closeTab(activeTabId)
+                MenuActivity.ACTION_DATA_SAVER -> showDataSaverChooser()
                 MenuActivity.ACTION_TAB_RETENTION -> showTabRetentionChooser()
                 MenuActivity.ACTION_PULL_TO_REFRESH -> showPullToRefreshChooser()
                 MenuActivity.ACTION_SETTINGS -> startActivity(Intent(this, PhormiBrowserSettingsActivity::class.java))
@@ -3813,8 +4052,10 @@ class MainActivity : AppCompatActivity() {
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        requestedOrientation = originalOrientation
-        swipeRefresh.visibility = View.VISIBLE
+        // Back to following the phone's own rotation preference. Restoring a captured
+        // `unspecified` value used to leave the browser stuck in the video orientation.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        swipeRefresh?.visibility = View.VISIBLE
         if (!isInPictureInPictureMode && !splitChromeLocked) {
             findViewById<View>(R.id.top_toolbar)?.visibility = View.VISIBLE
             updateHomeChromeVisibility()
@@ -3831,7 +4072,92 @@ class MainActivity : AppCompatActivity() {
         else super.onBackPressed()
     }
 
+    /**
+     * Two-finger hold to refresh: a deliberate alternative to pull-to-refresh that an
+     * ordinary scroll can never trigger, because it needs exactly two still fingers.
+     * Nothing is consumed, so pinching a page keeps zooming and a two-finger scroll
+     * keeps scrolling.
+     */
+    private fun trackHoldToRefresh(ev: android.view.MotionEvent) {
+        when (ev.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                resetHoldGesture()
+                holdOriginRaw = android.graphics.PointF(ev.rawX, ev.rawY)
+            }
+            android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                val index = ev.actionIndex
+                holdStartPoints[ev.getPointerId(index)] =
+                    android.graphics.PointF(ev.getX(index), ev.getY(index))
+                if (ev.pointerCount == 2 && holdStartedOnPage(ev)) {
+                    holdDriftDp = 0f
+                    holdToRefresh.begin(android.os.SystemClock.elapsedRealtime())
+                    // Fingers held perfectly still send no MOVE events, so the deadline
+                    // needs its own tick; re-armed here for each new two-finger hold.
+                    tabSaveHandler.removeCallbacks(holdTick)
+                    tabSaveHandler.postDelayed(holdTick, PhormiHoldToRefresh.MIN_HOLD_MILLIS)
+                }
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (!holdToRefresh.tracking) return
+                var drift = 0f
+                for (i in 0 until ev.pointerCount) {
+                    val origin = holdStartPoints[ev.getPointerId(i)] ?: continue
+                    drift = maxOf(
+                        drift,
+                        kotlin.math.hypot(ev.getX(i) - origin.x, ev.getY(i) - origin.y)
+                    )
+                }
+                holdDriftDp = drift / resources.displayMetrics.density
+                if (holdToRefresh.check(android.os.SystemClock.elapsedRealtime(), holdDriftDp)) {
+                    fireHoldToRefresh()
+                }
+            }
+            android.view.MotionEvent.ACTION_POINTER_UP -> {
+                // The hold is over as soon as one of the two fingers leaves.
+                if (ev.pointerCount <= 2) resetHoldGesture()
+            }
+            android.view.MotionEvent.ACTION_UP,
+            android.view.MotionEvent.ACTION_CANCEL -> resetHoldGesture()
+        }
+    }
+
+    /**
+     * The gesture belongs to the page, not to the toolbar. Screen-space comparison,
+     * because `MotionEvent.getX()` is window-relative while a visible rect is global.
+     */
+    private fun holdStartedOnPage(ev: android.view.MotionEvent): Boolean {
+        val host = findViewById<View>(R.id.webview_container) ?: return false
+        if (host.width == 0 || host.height == 0) return false
+        val bounds = android.graphics.Rect()
+        if (!host.getGlobalVisibleRect(bounds)) return false
+        // The finger that started the gesture plus the one that just landed.
+        val first = holdOriginRaw ?: return false
+        if (!bounds.contains(first.x.toInt(), first.y.toInt())) return false
+        return bounds.contains(ev.rawX.toInt(), ev.rawY.toInt())
+    }
+
+    private fun resetHoldGesture() {
+        tabSaveHandler.removeCallbacks(holdTick)
+        holdToRefresh.cancel()
+        holdStartPoints.clear()
+        holdDriftDp = 0f
+        holdFired = false
+        holdOriginRaw = null
+    }
+
+    /** Reload the active page, never the start page or a blank tab. */
+    private fun fireHoldToRefresh() {
+        if (holdFired) return
+        holdFired = true
+        // Only a real page can be reloaded; the start page and a blank tab cannot.
+        val state = currentChromeState()
+        if (state.onHome || state.blankPage || state.fullscreen) return
+        refreshActivePage()
+        Toast.makeText(this, "Refreshing", Toast.LENGTH_SHORT).show()
+    }
+
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        trackHoldToRefresh(ev)
         if (splitMode && ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
             val topLoc = IntArray(2)
             val bottomLoc = IntArray(2)
@@ -4068,8 +4394,10 @@ class MainActivity : AppCompatActivity() {
                 indicator.setTextColor(PhormiUiColors.success(this))
             }
             url.startsWith("http://") -> {
-                indicator.text = "⚠"
-                indicator.contentDescription = "Not secure HTTP connection. Tap for site information."
+                // Chrome wording for a real page served without encryption. A LAN page
+                // and an internet page both get this honest state.
+                indicator.text = "! "
+                indicator.contentDescription = "Not secure. This page uses HTTP without encryption. Tap for site information."
                 indicator.setTextColor(PhormiUiColors.warning(this))
             }
             else -> {
@@ -4101,7 +4429,7 @@ class MainActivity : AppCompatActivity() {
             append("\nLocation for this site: ").append(geoLabel)
             append("\n\nSite permission decisions are stored on this device only.")
         }
-        AlertDialog.Builder(this)
+        val builder = AlertDialog.Builder(this)
             .setTitle("Site information · $host")
             .setMessage(message)
             .setPositiveButton("Close", null)
@@ -4114,7 +4442,14 @@ class MainActivity : AppCompatActivity() {
                     updateSiteSecurityIndicator()
                 }
             }
-            .show()
+        if (url.startsWith("http://") && view != null) {
+            builder.setNeutralButton("Always allow this site") { _, _ ->
+                trustCleartextHost(url)
+                view.reload()
+                Toast.makeText(this, "HTTP allowed for $host on this device", Toast.LENGTH_SHORT).show()
+            }
+        }
+        builder.show()
     }
 
     private fun showFindInPage() {

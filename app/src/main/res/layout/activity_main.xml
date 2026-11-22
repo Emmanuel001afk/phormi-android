@@ -6,105 +6,130 @@
     android:orientation="vertical"
     android:background="@color/phormi_background">
 
-    <!-- One 48dp chrome layer; 48dp touch targets remain accessible. -->
+    <!--
+      One 48dp chrome layer. Phone order follows Chrome exactly:
+      Back · Forward · [security + address] · Refresh · Menu.
+      Refresh is permanent (Stop while loading), so a scroll never has to be turned
+      into a reload and the control is never missing. Tabs, tab overview, new tab and
+      close tab live in the ⋮ menu, and the tab-count circle next to it opens the
+      overview.
+    -->
     <LinearLayout
         android:id="@+id/top_toolbar"
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:gravity="center_vertical"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
         android:background="@color/phormi_surface">
 
         <TextView
-            android:id="@+id/btn_home"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:gravity="center"
-            android:text="⌂"
-            android:textColor="@color/phormi_text"
-            android:textSize="18sp"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Home" />
-
-        <TextView
             android:id="@+id/btn_top_back"
-            android:layout_width="44dp"
+            android:layout_width="40dp"
             android:layout_height="48dp"
             android:gravity="center"
-            android:visibility="gone"
             android:text="‹"
             android:textColor="@color/phormi_text"
-            android:textSize="20sp"
+            android:textSize="24sp"
             android:clickable="true"
             android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Back" />
 
         <TextView
             android:id="@+id/btn_top_forward"
-            android:layout_width="44dp"
+            android:layout_width="40dp"
             android:layout_height="48dp"
             android:gravity="center"
-            android:visibility="gone"
             android:text="›"
             android:textColor="@color/phormi_text"
-            android:textSize="20sp"
+            android:textSize="24sp"
             android:clickable="true"
             android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Forward" />
 
         <LinearLayout
             android:id="@+id/url_toolbar"
             android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1.4"
+            android:layout_height="40dp"
+            android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="6dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
+            android:paddingStart="2dp"
             android:paddingEnd="2dp"
-            android:background="@color/phormi_surface">
+            android:background="@drawable/bg_omnibox">
 
             <TextView
                 android:id="@+id/btn_site_info"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Site information and permissions"
-                android:layout_width="40dp"
-                android:layout_height="48dp"
+                android:contentDescription="Site information and connection security"
+                android:layout_width="32dp"
+                android:layout_height="40dp"
                 android:gravity="center"
                 android:text="ⓘ"
                 android:textColor="@color/phormi_secondary"
-                android:textSize="16sp" />
+                android:textSize="15sp" />
 
             <AutoCompleteTextView
                 android:id="@+id/url_bar"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="40dp"
                 android:layout_weight="1"
                 android:hint="Search or type a URL"
                 android:textColorHint="@color/phormi_secondary"
                 android:textColor="@color/phormi_text"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:singleLine="true"
                 android:imeOptions="actionGo"
                 android:inputType="textUri"
                 android:background="@android:color/transparent"
                 android:paddingStart="2dp"
                 android:paddingEnd="2dp" />
-
-            <TextView
-                android:id="@+id/btn_go"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:gravity="center"
-                android:text=""
-                android:textColor="@color/phormi_accent"
-                android:textSize="16sp"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Go to the address or search" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/btn_refresh"
+            android:layout_width="36dp"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="↻"
+            android:textColor="@color/phormi_text"
+            android:textSize="19sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Refresh page" />
+
+        <TextView
+            android:id="@+id/tab_count"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="0"
+            android:textColor="@color/phormi_text"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_tab_count"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Tabs overview and tab count" />
+
+        <TextView
+            android:id="@+id/btn_menu"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="⋮"
+            android:textColor="@color/phormi_text"
+            android:textSize="21sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Menu" />
 
         <HorizontalScrollView
             android:id="@+id/tab_strip"
@@ -129,61 +154,36 @@
         </HorizontalScrollView>
 
         <TextView
-            android:id="@+id/btn_refresh"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="2dp"
-            android:gravity="center"
-            android:text="↻"
-            android:textColor="@color/phormi_accent"
-            android:textSize="16sp"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Refresh page" />
-
-        <TextView
             android:id="@+id/btn_favorite"
-            android:layout_width="44dp"
+            android:layout_width="40dp"
             android:layout_height="48dp"
-            android:layout_marginStart="2dp"
             android:gravity="center"
             android:drawableTop="@drawable/ic_favorite_decagon"
+            android:visibility="gone"
             android:background="@android:color/transparent"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Add or remove favorite" />
 
         <Space android:id="@+id/home_toolbar_spacer" android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:visibility="gone" />
-        <TextView
-            android:id="@+id/tab_count"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="2dp"
-            android:gravity="center"
-            android:text="0"
-            android:textColor="@color/phormi_accent"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:background="@drawable/bg_tab_count"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Tabs overview and tab count" />
 
         <TextView
             android:id="@+id/btn_new_tab"
-            android:layout_width="44dp"
+            android:layout_width="40dp"
             android:layout_height="48dp"
             android:gravity="center"
             android:text="+"
             android:textColor="@color/phormi_accent"
-            android:textSize="20sp"
+            android:textSize="21sp"
+            android:visibility="gone"
             android:clickable="true"
             android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="New tab" />
 
         <TextView
             android:id="@+id/btn_top_downloads"
-            android:layout_width="44dp"
+            android:layout_width="40dp"
             android:layout_height="48dp"
             android:gravity="center"
             android:visibility="gone"
@@ -192,11 +192,12 @@
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Downloads in progress" />
 
         <TextView
             android:id="@+id/btn_top_ai"
-            android:layout_width="44dp"
+            android:layout_width="40dp"
             android:layout_height="48dp"
             android:gravity="center"
             android:visibility="gone"
@@ -205,19 +206,8 @@
             android:textSize="18sp"
             android:clickable="true"
             android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Ask Phormi AI" />
-
-        <TextView
-            android:id="@+id/btn_menu"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:gravity="center"
-            android:text="⋮"
-            android:textColor="@color/phormi_text"
-            android:textSize="20sp"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Menu" />
     </LinearLayout>
 
     <ProgressBar android:id="@+id/page_progress" style="?android:attr/progressBarStyleHorizontal"
@@ -227,8 +217,10 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-            android:id="@+id/swipe_refresh"
+        <!-- A plain frame by default. Pull-to-refresh is inserted only when the user
+             turns it on, so an ordinary up/down scroll can never reload the page. -->
+        <FrameLayout
+            android:id="@+id/swipe_refresh_host"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
@@ -236,7 +228,7 @@
                 android:id="@+id/webview_container"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
-        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+        </FrameLayout>
 
         <FrameLayout
             android:id="@+id/split_container"
@@ -299,12 +291,18 @@
             android:focusable="false" />
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
+    <!--
+      Optional bottom navigation (off by default). When enabled it owns Back and
+      Forward only; address, refresh, tabs and menu stay in the top row, so no
+      control is duplicated and the page never loses vertical room to a copy.
+    -->
     <LinearLayout
         android:id="@+id/bottom_toolbar"
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:gravity="center"
         android:orientation="horizontal"
+        android:visibility="gone"
         android:background="@color/phormi_surface">
 
         <TextView

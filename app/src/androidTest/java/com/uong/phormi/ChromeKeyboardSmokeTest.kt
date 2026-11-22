@@ -30,16 +30,26 @@ class ChromeKeyboardSmokeTest {
     private var previousIme: String? = null
 
     @Before fun reset() {
-        prefs.edit().remove(PhormiBrowserPreferences.BOTTOM_TOOLBAR).commit()
+        // Every test starts from the shipping defaults, then opts in explicitly.
+        prefs.edit()
+            .remove(PhormiBrowserPreferences.BOTTOM_TOOLBAR)
+            .remove(PhormiBrowserPreferences.PULL_TO_REFRESH)
+            .commit()
         context.getSharedPreferences("phormi_keyboard", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
+    /**
+     * Opens a page and waits for the navigation to be requested. The UI-idle wait runs
+     * on this thread, never inside onActivity: waiting for idle on the main thread
+     * while the activity is still laying out deadlocks the instrumentation.
+     */
     private fun openSite(scenario: ActivityScenario<MainActivity>) {
         scenario.onActivity { activity ->
             val input = activity.findViewById<EditText>(R.id.url_bar)
             input.setText("example.com")
             input.onEditorAction(EditorInfo.IME_ACTION_GO)
         }
+        device.waitForIdle()
     }
 
     @Test fun topBarCarriesNavigationWhenBottomBarIsOff() {
@@ -50,18 +60,80 @@ class ChromeKeyboardSmokeTest {
                 assertEquals(ActivityInfo.SCREEN_ORIENTATION_FULL_USER, activity.requestedOrientation)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.top_toolbar).visibility)
                 assertEquals(View.GONE, activity.findViewById<View>(R.id.bottom_toolbar).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_home).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_top_back).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_top_forward).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.url_toolbar).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.tab_count).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_menu).visibility)
-                assertEquals(View.GONE, activity.findViewById<View>(R.id.btn_refresh).visibility)
+                // Refresh is permanent chrome now: Stop while loading, reload when idle.
+                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_refresh).visibility)
                 val density = activity.resources.displayMetrics.density
                 assertTrue(activity.findViewById<View>(R.id.top_toolbar).layoutParams.height <= (48 * density).toInt())
+                // The address field must keep real width on a phone while every control is
+                // visible. The test device is 411dp wide; require at least 140dp of omnibox
+                // rather than a fixed pixel value. `device.waitForIdle()` above guarantees
+                // the first layout pass has run before this point.
+                val urlWidth = activity.findViewById<View>(R.id.url_toolbar).width
+                val screenWidth = activity.resources.displayMetrics.widthPixels
+                assertTrue("address field too narrow: ${urlWidth}px of ${screenWidth}px",
+                    urlWidth >= (140 * density).toInt())
+                // Chrome order: Back, Forward, address, Refresh, Tabs, Menu.
+                assertTrue(activity.findViewById<View>(R.id.btn_top_back).left <
+                    activity.findViewById<View>(R.id.url_toolbar).left)
+                assertTrue(activity.findViewById<View>(R.id.url_toolbar).left <
+                    activity.findViewById<View>(R.id.btn_refresh).left)
+                assertTrue(activity.findViewById<View>(R.id.btn_refresh).left <
+                    activity.findViewById<View>(R.id.btn_menu).left)
             }
             device.takeScreenshot(java.io.File(context.getExternalFilesDir(null), "chrome-top-only.png"))
         }
+    }
+
+    @Test fun pullToRefreshIsNotInstalledByDefault() {
+        prefs.edit().putBoolean(PhormiBrowserPreferences.PULL_TO_REFRESH, false).commit()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                // No SwipeRefreshLayout in the hierarchy: an up/down scroll cannot reload.
+                assertNull(findSwipeRefresh(activity))
+            }
+        }
+    }
+
+    /**
+     * When the user opts in, the gesture exists but only at the very top of the page:
+     * `canChildScrollUp` is what stops a mid-page scroll from becoming a reload.
+     */
+    @Test fun optInPullToRefreshExistsAndOnlyArmsAtTheTop() {
+        prefs.edit().putBoolean(PhormiBrowserPreferences.PULL_TO_REFRESH, true).commit()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            openSite(scenario)
+            scenario.onActivity { activity ->
+                val host = activity.findViewById<View>(R.id.swipe_refresh_host)
+                assertNotNull("pull-to-refresh host exists", host)
+                var found = false
+                fun walk(view: View) {
+                    if (view is androidx.swiperefreshlayout.widget.SwipeRefreshLayout) found = true
+                    if (view is android.view.ViewGroup) {
+                        for (index in 0 until view.childCount) walk(view.getChildAt(index))
+                    }
+                }
+                walk(host)
+                assertTrue("pull-to-refresh is installed once enabled", found)
+            }
+        }
+    }
+
+    private fun findSwipeRefresh(activity: MainActivity): android.view.View? {
+        fun walk(view: android.view.View): android.view.View? {
+            if (view is androidx.swiperefreshlayout.widget.SwipeRefreshLayout) return view
+            if (view is android.view.ViewGroup) {
+                for (index in 0 until view.childCount) {
+                    walk(view.getChildAt(index))?.let { return it }
+                }
+            }
+            return null
+        }
+        return walk(activity.findViewById(android.R.id.content))
     }
 
     @Test fun bottomBarOwnsNavigationWhenEnabled() {
@@ -77,6 +149,9 @@ class ChromeKeyboardSmokeTest {
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_bottom_ai).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_bottom_downloads).visibility)
                 assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.btn_refresh).visibility)
+                // The top row keeps the address, refresh, tabs and menu; nothing is duplicated.
+                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.url_toolbar).visibility)
+                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.tab_count).visibility)
                 val density = activity.resources.displayMetrics.density
                 assertTrue(activity.findViewById<View>(R.id.bottom_toolbar).layoutParams.height <= (48 * density).toInt())
             }

@@ -43,8 +43,10 @@ else:
 width = re.search(r"DESKTOP_VIEWPORT_WIDTH\s*=\s*(\d+)", policy)
 if not width or int(width.group(1)) < 1024:
     errors.append("desktop viewport must be at least 1024 CSS pixels wide")
-if "width=$DESKTOP_VIEWPORT_WIDTH" not in policy:
-    errors.append("viewport script must use DESKTOP_VIEWPORT_WIDTH")
+if "window.screen.width" not in policy:
+    errors.append("viewport script must derive the layout width from the real screen")
+if "width=$DESKTOP_VIEWPORT_WIDTH" in policy:
+    errors.append("a fixed desktop-width viewport scales text down until it is unreadable")
 if "loadWithOverviewMode = true" not in main:
     errors.append("desktop pages must use overview scaling so the wide layout fits the screen")
 if "loadWithOverviewMode = !enabled" in main or "loadWithOverviewMode = !desktop" in main:

@@ -77,11 +77,24 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         button(content, "Reset text size") { slider.progress = 4; updateZoom(4) }
 
         section(content, "Controls")
-        option(content, "Show bottom navigation bar", "When enabled, the bottom bar owns Back, Forward, AI and Downloads. When hidden, Back and Forward move into the top bar beside Home, the address field, Tabs and Menu; AI and Downloads stay in the menu on phones.",
+        option(content, "Show bottom navigation bar", "When enabled, the bottom bar owns Back and Forward; the address, refresh, tabs and menu stay in the top row. When hidden, Back and Forward sit at the start of the top row, Chrome-style.",
             PhormiBrowserPreferences.BOTTOM_TOOLBAR, false)
-        option(content, "Pull to refresh", "Off by default to avoid reloading while scrolling. If enabled, use a long deliberate pull at the top of a page.",
+        option(content, "Pull to refresh", "Off by default so an ordinary up/down scroll never reloads a page. The top-bar ↻ button is the normal way to refresh; when this is on, use a long deliberate pull at the very top of a page. Holding two fingers still on a page always refreshes, with or without this setting.",
             PhormiBrowserPreferences.PULL_TO_REFRESH, false)
-        description(content, "Top bar: ${PhormiBrowserChrome.topWithoutBottomSummary()} when the bottom bar is off. Refresh is available from the menu on phones; wide screens keep it inline. The top-bar refresh button stops a loading page or refreshes a completed page.")
+        description(content, "Top bar: ${PhormiBrowserChrome.topSummary()}. Refresh is always visible: it shows × while a page loads (tap to stop) and ↻ when the page is idle. On a blank tab it is empty, exactly like Chrome. In the menu: ${PhormiBrowserChrome.menuHomeSummary()}.")
+
+        section(content, "Networks and data")
+        option(content, "Flag local-network HTTP pages", "LAN addresses such as a transfer server, router or NAS at 192.168.1.20:8080 plus .local names always open. This controls whether they are labelled 'local network' in site information. Public sites always keep the 'continue over HTTP' warning.",
+            PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+        button(content, "Data saver · ${PhormiDataSaver.label(dataSaverMode())}") { showDataSaverChooser() }
+        description(content, "Cache-first loading, no media autoplay, and an optional image block. WebView has no compression proxy, so this saves data honestly rather than promising a percentage.")
+        button(content, "Allow again: HTTP sites I blocked") {
+            prefs.edit().remove(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS).apply()
+            AlertDialog.Builder(this)
+                .setMessage("Cleared. A public HTTP address will ask for permission again before opening.")
+                .setPositiveButton("OK", null)
+                .show()
+        }
 
         section(content, "Website layout")
         content.addView(CheckBox(this).apply {
@@ -119,6 +132,22 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         button(content, "Accounts and sign-in") {
             startActivity(android.content.Intent(this, AccountsActivity::class.java))
         }
+    }
+
+    private fun dataSaverMode(): String =
+        prefs.getString(PhormiDataSaver.KEY_MODE, PhormiDataSaver.OFF) ?: PhormiDataSaver.OFF
+
+    private fun showDataSaverChooser() {
+        val labels = PhormiDataSaver.modes.map { PhormiDataSaver.label(it) }.toTypedArray()
+        val checked = PhormiDataSaver.modes.indexOf(dataSaverMode()).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Data saver")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                prefs.edit().putString(PhormiDataSaver.KEY_MODE, PhormiDataSaver.modes[which]).apply()
+                dialog.dismiss()
+                recreate()
+            }
+            .show()
     }
 
     private fun section(root: LinearLayout, title: String) {

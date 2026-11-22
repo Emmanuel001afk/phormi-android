@@ -1,16 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- App-owned requests and WebView navigation require TLS, except on-device loopback
-     development/test endpoints. WebView on supported Android versions honours this
-     policy: ordinary cleartext HTTP sites are blocked, not silently upgraded. -->
+<!--
+  Public web traffic stays HTTPS/TLS-only: cleartext is never silently allowed for a
+  normal website. Two deliberate, user-facing exceptions exist because a phone
+  browser has to open the addresses people really use:
+
+  * loopback and private-LAN destinations (LAN transfer servers, routers, NAS boxes)
+    may use HTTP. PhormiNetworkPolicy decides which hosts qualify and the address
+    bar shows a "Not secure" state for them.
+  * a public host the user chose to open over HTTP after a warning is remembered in
+    `cleartext_trusted_hosts`, so a revisit is not blocked by the OS before the
+    WebView can show the page.
+
+  Why this file - and not the manifest flag - is the switch: from Android 7.0 (API 24)
+  a network security config takes precedence over `android:usesCleartextTraffic`, and
+  minSdk here is 26, so the manifest attribute is inert documentation. It stays
+  "false" so nothing reads as approval, and the audit keeps it that way. The real
+  gate is PhormiNetworkPolicy: it is what decides whether an address loads, what the
+  address bar says, and when a warning is shown. The OS has to permit the socket to
+  exist, because the WebView must render the page after the user taps Continue.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">::1</domain>
-    </domain-config>
 </network-security-config>

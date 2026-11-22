@@ -12,6 +12,8 @@ import androidx.appcompat.app.AppCompatActivity
 /** Browser menu. Returns one explicit action to MainActivity; no duplicate command-bus dispatch. */
 class MenuActivity : AppCompatActivity() {
     companion object {
+        /** Request code MainActivity uses for the browser menu result. */
+        const val REQUEST_CODE = 1007
         const val EXTRA_ACTION = "menu_action"
         const val EXTRA_PAGE_URL = "menu_page_url"
         const val EXTRA_DESKTOP_ENABLED = "menu_desktop_enabled"
@@ -51,6 +53,8 @@ class MenuActivity : AppCompatActivity() {
         const val ACTION_FORWARD = "forward"
         const val ACTION_REFRESH = "refresh"
         const val ACTION_SAVE_PDF = "save_pdf"
+        const val ACTION_CLOSE_TAB = "close_tab"
+        const val ACTION_DATA_SAVER = "data_saver"
         private const val REQ_NESTED = 2100
         private const val REQ_TABS = 2101
     }
@@ -84,6 +88,7 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_forward) { finishWith(ACTION_FORWARD) }
         wire(R.id.menu_refresh) { finishWith(ACTION_REFRESH) }
         wire(R.id.menu_save_pdf) { finishWith(ACTION_SAVE_PDF) }
+        wire(R.id.menu_close_tab) { finishWith(ACTION_CLOSE_TAB) }
         wire(R.id.menu_new_tab) { finishWith(ACTION_NEW_TAB) }
         wire(R.id.menu_ghost) { finishWith(ACTION_GHOST) }
         wire(R.id.menu_tabs) { startActivityForResult(Intent(this, TabsOverviewActivity::class.java), REQ_TABS) }
@@ -94,6 +99,10 @@ class MenuActivity : AppCompatActivity() {
         wire(R.id.menu_history) { startActivityForResult(Intent(this, HistoryActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_favorites) { startActivityForResult(Intent(this, FavoritesActivity::class.java), REQ_NESTED) }
         wire(R.id.menu_vpn) { startActivity(Intent(this, VpnActivity::class.java)) }
+        wire(R.id.menu_vpn_quick) {
+            startActivity(Intent(this, VpnActivity::class.java).putExtra(VpnActivity.EXTRA_AUTO_CONNECT, true))
+        }
+        wire(R.id.menu_data_saver) { finishWith(ACTION_DATA_SAVER) }
         wire(R.id.menu_ai) {
             val prefs = getSharedPreferences("phormi_tabs", MODE_PRIVATE)
             val ids = runCatching { org.json.JSONArray(prefs.getString("tab_ids", "[]")) }.getOrNull()

@@ -1,12 +1,35 @@
 package com.uong.phormi
 
-/** Policy is independent of WebView so its safety boundaries can be tested deterministically. */
+/**
+ * Policy is independent of WebView so its safety boundaries can be tested deterministically.
+ *
+ * Memory budget is a safety net, not a tab closer. A page that the user looked at
+ * recently is never the first to lose its renderer: tabs that were used inside the
+ * grace window keep their live document so coming back to a tab does not turn into
+ * an empty page with no address.
+ */
 object PhormiTabMemoryPolicy {
     data class Entry(val id: Int, val live: Boolean, val lastUsed: Long, val protected: Boolean)
-    fun candidates(entries: List<Entry>, budget: Int): List<Int> {
+
+    /** Ten minutes. Long enough to read a page, short enough to still free memory. */
+    const val DEFAULT_GRACE_MILLIS = 10 * 60 * 1000L
+
+    fun candidates(
+        entries: List<Entry>,
+        budget: Int,
+        now: Long = 0L,
+        graceMillis: Long = 0L
+    ): List<Int> {
         val excess = (entries.count { it.live } - budget.coerceAtLeast(1)).coerceAtLeast(0)
-        return if (excess == 0) emptyList() else entries.filter { it.live && !it.protected }.sortedBy { it.lastUsed }.map { it.id }
+        if (excess == 0) return emptyList()
+        val mutable = entries.filter { it.live && !it.protected }
+        // Recently used pages are skipped first. If the grace window covers every
+        // candidate there is nothing safe to discard, so the budget is exceeded
+        // rather than blanking a tab the user just left.
+        val outsideGrace = if (graceMillis > 0L) mutable.filter { it.lastUsed < now - graceMillis } else mutable
+        return outsideGrace.sortedBy { it.lastUsed }.map { it.id }
     }
+
     // No page text, form values or credentials leave the renderer. Only a boolean is returned.
     const val CAN_DISCARD_SCRIPT = """
         (function(){

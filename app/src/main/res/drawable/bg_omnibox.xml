@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rounded omnibox field, the way a phone browser's address bar reads. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/phormi_surface_soft" />
+    <corners android:radius="20dp" />
+</shape>
