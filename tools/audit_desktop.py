@@ -40,11 +40,15 @@ else:
         if token not in toggle:
             errors.append(f"desktop toggle missing {token}")
 
-width = re.search(r"DESKTOP_VIEWPORT_WIDTH\s*=\s*(\d+)", policy)
-if not width or int(width.group(1)) < 1024:
-    errors.append("desktop viewport must be at least 1024 CSS pixels wide")
-if "width=$DESKTOP_VIEWPORT_WIDTH" not in policy:
-    errors.append("viewport script must use DESKTOP_VIEWPORT_WIDTH")
+# The viewport must be the device's real CSS width. Any hard-coded desktop slab
+# (1280px and friends) scales text down until it is unreadable and pushes fixed
+# or bottom-aligned page elements off-screen - the reported desktop-mode bug.
+if "window.screen.width" not in policy:
+    errors.append("viewport script must derive the layout width from the real screen")
+if re.search(r"width\s*=\s*\d{3,5}\b", policy) or "DESKTOP_VIEWPORT_WIDTH" in policy:
+    errors.append("a fixed desktop-width viewport scales text down until it is unreadable")
+if "initial-scale=1" not in policy:
+    errors.append("desktop viewport must render at scale 1")
 if "loadWithOverviewMode = true" not in main:
     errors.append("desktop pages must use overview scaling so the wide layout fits the screen")
 if "loadWithOverviewMode = !enabled" in main or "loadWithOverviewMode = !desktop" in main:

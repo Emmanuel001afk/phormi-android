@@ -315,21 +315,34 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
     }
 
     /**
-     * Estimated height of the system navigation zone. Used as the initial bottom inset of the
-     * docked IME window so the keyboard is flush with the screen edge from the first frame;
-     * the real value is re-read from window insets once they arrive.
+     * Height of the system navigation zone. The IME window deliberately extends behind
+     * this zone so the keyboard is flush with the physical bottom edge; the root
+     * padding then keeps the lowest key row clear of the gesture pill / navigation bar.
+     *
+     * A zero estimate here was the "keyboard floats above a gap" bug: on gesture
+     * navigation the `navigation_bar_height` resource reports 0, the window stopped
+     * above the system zone, and the keyboard's own padding pushed the keys further up.
      */
     private fun systemNavigationBarEstimatePx(): Int {
         if (PhormiKeyboardPreferences.floating(this)) return 0
-        return runCatching {
+        val fromInsets = appliedDockedInsetPx
+        if (fromInsets > 0) return fromInsets
+        val fromResource = runCatching {
             val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
             if (id != 0) resources.getDimensionPixelSize(id) else 0
         }.getOrDefault(0)
+        if (fromResource > 0) return fromResource
+        // Gesture navigation (or a hidden resource) reports 0. A gesture pill needs
+        // ~24dp of clearance and the keyboard must still reach the physical edge.
+        return dp(24)
     }
 
-    private fun dockedInsetForWindowPx(): Int =
-        if (PhormiKeyboardPreferences.floating(this)) 0
-        else appliedDockedInsetPx.coerceAtLeast(systemNavigationBarEstimatePx())
+    private fun dockedInsetForWindowPx(): Int {
+        if (PhormiKeyboardPreferences.floating(this)) return 0
+        // The window always covers the system navigation zone so no gap can appear;
+        // the real inset is the maximum of what the OS reported and the estimate.
+        return appliedDockedInsetPx.coerceAtLeast(systemNavigationBarEstimatePx()).coerceAtLeast(dp(16))
+    }
 
     private fun applyKeyboardWindowSize(win: Window? = getWindow().window) {
         val window = win ?: return
@@ -506,9 +519,13 @@ class PhormiKeyboardServiceV2 : InputMethodService() {
                 appliedDockedInsetPx = target
                 view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, target)
                 // The estimate used at show-time may be off; re-size the window so the
-                // keyboard stays flush with the screen edge. Posted, not done inline,
-                // to keep this off the insets dispatch path.
-                view.post { applyKeyboardWindowSize() }
+                // keyboard stays flush with the screen edge, then re-layout the keys
+                // for the corrected height. Posted, not done inline, to keep this off
+                // the insets dispatch path.
+                view.post {
+                    applyKeyboardWindowSize()
+                    if (isInputViewShown) setInputView(render())
+                }
             }
             insets
         }

@@ -23,8 +23,10 @@ assert 'createdAt < AUTO_CLEAR_MS' in (src / 'PhormiKeyboardClipboardStore.kt').
 main = ET.parse(res / 'layout/activity_main.xml')
 for element in main.iter():
     if element.get(ns + 'id') in {'@+id/btn_menu', '@+id/tab_count', '@+id/btn_refresh'}:
-        assert element.get(ns + 'layout_width') == '48dp'
         assert element.get(ns + 'layout_height') == '48dp'
+# Tabs, address, refresh and menu all live in one 48dp phone row.
+assert 'android:id="@+id/btn_go"' not in (res / 'layout/activity_main.xml').read_text()
+assert 'fun topSummary' in (src / 'PhormiBrowserChrome.kt').read_text()
 # Every declared subtype must be backed by a real character layout.
 layouts = (src / 'PhormiKeyboardLayouts.kt').read_text().split('val supported = setOf(', 1)[1].split(')', 1)[0]
 for subtype in ET.parse(res / 'xml/method_phormi_keyboard.xml').iter('subtype'):

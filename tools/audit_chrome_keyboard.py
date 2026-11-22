@@ -34,10 +34,12 @@ if '.MainActivity' not in manifest or 'android:screenOrientation="fullUser"' not
     errors.append("MainActivity must follow the user's rotation preference")
 if "if (::startPageContainer.isInitialized) updateHomeChromeVisibility()" not in main:
     errors.append("MainActivity must recompute chrome ownership after rotation")
-for token in ("topBack = navInTop", "bottom = browsing && state.bottomEnabled", "topWithoutBottomSummary"):
+for token in ("topBack = navInTop", "bottom = browsing && state.bottomEnabled", "topSummary", "menuSummary", "blankPage", "refresh = chrome"):
     if token not in chrome: errors.append(f"chrome policy missing {token}")
-if "Back and Forward move into the top bar" not in settings:
-    errors.append("browser settings must explain top-bar navigation when bottom bar is off")
+if "Refresh is always visible" not in settings:
+    errors.append("browser settings must explain the permanent refresh control")
+if "Pull to refresh" not in settings:
+    errors.append("browser settings must keep pull-to-refresh opt-in")
 
 ns = "{http://schemas.android.com/apk/res/android}"
 layout = ET.parse(RES / "layout/activity_main.xml")
@@ -47,7 +49,8 @@ for name in ("top_toolbar", "bottom_toolbar"):
     m = re.fullmatch(r"(\d+)dp", value)
     if not m or int(m.group(1)) > 48: errors.append(f"{name} must stay <=48dp; found {value}")
 ids = [e.get(ns + "id", "").removeprefix("@+id/") for e in layout.iter() if e.get(ns + "id", "").startswith("@+id/")]
-for earlier, later in (("btn_home", "btn_top_back"), ("btn_top_back", "btn_top_forward"), ("btn_top_forward", "url_toolbar"), ("url_toolbar", "tab_count"), ("tab_count", "btn_menu")):
+for earlier, later in (("btn_top_back", "btn_top_forward"), ("btn_top_forward", "url_toolbar"),
+                       ("url_toolbar", "btn_refresh"), ("btn_refresh", "tab_count"), ("tab_count", "btn_menu")):
     if earlier in ids and later in ids and ids.index(earlier) > ids.index(later):
         errors.append(f"top bar order must place {earlier} before {later}")
 
@@ -61,6 +64,21 @@ if "Key lettering" not in kbsettings or "Height" not in kbsettings:
     errors.append("keyboard settings must expose height and lettering controls")
 if "baseHeight(): Int = 312" in service or "val keyboardBase = dp(312f)" in resize:
     errors.append("keyboard must not return to one fixed 312dp base height")
+
+if "installPullToRefresh" not in main:
+    errors.append("pull-to-refresh must be installed on demand, not always wrapping the page")
+if "swipeRefresh = findViewById" in main:
+    errors.append("the browser must not always create a SwipeRefreshLayout")
+if "isBlankUrl" not in chrome or "addressText" not in chrome:
+    errors.append("chrome policy must own blank-tab address handling")
+if "PhormiTabMemoryPolicy.DEFAULT_GRACE_MILLIS" not in main:
+    errors.append("tab memory budget must honour the recently-used grace window")
+if "PhormiDesktopMode.reflowScript()" not in main:
+    errors.append("rotation must reflow pages instead of reloading them")
+if "SCREEN_ORIENTATION_FULL_SENSOR" not in main:
+    errors.append("fullscreen video must follow the device sensor")
+if "requestLoadUrl" not in main or "PhormiNetworkPolicy" not in main:
+    errors.append("page navigation must use the LAN/HTTPS address policy")
 
 for name in ("PhormiBrowserChromeTest.kt", "PhormiKeyboardMetricsTest.kt"):
     if not (ROOT / "app/src/test/java/com/uong/phormi" / name).is_file():

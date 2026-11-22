@@ -62,15 +62,26 @@ class PhormiDesktopModeTest {
     @Test
     fun `viewport reconciliation script is idempotent and local`() {
         val script = PhormiDesktopMode.viewportScript()
-        assertTrue(script.contains("width=" + PhormiDesktopMode.DESKTOP_VIEWPORT_WIDTH))
+        assertTrue(script.contains("window.screen.width"))
         assertTrue(script.contains("meta[name=\"viewport\"]"))
         assertFalse(script.contains("http://"))
         assertFalse(script.contains("https://"))
     }
 
     @Test
-    fun `desktop viewport clears common responsive desktop breakpoints`() {
-        assertTrue(PhormiDesktopMode.DESKTOP_VIEWPORT_WIDTH >= 1024)
-        assertTrue(PhormiDesktopMode.viewportScript().contains("width=1280"))
+    fun `desktop viewport is the real screen width, never a fixed slab`() {
+        // A fixed 1280px viewport scaled into a 412px phone made text unreadable and
+        // pushed edge controls off-screen. The width must come from the device.
+        val script = PhormiDesktopMode.viewportScript()
+        assertTrue(script.contains("initial-scale=1"))
+        assertFalse("no fixed-width slab", script.contains("width=1280"))
+    }
+
+    @Test
+    fun `rotation reflows layouts without navigating`() {
+        val script = PhormiDesktopMode.reflowScript()
+        assertTrue(script.contains("resize"))
+        assertFalse(script.contains("location.reload"))
+        assertFalse(script.contains("http://"))
     }
 }

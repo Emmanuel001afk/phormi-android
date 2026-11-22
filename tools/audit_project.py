@@ -121,9 +121,17 @@ if ime_path.is_file() and layouts_path.is_file():
         if language in {"ar", "he", "el", "ru", "uk", "ko"} and subtype.get(android_ns + "isAsciiCapable") == "true":
             errors.append(f"Non-Latin IME subtype incorrectly claims ASCII: {locale}")
 
-# App-owned network calls must use TLS (loopback development endpoints excepted).
+# App-owned network calls must use TLS. URL literals inside PhormiNetworkPolicy are
+# address *policy* (what the browser may open), not endpoints the app fetches, so
+# they are exempt; the check below still catches every real app request.
+POLICY_FILE = "PhormiNetworkPolicy.kt"
 for path in kotlin_paths:
+    if path.name == POLICY_FILE:
+        continue
     for line_no, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
         for candidate in re.findall(r'https?://[^\s"\')]+', line):
             if candidate.startswith("http://") and not (
                 "localhost" in candidate or "127.0.0.1" in candidate

@@ -42,11 +42,26 @@ The group manager shows color, live tab count, note and host previews. Empty gro
 
 A new WebView can report `about:blank` before the requested website commits. The browser records the requested destination before `loadUrl`, keeps the last committed navigation authoritative over that temporary blank value, and repairs stale `New Tab` titles from the host. Opening the overview flushes the snapshot immediately. Returning Home explicitly resets the destination, so Home is still a real blank tab.
 
+## Memory and blank tabs
+
+A tab that comes back empty means its renderer was discarded while the user was still
+using it. Phormi now applies a **10-minute grace window** before any page can be
+suspended, on top of the existing protection list (active tab, split panes, AI work,
+device access, private tabs, local search results, playing media, unsaved edits).
+Discarding still snapshots navigation state and scroll position, and restoring puts
+both back.
+
 ## Browser chrome
 
-- One top layer, **48dp** high, with 48dp touch targets.
-- **Home is visible on phones and tablets whenever a website is open.** It is hidden only while already on Home.
-- The optional bottom layer remains **48dp** and is off by default.
+- One top layer, **48dp** high, ordered like Chrome:
+  **Back · Forward · address · Refresh · Tabs · Menu**, with Home in the menu
+  (Chrome's overflow placement on phones).
+- **Refresh is permanent** and becomes Stop while a page loads; it is empty and inert
+  on a blank tab.
+- Tab controls (Tabs, Tab overview, New tab, Close tab) are one tap away in the menu,
+  which is the phone equivalent of Chrome's tab strip.
+- The address field is cleared with the page. A cleared tab shows no stale URL.
+- The optional bottom layer remains **48dp**, carries Back/Forward only, and is off by default.
 - Android status/navigation bars are system UI and are not included in app-toolbar heights.
 
 ## Validation

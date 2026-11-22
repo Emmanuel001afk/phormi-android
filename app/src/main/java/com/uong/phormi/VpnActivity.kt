@@ -55,6 +55,7 @@ class VpnActivity : AppCompatActivity() {
     private var selected: VpnServer? = null
 
     companion object {
+        const val EXTRA_AUTO_CONNECT = "vpn_auto_connect"
         private const val REQ_VPN_PREPARE = 9101
         // Supported clients now live in OpenVpnController.API_PACKAGES, which is the
         // list actually used when binding. Duplicating it here caused the mismatch
@@ -219,6 +220,25 @@ class VpnActivity : AppCompatActivity() {
         status.text = "Disconnected"
         PhormiVpnNotification.clear(this)
         refreshConnectionUi()
+    }
+
+    /**
+     * The browser's VPN button lands here directly when a server is already saved, so
+     * starting the tunnel is one tap instead of navigating a list first. `manual` is
+     * sent by the "choose a server" path and always shows the full screen.
+     */
+    private fun autoConnectIfRequested() {
+        if (!intent.getBooleanExtra(EXTRA_AUTO_CONNECT, false)) return
+        val prefs = getSharedPreferences("phormi_vpn", MODE_PRIVATE)
+        val label = prefs.getString("selected_label", null)
+        if (label.isNullOrBlank() || prefs.getBoolean("vpn_requested", false)) return
+        status.text = "Reconnecting to $label"
+        connectSelected()
+    }
+
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        if (savedInstanceState == null) autoConnectIfRequested()
     }
 
     private fun decodeOvpn(ovpnB64: String): String? {
