@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  Non-layout IDs. `View.setTag(int, Object)` needs a real resource id, which is how a
-  per-WebView flag is stored without adding a field to Tab.
--->
-<resources>
-    <!-- Marks a WebView that already has the data-saver image-block script registered. -->
-    <item name="data_saver_image_block" type="id" />
-</resources>

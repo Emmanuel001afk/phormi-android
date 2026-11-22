@@ -54,10 +54,13 @@ The old `always` value written by earlier builds is still read as Text only.
 - **A refresh still refreshes.** `LOAD_CACHE_ELSE_NETWORK` will happily serve an expired
   copy forever. Tapping ↻ (or pulling) reloads with the cache bypassed and restores the
   saving preference on the next page start, so a stale page is never un-refreshable.
-- **The mode change says what it costs.** Android cannot un-register a document-start
-  script and cannot undo an image block in a document that already rendered, so
-  switching mode reloads the current page. The chooser states that instead of letting
-  the user discover a jump. Picking the mode already active does not reload.
+- **Turning the saver off actually restores images.** The block is a document-start
+  script, and those are permanent unless removed. Each WebView keeps its
+  `ScriptHandler`, and switching to Off or Standard calls `remove()`, so a page cannot
+  stay image-less because it once ran under Text only.
+- **The mode change says what it costs.** A live document cannot be un-blocked in
+  place, so switching mode reloads the current page. The chooser states that instead of
+  letting the user discover a jump. Picking the mode already active does not reload.
 
 The mode applies to every live tab immediately and to new tabs on creation. It never
 proxies, rewrites or uploads browsing data.

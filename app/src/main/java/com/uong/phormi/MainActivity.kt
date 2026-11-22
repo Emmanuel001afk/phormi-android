@@ -234,6 +234,13 @@ class MainActivity : AppCompatActivity() {
      * (with its whole document) alive until the next refresh happened to overwrite it.
      */
     private var pendingCacheRestoreFor: java.lang.ref.WeakReference<WebView>? = null
+    /**
+     * Removable handles for the data-saver image block, one per WebView. Mapped weakly so
+     * an evicted tab and its handler can be collected; handlers for WebViews that are
+     * explicitly cleared are removed eagerly.
+     */
+    private val imageBlockHandlers =
+        java.util.WeakHashMap<WebView, androidx.webkit.ScriptHandler>()
     /** One reload per gesture: set when a hold fires, cleared when the fingers lift. */
     private var holdFired = false
     /** Screen position of the finger that started the current gesture. */
@@ -2389,6 +2396,7 @@ class MainActivity : AppCompatActivity() {
                 (view.parent as? ViewGroup)?.removeView(view)
                 unregisterForContextMenu(view)
                 if (pendingCacheRestoreFor?.get() === view) pendingCacheRestoreFor = null
+                imageBlockHandlers.remove(view)
                 view.stopLoading(); view.destroy()
                 tab.discardReason = "Suspended to release page memory"
                 saveTabs()
@@ -3334,32 +3342,43 @@ class MainActivity : AppCompatActivity() {
      * Applies the data-saver settings to one WebView. Called on creation and on resume,
      * so a mode change reaches every tab without a restart.
      */
+    @Suppress("DEPRECATION")
     private fun applyDataSaverTo(webView: WebView, userAskedForFreshCopy: Boolean = false) {
         val saver = PhormiDataSaver.settings(dataSaverMode())
+        // A stale-but-usable copy beats a blank page when the network is poor, but never
+        // when the user just asked for a fresh one.
+        val cacheMode = if (PhormiDataSaver.preferCache(saver, userAskedForFreshCopy)) {
+            WebSettings.LOAD_CACHE_ELSE_NETWORK
+        } else {
+            WebSettings.LOAD_DEFAULT
+        }
         webView.settings.apply {
-            @Suppress("DEPRECATION")
-            // A stale-but-usable copy beats a blank page when the network is poor, but
-            // never when the user just asked for a fresh one.
-            cacheMode = if (PhormiDataSaver.preferCache(saver, userAskedForFreshCopy)) {
-                WebSettings.LOAD_CACHE_ELSE_NETWORK
-            } else {
-                WebSettings.LOAD_DEFAULT
-            }
+            this.cacheMode = cacheMode
             mediaPlaybackRequiresUserGesture = saver.mediaGestureRequired
-            @Suppress("DEPRECATION")
-            blockNetworkImage = saver.blockImages
         }
-        // Android has no "remove document start script". Registering the block once per
-        // WebView is therefore correct: the flag decides whether it exists at all, and a
-        // mode change is applied by reloading into a fresh renderer.
-        if (saver.blockImages && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            if (webView.tag(R.id.data_saver_image_block) == null) {
-                runCatching {
-                    WebViewCompat.addDocumentStartJavaScript(webView, PhormiDataSaver.imageBlockScript(), setOf("*"))
-                    webView.setTag(R.id.data_saver_image_block, true)
-                }
-            }
+        // The image block is a document-start script, so it must be removable: without
+        // ScriptHandler.remove() a WebView that once had the block would keep hiding
+        // images after the user switched back to Off or Standard. register() and
+        // unregister() are symmetric so that cannot happen.
+        if (saver.blockImages) registerImageBlock(webView) else unregisterImageBlock(webView)
+    }
+
+    /** Install the image-block script once per WebView, keeping its handler. */
+    private fun registerImageBlock(webView: WebView) {
+        if (imageBlockHandlers.containsKey(webView)) return
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        runCatching {
+            val handler = WebViewCompat.addDocumentStartJavaScript(
+                webView, PhormiDataSaver.imageBlockScript(), setOf("*")
+            )
+            imageBlockHandlers[webView] = handler
         }
+    }
+
+    /** Undo the block, so switching the saver off really stops hiding images. */
+    private fun unregisterImageBlock(webView: WebView) {
+        val handler = imageBlockHandlers.remove(webView) ?: return
+        runCatching { handler.remove() }
     }
 
     /**
