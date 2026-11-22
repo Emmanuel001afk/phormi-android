@@ -2305,12 +2305,21 @@ class MainActivity : AppCompatActivity() {
         budgetWork?.let(memoryHandler::removeCallbacks)
         budgetWork = Runnable { enforceTabBudget() }.also { memoryHandler.postDelayed(it, 800) }
     }
-    private fun enforceTabBudget(limit: Int = PhormiBrowserPreferences.liveTabBudget(this)) {
+    /**
+     * @param honourGrace false for real memory pressure (`onTrimMemory`), true for the
+     *   normal background budget pass where keeping a recently used page warm matters
+     */
+    private fun enforceTabBudget(
+        limit: Int = PhormiBrowserPreferences.liveTabBudget(this),
+        honourGrace: Boolean = true
+    ) {
         val keep = protectedTabIds()
         val candidates = PhormiTabMemoryPolicy.candidates(tabs.map {
             PhormiTabMemoryPolicy.Entry(it.id, it.webView != null, it.lastUsed,
                 it.id in keep || it.hasDeviceAccess || it.isGhost || it.searchQuery != null)
-        }, limit, now = System.currentTimeMillis(), graceMillis = PhormiTabMemoryPolicy.DEFAULT_GRACE_MILLIS)
+        }, limit, now = System.currentTimeMillis(),
+            graceMillis = PhormiTabMemoryPolicy.DEFAULT_GRACE_MILLIS,
+            honourGrace = honourGrace)
         candidates.forEach { id ->
             val tab = tabs.firstOrNull { it.id == id } ?: return@forEach
             val view = tab.webView ?: return@forEach
@@ -3232,7 +3241,10 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) enforceTabBudget(1)
+        // Real pressure outranks the warm-page grace window: free memory now.
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            enforceTabBudget(1, honourGrace = false)
+        }
     }
 
     override fun onDestroy() {
@@ -3857,7 +3869,11 @@ class MainActivity : AppCompatActivity() {
         sitePermissions.onResult(requestCode)
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    /**
+     * Public, not protected: instrumentation drives the real menu-result path instead
+     * of a re-implementation, so the test cannot drift away from production.
+     */
+    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == REQ_WALLPAPER) {
             if (resultCode == Activity.RESULT_OK && data?.data != null) {
                 val uri = data.data!!

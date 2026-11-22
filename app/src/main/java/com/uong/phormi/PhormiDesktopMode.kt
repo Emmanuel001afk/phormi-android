@@ -15,9 +15,6 @@ object PhormiDesktopMode {
     const val KEY_MOBILE_HOSTS = "desktop_sites_off"
     const val KEY_POLICY_DIRTY = "desktop_policy_dirty"
 
-    /** Wide enough for common desktop breakpoints (GitHub switches at 1012px). */
-    const val DESKTOP_VIEWPORT_WIDTH = 1280
-
     fun normalizeHost(url: String?): String? {
         if (url.isNullOrBlank()) return null
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return null

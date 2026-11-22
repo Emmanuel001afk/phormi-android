@@ -74,8 +74,7 @@ class PhormiDesktopModeTest {
         // pushed edge controls off-screen. The width must come from the device.
         val script = PhormiDesktopMode.viewportScript()
         assertTrue(script.contains("initial-scale=1"))
-        assertFalse(script.contains("width=1280"))
-        assertTrue(PhormiDesktopMode.DESKTOP_VIEWPORT_WIDTH >= 1024)
+        assertFalse("no fixed-width slab", script.contains("width=1280"))
     }
 
     @Test
