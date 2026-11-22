@@ -1729,8 +1729,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshActivePage() {
         val tab = tabs.firstOrNull { it.id == activeTabId }
-        val query = tab?.searchQuery
         val page = activeWebView()
+        // A stored query is only refreshable as a search when the tab is actually on
+        // that search page. Otherwise a leftover query would replace a real website
+        // with search results, which is the same class of bug as a stale address.
+        val onSearchPage = page?.url?.let { PhormiSearchHistory.isSearchUrl(it) } == true
+        val query = tab?.searchQuery?.takeIf { onSearchPage }
         if (query != null) {
             // Reloading the cached result document keeps the user's scroll position
             // and avoids firing the whole provider fan-out again for a simple refresh.

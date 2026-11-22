@@ -77,7 +77,12 @@ class PhormiBrowserChromeTest {
         // A cleared tab is about:blank. A real URL is always shown, even if the local
         // search query was blanked - hiding a live page's address is the bug, not a fix.
         assertEquals("https://youtube.com", PhormiBrowserChrome.addressText("https://youtube.com", ""))
-        assertEquals("", PhormiBrowserChrome.addressText("about:blank", "old search"))
+        // Nor may a stale local-search query outrank the live page's address.
+        assertEquals("https://youtube.com", PhormiBrowserChrome.addressText("https://youtube.com", "old search"))
+        assertEquals("", PhormiBrowserChrome.addressText("about:blank", ""))
+        // The query is only a stand-in while there is no address to show.
+        assertEquals("cats", PhormiBrowserChrome.addressText("about:blank", "cats"))
+        assertEquals("cats", PhormiBrowserChrome.addressText(null, "cats"))
         assertEquals("", PhormiBrowserChrome.addressText(null, null))
         assertTrue(PhormiBrowserChrome.isBlankUrl("about:blank"))
         assertTrue(PhormiBrowserChrome.isBlankUrl(""))

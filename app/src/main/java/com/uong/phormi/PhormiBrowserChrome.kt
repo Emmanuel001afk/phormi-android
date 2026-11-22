@@ -75,11 +75,19 @@ object PhormiBrowserChrome {
         )
     }
 
-    /** What the omnibox shows for the active tab. */
+    /**
+     * What the omnibox shows for the active tab.
+     *
+     * A live page's address always wins. A local search query is only a stand-in for a
+     * page that has no address yet (a unified search that has not committed, or a
+     * cleared tab); letting a leftover query outrank a real URL is how the field ends
+     * up showing something that is not the page the user is on.
+     */
     fun addressText(url: String?, searchQuery: String?): String {
-        if (!searchQuery.isNullOrBlank()) return searchQuery
         val value = url?.trim().orEmpty()
-        return if (isBlankUrl(value)) "" else value
+        if (!isBlankUrl(value)) return value
+        if (!searchQuery.isNullOrBlank()) return searchQuery
+        return ""
     }
 
     /**

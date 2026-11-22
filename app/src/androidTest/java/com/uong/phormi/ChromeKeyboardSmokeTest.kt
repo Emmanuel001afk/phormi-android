@@ -79,6 +79,8 @@ class ChromeKeyboardSmokeTest {
                     urlWidth >= (140 * density).toInt())
                 // Chrome order: Back, Forward, address, Refresh, Tabs, Menu.
                 assertTrue(activity.findViewById<View>(R.id.btn_top_back).left <
+                    activity.findViewById<View>(R.id.btn_top_forward).left)
+                assertTrue(activity.findViewById<View>(R.id.btn_top_forward).left <
                     activity.findViewById<View>(R.id.url_toolbar).left)
                 assertTrue(activity.findViewById<View>(R.id.url_toolbar).left <
                     activity.findViewById<View>(R.id.btn_refresh).left)
