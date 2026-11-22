@@ -55,6 +55,11 @@ for path in (*layouts, *(RES / "xml").glob("*.xml"), *(RES / "values").glob("*.x
             value = element.get(android_ns + "id", "")
             if value.startswith("@+id/"):
                 ids.add(value.removeprefix("@+id/"))
+            # `values/ids.xml` declares ids with <item type="id" name="..."/>, which is
+            # how a view tag key is defined. Only `@+id/` was recognised, so a real,
+            # valid id looked unknown and the check reported a false failure.
+            if element.tag == "item" and element.get("type") == "id" and element.get("name"):
+                ids.add(element.get("name"))
     except ET.ParseError as exc:
         errors.append(f"invalid XML: {path.relative_to(ROOT)}: {exc}")
 

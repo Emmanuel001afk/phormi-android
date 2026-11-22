@@ -226,6 +226,14 @@ class MainActivity : AppCompatActivity() {
     private val holdDriftLimitPx by lazy {
         PhormiHoldToRefresh.MAX_DRIFT_DP * resources.displayMetrics.density
     }
+    /**
+     * WebView whose data-saver cache preference must be restored on its next load.
+     *
+     * Deliberately a WeakReference: a tab can be closed or evicted between the refresh
+     * and its page-start callback, and a strong field would keep a destroyed WebView
+     * (with its whole document) alive until the next refresh happened to overwrite it.
+     */
+    private var pendingCacheRestoreFor: java.lang.ref.WeakReference<WebView>? = null
     /** One reload per gesture: set when a hold fires, cleared when the fingers lift. */
     private var holdFired = false
     /** Screen position of the finger that started the current gesture. */
@@ -836,8 +844,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Data saver that states what it really does. WebView has no compression proxy, so
-     * this is cache/media/image control, applied to every live tab immediately.
+     * Data saver that states what it really does, and applies it.
+     *
+     * A mode change is not free: the cache, autoplay and image-block settings only take
+     * effect in a fresh renderer, because Android cannot un-register a document-start
+     * script. The page therefore reloads on the same URL, and the dialog says so before
+     * the user picks instead of leaving them to notice a jump.
      */
     private fun showDataSaverChooser() {
         val current = dataSaverMode()
@@ -848,9 +860,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(24, 8, 24, 8)
         }
         content.addView(TextView(this).apply {
-            text = "Data saver works inside the browser only. It prefers cached copies, stops " +
-                "media autoplay and can block images. Image blocking is what saves the most " +
-                "data; there is no server-side compression proxy."
+            text = "Data saver works inside the browser only: cached copies, no media " +
+                "autoplay, and an optional image block. It is not a compression proxy, so " +
+                "there is no invented percentage. Switching mode reloads the current page, " +
+                "because WebView can only apply cache and image rules to a new document."
             setTextColor(PhormiUiColors.secondary(this@MainActivity))
             setPadding(0, 0, 0, 8)
         })
@@ -860,16 +873,33 @@ class MainActivity : AppCompatActivity() {
                 text = if (index == checked) "✓ " + labels[index] else labels[index]
                 isAllCaps = false
                 setOnClickListener {
-                    prefs.edit().putString(PhormiDataSaver.KEY_MODE, mode).apply()
-                    tabs.forEach { tab -> tab.webView?.let(::applyLiveWebSettings) }
-                    tabs.forEach { tab -> tab.webView?.let { view -> runCatching { view.reload() } } }
+                    setDataSaverMode(mode)
                     dialog.dismiss()
-                    Toast.makeText(this@MainActivity, "Data saver: " + PhormiDataSaver.label(mode), Toast.LENGTH_SHORT).show()
                 }
             }
             content.addView(button, LinearLayout.LayoutParams(-1, 52).apply { topMargin = 4; bottomMargin = 4 })
         }
         dialog.show()
+    }
+
+    /**
+     * Persist the mode, apply it to every live tab, and reload only when the new mode
+     * actually changes what the renderer must do.
+     */
+    private fun setDataSaverMode(mode: String) {
+        val previous = dataSaverMode()
+        prefs.edit().putString(PhormiDataSaver.KEY_MODE, mode).apply()
+        val reload = PhormiDataSaver.requiresReload(previous, mode)
+        tabs.forEach { tab ->
+            val view = tab.webView ?: return@forEach
+            applyLiveWebSettings(view)
+            // The start page has no document to re-render, and an in-flight navigation
+            // should finish rather than be restarted by a settings change.
+            if (reload && view.url.orEmpty().startsWith("http", true)) {
+                runCatching { view.reload() }
+            }
+        }
+        Toast.makeText(this, "Data saver: " + PhormiDataSaver.label(mode), Toast.LENGTH_SHORT).show()
     }
 
     private fun showAppearanceChooser() {
@@ -1750,9 +1780,25 @@ class MainActivity : AppCompatActivity() {
                 // Chrome's refresh is a no-op on a blank tab: no spinner, no stray reload.
                 swipeRefresh?.isRefreshing = false
                 updateRefreshButton()
-            } else page.reload()
+            } else reloadBypassingCache(page)
         }
         syncOmnibox()
+    }
+
+    /**
+     * Reload with a fresh copy, then put the data-saver cache preference back.
+     *
+     * Under Standard/Text only the cache mode is LOAD_CACHE_ELSE_NETWORK, which will
+     * happily re-serve an expired page. A user who taps ↻ is asking to replace that
+     * copy, so the reload runs with LOAD_DEFAULT and the saving setting is restored on
+     * the next page start, leaving the preference untouched on disk.
+     */
+    private fun reloadBypassingCache(page: WebView) {
+        applyDataSaverTo(page, userAskedForFreshCopy = true)
+        page.reload()
+        // Restoring before the new document commits would defeat the bypass, so it
+        // happens on the next page-start instead of immediately.
+        pendingCacheRestoreFor = java.lang.ref.WeakReference(page)
     }
 
     /**
@@ -2342,6 +2388,7 @@ class MainActivity : AppCompatActivity() {
                 tab.webView = null // Detach ownership before callbacks from stop/destroy.
                 (view.parent as? ViewGroup)?.removeView(view)
                 unregisterForContextMenu(view)
+                if (pendingCacheRestoreFor?.get() === view) pendingCacheRestoreFor = null
                 view.stopLoading(); view.destroy()
                 tab.discardReason = "Suspended to release page memory"
                 saveTabs()
@@ -3283,25 +3330,67 @@ class MainActivity : AppCompatActivity() {
 
     private fun dataSaverMode(): String = prefs.getString(PhormiDataSaver.KEY_MODE, PhormiDataSaver.OFF) ?: PhormiDataSaver.OFF
 
-    private fun applyLiveWebSettings(webView: WebView) {
+    /**
+     * Applies the data-saver settings to one WebView. Called on creation and on resume,
+     * so a mode change reaches every tab without a restart.
+     */
+    private fun applyDataSaverTo(webView: WebView, userAskedForFreshCopy: Boolean = false) {
         val saver = PhormiDataSaver.settings(dataSaverMode())
+        webView.settings.apply {
+            @Suppress("DEPRECATION")
+            // A stale-but-usable copy beats a blank page when the network is poor, but
+            // never when the user just asked for a fresh one.
+            cacheMode = if (PhormiDataSaver.preferCache(saver, userAskedForFreshCopy)) {
+                WebSettings.LOAD_CACHE_ELSE_NETWORK
+            } else {
+                WebSettings.LOAD_DEFAULT
+            }
+            mediaPlaybackRequiresUserGesture = saver.mediaGestureRequired
+            @Suppress("DEPRECATION")
+            blockNetworkImage = saver.blockImages
+        }
+        // Android has no "remove document start script". Registering the block once per
+        // WebView is therefore correct: the flag decides whether it exists at all, and a
+        // mode change is applied by reloading into a fresh renderer.
+        if (saver.blockImages && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            if (webView.tag(R.id.data_saver_image_block) == null) {
+                runCatching {
+                    WebViewCompat.addDocumentStartJavaScript(webView, PhormiDataSaver.imageBlockScript(), setOf("*"))
+                    webView.setTag(R.id.data_saver_image_block, true)
+                }
+            }
+        }
+    }
+
+    /**
+     * A valid 1x1 transparent PNG. Returning real image bytes instead of a generic error
+     * keeps pages from rendering a broken-image icon and from retrying the request.
+     */
+    private fun blockedImageResponse(): android.webkit.WebResourceResponse {
+        val onePixel = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4.toByte(), 0x89.toByte(),
+            0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54,
+            0x78, 0x9C.toByte(), 0x63, 0x00, 0x01, 0x00, 0x00, 0x05,
+            0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4.toByte(),
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
+            0xAE.toByte(), 0x42, 0x60, 0x82.toByte()
+        )
+        return android.webkit.WebResourceResponse(
+            "image/png", null, java.io.ByteArrayInputStream(onePixel)
+        )
+    }
+
+    private fun applyLiveWebSettings(webView: WebView) {
         webView.settings.apply {
             textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
             javaScriptEnabled = prefs.getBoolean("security_javascript", true)
             mixedContentMode = if (prefs.getBoolean("security_mixed_content", false))
                 WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            // Data saver: read from the disk cache first, keep the last copy usable
-            // offline, and never let media start on its own.
-            cacheMode = if (saver.cacheFirst) WebSettings.LOAD_CACHE_ELSE_NETWORK else WebSettings.LOAD_DEFAULT
-            mediaPlaybackRequiresUserGesture = saver.mediaGestureRequired
-            @Suppress("DEPRECATION")
-            blockNetworkImage = saver.blockImages
         }
-        if (saver.blockImages && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            runCatching {
-                WebViewCompat.addDocumentStartJavaScript(webView, PhormiDataSaver.imageBlockScript(), setOf("*"))
-            }
-        }
+        applyDataSaverTo(webView)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, prefs.getBoolean("security_third_party_cookies", true))
     }
 
@@ -3309,33 +3398,26 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView(webView: WebView) {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, PhormiTabMemoryPolicy.INSTALL_DIRTY_TRACKER, setOf("*"))
-            if (PhormiDataSaver.settings(dataSaverMode()).blockImages) {
-                runCatching {
-                    WebViewCompat.addDocumentStartJavaScript(webView, PhormiDataSaver.imageBlockScript(), setOf("*"))
-                }
-            }
         }
+        // Data saver (cache mode, autoplay, image block) lives in one helper so the live
+        // path and the creation path cannot drift apart again.
+        applyDataSaverTo(webView)
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             webView.setRendererPriorityPolicy(
                 WebView.RENDERER_PRIORITY_IMPORTANT,
                 true
             )
         }
-        val saver = PhormiDataSaver.settings(dataSaverMode())
         webView.settings.apply {
             javaScriptEnabled = prefs.getBoolean("security_javascript", true)
             domStorageEnabled = true
             databaseEnabled = true
-            cacheMode = if (saver.cacheFirst) WebSettings.LOAD_CACHE_ELSE_NETWORK else WebSettings.LOAD_DEFAULT
             if (WebViewFeature.isFeatureSupported(WebViewFeature.COOKIE_INTERCEPT)) {
                 runCatching { WebSettingsCompat.setCookiesIncludedInShouldInterceptRequest(this, true) }
             }
             if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
                 runCatching { WebSettingsCompat.setBackForwardCacheEnabled(this, true) }
             }
-            mediaPlaybackRequiresUserGesture = saver.mediaGestureRequired
-            @Suppress("DEPRECATION")
-            blockNetworkImage = saver.blockImages
             setGeolocationEnabled(true)
             textZoom = PhormiBrowserPreferences.textZoom(this@MainActivity)
             mixedContentMode = if (prefs.getBoolean("security_mixed_content", false)) {
@@ -3402,6 +3484,13 @@ class MainActivity : AppCompatActivity() {
                         "text/html", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0))
                     )
                 }
+                // Text only must refuse image requests before they are downloaded.
+                // blockNetworkImage is deprecated and inert since API 30, so relying on
+                // it hid the images while still paying for the bytes.
+                if (request != null && PhormiDataSaver.blocksImageRequest(
+                        dataSaverMode(), request.url?.toString(), request.isForMainFrame
+                    )
+                ) return blockedImageResponse()
                 request?.url?.toString()?.let {
                     PhormiDownloadEngine.rememberWebRequestHeaders(it, request.requestHeaders)
                 }
@@ -3541,6 +3630,10 @@ class MainActivity : AppCompatActivity() {
                 view?.let { sitePermissions.cancel(it) }
                 if (view === activeWebView() && !urlBar.hasFocus() && url != NEW_TAB_URL && !url.orEmpty().startsWith("https://phormi.local/")) urlBar.setText(url.orEmpty())
                 tabs.find { it.webView === view }?.let { PhormiBrowserPerformance.start(it.id) }
+                if (view != null && view === pendingCacheRestoreFor?.get()) {
+                    pendingCacheRestoreFor = null
+                    applyDataSaverTo(view)
+                }
                 super.onPageStarted(view, url, favicon)
                 if (view == activeWebView()) updateSiteSecurityIndicator()
                 val target = url.orEmpty()

@@ -147,7 +147,7 @@ Reported issues and what changed:
 | Video fullscreen did not rotate | HTML5 fullscreen uses `full_sensor`; leaving it restores `fullUser`. |
 | Keyboard floats above a gap | Docked IME inset no longer collapses to 0 on gesture navigation; window reaches the physical edge with a 24dp pill clearance. |
 | LAN transfer server could not open | `PhormiNetworkPolicy` allows loopback/LAN/`.local` HTTP, asks before public HTTP, and `network_security_config` permits the browser to make the request. |
-| Data saver wanted | Cache-first, no autoplay, optional image blocking, stated honestly (no compression proxy). |
+| Data saver wanted | Cache-first, no autoplay, and image requests **refused before download** (`blockNetworkImage` is inert from API 30), stated honestly with no compression proxy. Refresh bypasses the cache; a mode change reloads once and says so. |
 | VPN "can it live in the browser?" | Documented: engine needs `VpnService` + a server. `OpenVpnController` API path kept, engine validator exposed, one-tap reconnect added. |
 
 Validation: all audit scripts pass locally, including the new chrome-order, refresh,

@@ -86,8 +86,11 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
         section(content, "Networks and data")
         option(content, "Flag local-network HTTP pages", "LAN addresses such as a transfer server, router or NAS at 192.168.1.20:8080 plus .local names always open. This controls whether they are labelled 'local network' in site information. Public sites always keep the 'continue over HTTP' warning.",
             PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
-        button(content, "Data saver · ${PhormiDataSaver.label(dataSaverMode())}") { showDataSaverChooser() }
-        description(content, "Cache-first loading, no media autoplay, and an optional image block. WebView has no compression proxy, so this saves data honestly rather than promising a percentage.")
+        // One implementation, owned by the browser. The old copy here wrote the pref and
+        // called recreate(), which left every open tab on the previous settings because
+        // nothing applied them to a live WebView. The current mode is shown read-only so
+        // there is no second code path to drift.
+        description(content, "Data saver: ${PhormiDataSaver.label(dataSaverMode())}. ${PhormiDataSaver.description(dataSaverMode())} Change it from the ⋮ menu: Features → Data saver.")
         button(content, "Allow again: HTTP sites I blocked") {
             prefs.edit().remove(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS).apply()
             AlertDialog.Builder(this)
@@ -136,19 +139,6 @@ class PhormiBrowserSettingsActivity : AppCompatActivity() {
 
     private fun dataSaverMode(): String =
         prefs.getString(PhormiDataSaver.KEY_MODE, PhormiDataSaver.OFF) ?: PhormiDataSaver.OFF
-
-    private fun showDataSaverChooser() {
-        val labels = PhormiDataSaver.modes.map { PhormiDataSaver.label(it) }.toTypedArray()
-        val checked = PhormiDataSaver.modes.indexOf(dataSaverMode()).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("Data saver")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.edit().putString(PhormiDataSaver.KEY_MODE, PhormiDataSaver.modes[which]).apply()
-                dialog.dismiss()
-                recreate()
-            }
-            .show()
-    }
 
     private fun section(root: LinearLayout, title: String) {
         root.addView(TextView(this).apply {
