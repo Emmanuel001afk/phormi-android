@@ -12,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.json.JSONArray
@@ -40,6 +41,20 @@ class TabOverviewSmokeTest {
             .putInt("active_index", 0).putString("tab_view_mode", "vertical").commit()
         val group = TabGroupManager(context).create("Work")
         TabGroupManager(context).assignTab(group.id, 14)
+    }
+
+    private fun clickResource(resourceName: String) {
+        val selector = By.res(context.packageName, resourceName)
+        repeat(3) {
+            val target = device.wait(Until.findObject(selector), 3000) ?: return@repeat
+            try {
+                target.click()
+                return
+            } catch (_: StaleObjectException) {
+                device.waitForIdle()
+            }
+        }
+        fail("Could not click visible UI resource: $resourceName")
     }
 
     private fun tagged(root: View, tag: String): List<View> {
@@ -132,9 +147,9 @@ class TabOverviewSmokeTest {
             assertTrue(TabGroupManager(context).list().first { it.name == "Work" }.collapsed)
             device.findObject(By.desc("Expand group Work")).click()
             assertTrue(device.wait(Until.hasObject(By.desc("Collapse group Work")), 3000))
-            device.findObject(By.res("com.uong.phormi", "btn_select_tabs")).click()
-            device.findObject(By.res("com.uong.phormi", "btn_select_all_tabs")).click()
-            device.findObject(By.res("com.uong.phormi", "btn_group_selected")).click()
+            clickResource("btn_select_tabs")
+            clickResource("btn_select_all_tabs")
+            clickResource("btn_group_selected")
             assertTrue(device.wait(Until.hasObject(By.desc("Group choice Work")), 3000))
             device.findObject(By.desc("Group choice Work")).click()
             val result = scenario.result
