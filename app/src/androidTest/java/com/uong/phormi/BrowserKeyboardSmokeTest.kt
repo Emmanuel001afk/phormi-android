@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.*
@@ -27,6 +28,20 @@ class BrowserKeyboardSmokeTest {
     }
     private fun editor(type: Int): ActivityScenario<KeyboardTestActivity> = ActivityScenario.launch(
         Intent(context, KeyboardTestActivity::class.java).putExtra("input_type", type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+
+    private fun clickFreshDescription(description: String) {
+        repeat(3) {
+            device.waitForIdle()
+            val target = device.wait(Until.findObject(By.desc(description)), 2000) ?: return@repeat
+            try {
+                target.click()
+                return
+            } catch (_: StaleObjectException) {
+                // The IME may replace its accessibility nodes while its suggestion strip updates.
+            }
+        }
+        fail("Could not click refreshed accessibility target: $description")
+    }
 
     @Test fun phoneAndDateEditorsHaveBackspaceAndDone() {
         for (type in listOf(InputType.TYPE_CLASS_PHONE, InputType.TYPE_CLASS_DATETIME)) {
@@ -52,7 +67,7 @@ class BrowserKeyboardSmokeTest {
         editor(InputType.TYPE_CLASS_TEXT).use { scenario ->
             assertTrue(device.wait(Until.hasObject(By.desc("Backspace")), 7000))
             scenario.onActivity { it.editor.setText("A👍🏽"); it.editor.setSelection(it.editor.length()) }
-            device.findObject(By.desc("Backspace")).click()
+            clickFreshDescription("Backspace")
             scenario.onActivity { assertEquals("A", it.editor.text.toString()) }
         }
     }

@@ -478,20 +478,45 @@ class MainActivity : AppCompatActivity() {
         "TAB ${tab.id} | title=${tab.title.take(90)} | host=$host"
     }
 
+    private fun redactAiPagePayload(page: JSONObject): JSONObject {
+        fun redactFields(target: JSONObject, fields: List<String>) {
+            fields.forEach { key ->
+                if (target.has(key)) {
+                    target.put(key, PhormiSensitiveFieldPolicy.redactLikelyPaymentCardNumbers(target.optString(key)))
+                }
+            }
+        }
+        redactFields(page, listOf("title", "url", "text"))
+        page.optJSONArray("controls")?.let { controls ->
+            for (i in 0 until controls.length()) controls.optJSONObject(i)?.let { control ->
+                redactFields(control, listOf("text", "label"))
+            }
+        }
+        page.optJSONArray("links")?.let { links ->
+            for (i in 0 until links.length()) links.optJSONObject(i)?.let { link ->
+                redactFields(link, listOf("text", "href"))
+            }
+        }
+        return page
+    }
+
     private suspend fun readAiTabScreen(tabId: Int): String {
         val tab = tabs.firstOrNull { it.id == tabId && !it.isGhost } ?: return "TAB_NOT_FOUND"
         if (tab.deferredUrl != null) { resumeDeferredTab(tab); return "TAB_LOADING: retry reading after the page has loaded" }
         val view = tab.webView ?: return "TAB_LOADING"
+        val sensitivePattern = JSONObject.quote(PhormiSensitiveFieldPolicy.javascriptPattern)
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             view.onResume()
             view.evaluateJavascript(
                 """(function(){
+                    var sensitive=new RegExp($sensitivePattern,'i');
                     function privateField(e){
-                      var hint=((e.type||'')+' '+(e.name||'')+' '+(e.autocomplete||'')).toLowerCase();
-                      return /password|one.time.code|otp|pin|credit.card|cc.number|cc.csc|cvv|secret|token/.test(hint);
+                      var hint=((e.type||'')+' '+(e.name||'')+' '+(e.autocomplete||'')+' '+
+                        (e.placeholder||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.id||'')+' '+(e.getAttribute('inputmode')||''));
+                      hint=hint.replace(/([A-Z]+)([A-Z][a-z])/g,function(_,a,b){return a+' '+b;}).replace(/([a-z])([A-Z])/g,function(_,a,b){return a+' '+b;}).toLowerCase();
+                      return sensitive.test(hint);
                     }
-                    var text=(document.body&&document.body.innerText||'').slice(0,12000)
-                      .replace(/\\b(?:\\d[ -]?){12,19}\\b/g,'[private number]');
+                    var text=(document.body&&document.body.innerText||'').slice(0,12000);
                     return JSON.stringify({title:document.title||'',url:location.href.split(/[?#]/)[0],text:text,
                       controls:Array.from(document.querySelectorAll('input,textarea,button,a,select,[role=button],[contenteditable=true]'))
                         .filter(function(e){return !privateField(e)})
@@ -501,7 +526,9 @@ class MainActivity : AppCompatActivity() {
                           editable:!!(e.isContentEditable||e.tagName==='INPUT'||e.tagName==='TEXTAREA')}})})
                 })()""".trimIndent()
             ) { raw ->
-                val decoded = runCatching { org.json.JSONTokener(raw).nextValue().toString() }.getOrDefault(raw)
+                val decoded = runCatching {
+                    redactAiPagePayload(JSONObject(org.json.JSONTokener(raw).nextValue().toString())).toString()
+                }.getOrDefault(raw)
                 if (continuation.isActive) continuation.resume(decoded) {}
             }
         }
@@ -511,6 +538,7 @@ class MainActivity : AppCompatActivity() {
         val tab = tabs.firstOrNull { it.id == tabId && !it.isGhost } ?: return false
         if (tab.deferredUrl != null) { resumeDeferredTab(tab); return false }
         val view = tab.webView ?: return false
+        val sensitivePattern = JSONObject.quote(PhormiSensitiveFieldPolicy.javascriptPattern)
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             val script = when (action.optString("action").lowercase(Locale.US)) {
                 "navigate" -> {
@@ -518,17 +546,24 @@ class MainActivity : AppCompatActivity() {
                     if (!PhormiBrowserAiSafety.allowedUrl(url)) {
                         continuation.resume(false) {}; return@suspendCancellableCoroutine
                     }
-                    view.loadUrl(url)
-                    continuation.resume(true) {}; return@suspendCancellableCoroutine
+                    val navigated = navigateTopLevel(view, url)
+                    // A cleartext consent dialog is asynchronous; stop this plan rather than
+                    // letting it continue against a page that has not loaded yet.
+                    continuation.resume(navigated) {}; return@suspendCancellableCoroutine
                 }
                 "click" -> {
                     val label = JSONObject.quote(action.optString("text").trim().take(160))
                     """(function(){var q=$label.toLowerCase();if(!q)return false;
+                       var sensitive=new RegExp($sensitivePattern,'i');
+                       function privateField(x){var hint=((x.type||'')+' '+(x.name||'')+' '+(x.autocomplete||'')+' '+
+                         (x.placeholder||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.id||'')+' '+(x.getAttribute('inputmode')||''));
+                         hint=hint.replace(/([A-Z]+)([A-Z][a-z])/g,function(_,a,b){return a+' '+b;}).replace(/([a-z])([A-Z])/g,function(_,a,b){return a+' '+b;}).toLowerCase();return sensitive.test(hint)}
                        var es=Array.from(document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit],label'))
                          .filter(function(e){return e.getClientRects().length && !e.disabled});
                        function text(e){return ((e.innerText||e.value||e.getAttribute('aria-label')||e.title||'')+'').trim().toLowerCase()}
                        var e=es.find(function(x){return text(x)===q})||es.find(function(x){return text(x).includes(q)&&q.length>=3});
-                       if(!e||e.closest('form')&&e.closest('form').querySelector('input[type=password]'))return false;
+                       var form=e&&e.closest('form');
+                       if(!e||privateField(e)||form&&Array.from(form.querySelectorAll('input,textarea,select')).some(privateField))return false;
                        e.click();return true})()""".trimIndent()
                 }
                 "type" -> {
@@ -538,16 +573,23 @@ class MainActivity : AppCompatActivity() {
                        var e=name?es.find(function(x){return ((x.getAttribute('aria-label')||'')+' '+(x.placeholder||'')+' '+(x.name||'')).toLowerCase().includes(name)}):document.activeElement;
                        if(!e||!es.includes(e))e=es.find(function(x){return x.getClientRects().length&&!x.disabled});
                        if(!e||!e.getClientRects().length||e.disabled||e.readOnly)return false;
-                       var kind=((e.type||'')+' '+(e.name||'')+' '+(e.autocomplete||'')).toLowerCase();
-                       if(/password|otp|one.time.code|pin|cc.number|cc.csc|cvv|credit.card|secret|token/.test(kind))return false;
+                       var sensitive=new RegExp($sensitivePattern,'i');
+                       var hint=((e.type||'')+' '+(e.name||'')+' '+(e.autocomplete||'')+' '+(e.placeholder||'')+' '+
+                         (e.getAttribute('aria-label')||'')+' '+(e.id||'')+' '+(e.getAttribute('inputmode')||''));
+                       hint=hint.replace(/([A-Z]+)([A-Z][a-z])/g,function(_,a,b){return a+' '+b;}).replace(/([a-z])([A-Z])/g,function(_,a,b){return a+' '+b;}).toLowerCase();
+                       if(sensitive.test(hint))return false;
                        e.focus();var v=$value;
                        if(e.isContentEditable){e.textContent=v}else{var setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value');
                          if(setter&&setter.set)setter.set.call(e,v);else e.value=v}
                        e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()""".trimIndent()
                 }
                 "press_enter" -> """(function(){var e=document.activeElement;if(!e)return false;
-                    if(e.form){if(e.form.querySelector('input[type=password]'))return false;
-                      if(e.form.requestSubmit)e.form.requestSubmit();else e.form.submit();return true}
+                    var sensitive=new RegExp($sensitivePattern,'i');
+                    function privateField(x){var hint=((x.type||'')+' '+(x.name||'')+' '+(x.autocomplete||'')+' '+
+                      (x.placeholder||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.id||'')+' '+(x.getAttribute('inputmode')||''));
+                      hint=hint.replace(/([A-Z]+)([A-Z][a-z])/g,function(_,a,b){return a+' '+b;}).replace(/([a-z])([A-Z])/g,function(_,a,b){return a+' '+b;}).toLowerCase();return sensitive.test(hint)}
+                    if(privateField(e)||e.form&&Array.from(e.form.querySelectorAll('input,textarea,select')).some(privateField))return false;
+                    if(e.form){if(e.form.requestSubmit)e.form.requestSubmit();else e.form.submit();return true}
                     e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));return true})()"""
                 "scroll" -> if (action.optString("direction", "down").equals("up", true))
                     "window.scrollBy(0,-650);true" else "window.scrollBy(0,650);true"
@@ -2006,31 +2048,127 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().putStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, next).apply()
     }
 
-    /**
-     * Applies the address policy before a load. HTTPS is always allowed. HTTP on a
-     * phone's own network (LAN transfer servers, routers, NAS) is allowed and marked
-     * "not secure". A public HTTP address asks once, with a Continue button, instead
-     * of the page silently failing the way it used to.
-     */
-    private fun requestLoadUrl(webView: WebView, url: String) {
-        val reach = PhormiNetworkPolicy.reach(
-            url,
-            trustedCleartextHosts(),
-            prefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
-        )
-        if (reach.allowed) {
-            webView.loadUrl(url)
-            return
+    private val pendingHttpWarnings = mutableSetOf<String>()
+
+    private fun restoreCancelledHttpNavigation(webView: WebView, blockedUrl: String) {
+        val tab = tabs.firstOrNull { it.webView === webView } ?: return
+        if (tab.lastKnownUrl.equals(blockedUrl, ignoreCase = true)) {
+            tab.deferredUrl = null
+            tab.savedState = null
+            tab.lastKnownUrl = NEW_TAB_URL
+            tab.title = getString(R.string.new_tab)
+            tab.searchQuery = null
+            tab.lastSearchHtml = null
+            refreshTabIdentity(tab)
+            if (tab.id == activeTabId) updateStartPageVisibility()
+            saveTabs()
         }
-        AlertDialog.Builder(this)
-            .setTitle("Open this address over HTTP?")
-            .setMessage(PhormiNetworkPolicy.warningMessage(url))
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Continue") { _, _ ->
-                trustCleartextHost(url)
-                webView.loadUrl(url)
+        if (webView === activeWebView()) syncOmnibox()
+    }
+
+    private fun networkReach(url: String): PhormiNetworkPolicy.Reach = PhormiNetworkPolicy.reach(
+        url,
+        trustedCleartextHosts(),
+        prefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+    )
+
+    /** Gate public cleartext before a top-level WebView request or download transfer. */
+    private fun requestLoadUrl(
+        webView: WebView,
+        url: String,
+        onAllowed: () -> Unit = { webView.loadUrl(url) },
+        onCancelled: () -> Unit = {}
+    ): Boolean {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            runOnUiThread { requestLoadUrl(webView, url, onAllowed, onCancelled) }
+            return false
+        }
+        val reach = networkReach(url)
+        if (reach.allowed) {
+            onAllowed()
+            return true
+        }
+        if (!PhormiNetworkPolicy.isCleartext(url) ||
+            !reach.reason.startsWith("This address uses HTTP", ignoreCase = true)) {
+            Toast.makeText(this, reach.reason, Toast.LENGTH_SHORT).show()
+            onCancelled()
+            return false
+        }
+
+        val key = "${System.identityHashCode(webView)}|$url"
+        if (!pendingHttpWarnings.add(key)) return false
+        try {
+            AlertDialog.Builder(this)
+                .setTitle("Open this address over HTTP?")
+                .setMessage(PhormiNetworkPolicy.warningMessage(url))
+                .setNegativeButton("Cancel") { _, _ ->
+                    pendingHttpWarnings.remove(key)
+                    onCancelled()
+                }
+                .setPositiveButton("Continue") { _, _ ->
+                    pendingHttpWarnings.remove(key)
+                    trustCleartextHost(url)
+                    onAllowed()
+                }
+                .setOnCancelListener {
+                    pendingHttpWarnings.remove(key)
+                    onCancelled()
+                }
+                .show()
+        } catch (_: Exception) {
+            pendingHttpWarnings.remove(key)
+            onCancelled()
+            return false
+        }
+        return false
+    }
+
+    private fun handleBlockedMainFrameRequest(webView: WebView, target: String) {
+        if (isFinishing || isDestroyed || tabs.none { it.webView === webView }) return
+        val tabId = tabs.firstOrNull { it.webView === webView }?.id ?: activeTabId
+        val host = PhormiSiteLockManager.normalizeHost(target)
+        val lock = if (host == null) null else firstSiteLock(target, tabId)
+        if (host != null && lock != null) {
+            pendingLockedNavigationUrl = target
+            pendingLockedScopeType = lock.scopeType
+            pendingLockedScopeId = lock.scopeId
+            showSiteUnlockDialog(host) {
+                restoreCancelledHttpNavigation(webView, target)
             }
-            .show()
+        } else {
+            requestLoadUrl(webView, target, onCancelled = {
+                restoreCancelledHttpNavigation(webView, target)
+            })
+        }
+    }
+
+    /** App-originated navigation is subject to the same HTTP warning as user clicks. */
+    private fun navigateTopLevel(
+        webView: WebView,
+        rawUrl: String,
+        onCancelled: () -> Unit = {}
+    ): Boolean {
+        val url = rawUrl.trim()
+        val scheme = runCatching { Uri.parse(url).scheme?.lowercase(Locale.US) }.getOrNull().orEmpty()
+        return when (scheme) {
+            "http", "https" -> requestLoadUrl(webView, url, onCancelled = onCancelled)
+            "about" -> if (url.equals(NEW_TAB_URL, ignoreCase = true)) {
+                webView.loadUrl(url); true
+            } else false
+            "data", "blob" -> { webView.loadUrl(url); true }
+            "file", "javascript", "" -> {
+                Toast.makeText(this, "Blocked unsafe or invalid address", Toast.LENGTH_SHORT).show()
+                onCancelled()
+                false
+            }
+            else -> try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+                true
+            } catch (_: Exception) {
+                Toast.makeText(this, "No app can open this link", Toast.LENGTH_SHORT).show()
+                false
+            }
+        }
     }
 
     private fun navigateFromUrlBar() {
@@ -2043,22 +2181,29 @@ class MainActivity : AppCompatActivity() {
         }
         val url = direct ?: searchUrlForProvider(raw)
         val webView = activeWebView()
-        tabs.firstOrNull { it.id == activeTabId }?.let { tab ->
-            tab.searchQuery = null; tab.lastSearchHtml = null
-            recordTabNavigation(tab, url)
-        }
+        val targetTab = tabs.firstOrNull { it.id == activeTabId }
         if (webView != null) {
-            // Desktop/normal mode resolved before load to prevent flicker/reload loop
-            val desktopBefore = isDesktopModeFor(url)
-            if (webView.settings.userAgentString != desktopUserAgent(desktopBefore)) applyDesktopMode(webView, desktopBefore)
-            startPageContainer.visibility = View.GONE
-            startPageContainer.isClickable = false
-            webView.visibility = View.VISIBLE
-            webView.isClickable = true
-            requestLoadUrl(webView, url)
-        } else createNewTab(url)
-        updateHomeChromeVisibility()
-        saveTabsImmediate(false)
+            val beginNavigation = {
+                // Desktop/normal mode resolved before load to prevent flicker/reload loop.
+                val desktopBefore = isDesktopModeFor(url)
+                if (webView.settings.userAgentString != desktopUserAgent(desktopBefore)) applyDesktopMode(webView, desktopBefore)
+                targetTab?.let { tab ->
+                    tab.searchQuery = null
+                    tab.lastSearchHtml = null
+                    recordTabNavigation(tab, url)
+                }
+                startPageContainer.visibility = View.GONE
+                startPageContainer.isClickable = false
+                webView.visibility = View.VISIBLE
+                webView.isClickable = true
+                webView.loadUrl(url)
+                updateHomeChromeVisibility()
+                saveTabsImmediate(false)
+            }
+            requestLoadUrl(webView, url, onAllowed = beginNavigation, onCancelled = { syncOmnibox() })
+        } else {
+            createNewTab(url)
+        }
         hideKeyboard()
         urlBar.clearFocus()
         updateRefreshButton()
@@ -2246,7 +2391,7 @@ class MainActivity : AppCompatActivity() {
         tab.profileName = target
         tab.lastKnownUrl = url
         refreshTabIdentity(tab)
-        if (url.isBlank() || url == NEW_TAB_URL) updateStartPageVisibility() else newWebView.loadUrl(url)
+        if (url.isBlank() || url == NEW_TAB_URL) updateStartPageVisibility() else navigateTopLevel(newWebView, url)
         saveTabs()
         if (tab.id == activeTabId) {
             updateNavButtons()
@@ -2348,7 +2493,16 @@ class MainActivity : AppCompatActivity() {
         tab.deferredUrl = null; tab.discardReason = null; tab.lastKnownUrl = target
         applyDesktopMode(view, isDesktopModeFor(target))
         val restored = tab.savedState?.let { restoreWebViewState(view, it) } == true
-        if (!restored && target != NEW_TAB_URL) view.loadUrl(target)
+        if (!restored && target != NEW_TAB_URL) navigateTopLevel(view, target) {
+            tab.deferredUrl = null
+            tab.lastKnownUrl = NEW_TAB_URL
+            tab.title = getString(R.string.new_tab)
+            tab.searchQuery = null
+            tab.lastSearchHtml = null
+            refreshTabIdentity(tab)
+            if (tab.id == activeTabId) updateStartPageVisibility()
+            saveTabs()
+        }
         refreshTabIdentity(tab)
     }
 
@@ -2500,7 +2654,7 @@ class MainActivity : AppCompatActivity() {
             AlertDialog.Builder(this).setTitle("Unlock $host").setView(input)
                 .setPositiveButton("Unlock") { _, _ ->
                     if (browserLockManager.verifyPin(prefs, input.text.toString())) onSuccess()
-                    else Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                    else Toast.makeText(this, browserLockManager.pinFailureMessage(prefs), Toast.LENGTH_SHORT).show()
                 }.setNegativeButton("Cancel", null).show()
         } else {
             browserLockManager.authenticate(onSuccess) { }
@@ -2895,17 +3049,25 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        PhormiDownloadEngine.enqueue(
-            context = this,
-            webView = webView,
-            url = url,
-            contentDisposition = contentDisposition,
-            mimeType = mimeType,
-            userAgentOverride = userAgentOverride,
-            contentLength = contentLength
-        )
-        updateDownloadBadge()
-        Toast.makeText(this, "Download queued · tap ↓ to follow progress", Toast.LENGTH_LONG).show()
+        if (!PhormiDownloadRequestPolicy.isHttpUrl(url)) {
+            Toast.makeText(this, "Cannot download this link safely", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val queueDownload = {
+            PhormiDownloadEngine.enqueue(
+                context = this,
+                webView = webView,
+                url = url,
+                contentDisposition = contentDisposition,
+                mimeType = mimeType,
+                userAgentOverride = userAgentOverride,
+                contentLength = contentLength
+            )
+            updateDownloadBadge()
+            Toast.makeText(this, "Download queued · tap ↓ to follow progress", Toast.LENGTH_LONG).show()
+        }
+        // Public HTTP downloads use the same explicit consent as HTTP page loads.
+        requestLoadUrl(webView, url, onAllowed = queueDownload)
     }
 
     private fun downloadBlobUrl(url: String, contentDisposition: String?, mimeType: String?, sourceWebView: WebView?) {
@@ -3082,7 +3244,7 @@ class MainActivity : AppCompatActivity() {
         val url = contextMenuUrl ?: return super.onContextItemSelected(item)
         when (item.itemId) {
             MENU_OPEN -> {
-                activeWebView()?.loadUrl(url)
+                activeWebView()?.let { navigateTopLevel(it, url) }
                 return true
             }
             MENU_OPEN_NEW_TAB -> {
@@ -3231,19 +3393,20 @@ class MainActivity : AppCompatActivity() {
                 if (browserLockManager.verifyPin(prefs, input.text.toString())) {
                     browserUnlockedThisSession = true
                     removeBrowserLockOverlay()
-                } else Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                } else Toast.makeText(this, browserLockManager.pinFailureMessage(prefs), Toast.LENGTH_SHORT).show()
             }.show()
     }
 
     private fun promptCreatePin() {
         val input = EditText(this).apply {
-            hint = "4+ digit PIN"
+            hint = "8–64 digit PIN"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters = arrayOf(android.text.InputFilter.LengthFilter(PhormiPinVerifier.MAX_PIN_LENGTH))
             setSingleLine(true)
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Create Phormi PIN")
-            .setMessage("This PIN is stored locally as a one-way hash. Device security remains available as the recovery method.")
+            .setMessage("Use 8–64 digits. Phormi stores a salted, slow verifier and temporarily delays repeated guesses. Device security remains available as the recovery method.")
             .setView(input)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
@@ -3251,7 +3414,7 @@ class MainActivity : AppCompatActivity() {
                     browserUnlockedThisSession = true
                     removeBrowserLockOverlay()
                     Toast.makeText(this, "Phormi PIN enabled", Toast.LENGTH_SHORT).show()
-                } else Toast.makeText(this, "Use at least 4 digits", Toast.LENGTH_SHORT).show()
+                } else Toast.makeText(this, "Use 8–64 digits", Toast.LENGTH_SHORT).show()
             }.show()
     }
 
@@ -3469,6 +3632,21 @@ class MainActivity : AppCompatActivity() {
                 view: WebView?,
                 request: android.webkit.WebResourceRequest?
             ): android.webkit.WebResourceResponse? {
+                val mainFrameUrl = request?.takeIf { it.isForMainFrame }?.url?.toString()
+                if (!mainFrameUrl.isNullOrBlank() && PhormiNetworkPolicy.isCleartext(mainFrameUrl) &&
+                    !networkReach(mainFrameUrl).allowed) {
+                    val blockedView = view
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && blockedView != null && tabs.any { it.webView === blockedView }) {
+                            handleBlockedMainFrameRequest(blockedView, mainFrameUrl)
+                        }
+                    }
+                    // This callback runs before WebView opens the socket. Return a local empty
+                    // response while the user decides; redirects are checked here too.
+                    return android.webkit.WebResourceResponse(
+                        "text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0))
+                    )
+                }
                 val localSearch = request?.takeIf { it.isForMainFrame }?.url?.takeIf {
                     PhormiSearchHistory.isLocalSearchUrl(it.toString())
                 }
@@ -3552,6 +3730,12 @@ class MainActivity : AppCompatActivity() {
                         showSiteUnlockDialog(host)
                         return true
                     }
+                }
+                // Site-lock challenges take precedence; consent reloads are app-initiated
+                // and would otherwise skip the subsequent WebView navigation callback.
+                if (request?.isForMainFrame == true && scheme == "http" && !networkReach(target).allowed) {
+                    if (view != null) requestLoadUrl(view, target)
+                    return true
                 }
                 // File access is disabled in WebSettings, so allowing file: navigation
                 // was contradictory. javascript: navigation is never a legitimate page
@@ -4450,18 +4634,19 @@ class MainActivity : AppCompatActivity() {
             }.show()
     }
 
-    private fun showSiteUnlockDialog(host: String) {
+    private fun showSiteUnlockDialog(host: String, onCancelled: () -> Unit = {}) {
         val continueOnce = {
             val url = pendingLockedNavigationUrl
             pendingLockedNavigationUrl = null
             pendingLockedScopeType = PhormiSiteLockManager.SCOPE_TAB
             pendingLockedScopeId = ""
-            if (!url.isNullOrBlank()) activeWebView()?.loadUrl(url)
+            if (!url.isNullOrBlank()) activeWebView()?.let { navigateTopLevel(it, url, onCancelled) }
         }
         val cancel = {
             pendingLockedNavigationUrl = null
             pendingLockedScopeType = PhormiSiteLockManager.SCOPE_TAB
             pendingLockedScopeId = ""
+            onCancelled()
         }
         if (browserLockManager.isPinConfigured(prefs)) {
             val input = EditText(this).apply {
@@ -4474,15 +4659,17 @@ class MainActivity : AppCompatActivity() {
                 .setMessage("$host is protected. Unlocking here is one-time; protection stays on.")
                 .setView(input)
                 .setNegativeButton("Cancel") { _, _ -> cancel() }
+                .setOnCancelListener { cancel() }
                 .setPositiveButton("Unlock once") { _, _ ->
                     if (browserLockManager.verifyPin(prefs, input.text.toString())) continueOnce()
-                    else { cancel(); Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show() }
+                    else { cancel(); Toast.makeText(this, browserLockManager.pinFailureMessage(prefs), Toast.LENGTH_SHORT).show() }
                 }.show()
         } else {
             AlertDialog.Builder(this)
                 .setTitle("Site protected")
                 .setMessage("$host is protected. Authenticate to continue once.")
                 .setNegativeButton("Cancel") { _, _ -> cancel() }
+                .setOnCancelListener { cancel() }
                 .setPositiveButton("Authenticate") { _, _ -> browserLockManager.authenticate(continueOnce) { cancel() } }
                 .show()
         }
@@ -4556,7 +4743,16 @@ class MainActivity : AppCompatActivity() {
             } else {
                 append(if (url.isBlank()) "No page loaded." else url)
                 append("\n\nConnection: ")
-                append(if (url.isBlank()) "—" else if (secure) "HTTPS (encrypted)" else "Not secure (HTTP or local content)")
+                val localNetworkLabel = url.startsWith("http://", true) &&
+                    PhormiNetworkPolicy.isPrivateHost(host) &&
+                    prefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+                append(when {
+                    url.isBlank() -> "—"
+                    secure -> "HTTPS (encrypted)"
+                    localNetworkLabel -> "HTTP (not encrypted; local network)"
+                    url.startsWith("http://", true) -> "Not secure (HTTP)"
+                    else -> "Not secure (local content or no certificate)"
+                })
             }
             append("\nLocation for this site: ").append(geoLabel)
             append("\n\nSite permission decisions are stored on this device only.")
@@ -4957,10 +5153,11 @@ class MainActivity : AppCompatActivity() {
                     val view = activeWebView() ?: return JSONObject().put("ok", false).put("error", "no_active_tab")
                     val latch = java.util.concurrent.CountDownLatch(1)
                     var payload = JSONObject().put("ok", false).put("error", "read_timeout")
-                    view.evaluateJavascript("JSON.stringify({title:document.title,url:location.href,text:(document.body?.innerText||'').slice(0,20000),links:Array.from(document.querySelectorAll('a[href]')).slice(0,120).map(a=>({text:(a.innerText||'').trim().slice(0,120),href:a.href}))})") { raw ->
-                        payload = runCatching { JSONObject(org.json.JSONTokener(raw).nextValue().toString()) }
-                            .getOrElse { JSONObject() }
-                            .put("ok", true)
+                    view.evaluateJavascript("JSON.stringify({title:document.title,url:location.href.split(/[?#]/)[0],text:(document.body?.innerText||'').slice(0,20000),links:Array.from(document.querySelectorAll('a[href]')).slice(0,120).map(a=>({text:(a.innerText||'').trim().slice(0,120),href:a.href.split(/[?#]/)[0]}))})") { raw ->
+                        val page = runCatching {
+                            redactAiPagePayload(JSONObject(org.json.JSONTokener(raw).nextValue().toString()))
+                        }.getOrElse { JSONObject() }
+                        payload = page.put("ok", true)
                         latch.countDown()
                     }
                     latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -4968,13 +5165,29 @@ class MainActivity : AppCompatActivity() {
                 }
                 "click_text" -> {
                     val text = JSONObject.quote(command.optString("text"))
-                    activeWebView()?.evaluateJavascript("(()=>{const t=$text;const e=[...document.querySelectorAll('button,a,[role=button],input[type=submit]')].find(x=>(x.innerText||x.value||x.getAttribute('aria-label')||'').includes(t));if(e){e.click();return true}return false})()") { }
+                    val sensitivePattern = JSONObject.quote(PhormiSensitiveFieldPolicy.javascriptPattern)
+                    activeWebView()?.evaluateJavascript("""(function(){var t=$text;var sensitive=new RegExp($sensitivePattern,'i');
+                        function privateField(x){var h=((x.type||'')+' '+(x.name||'')+' '+(x.autocomplete||'')+' '+(x.placeholder||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.id||'')+' '+(x.getAttribute('inputmode')||''));
+                          h=h.replace(/([A-Z]+)([A-Z][a-z])/g,function(_,a,b){return a+' '+b;}).replace(/([a-z])([A-Z])/g,function(_,a,b){return a+' '+b;}).toLowerCase();return sensitive.test(h)}
+                        var e=Array.from(document.querySelectorAll('button,a,[role=button],input[type=submit]'))
+                          .find(x=>(x.innerText||x.value||x.getAttribute('aria-label')||'').includes(t));
+                        var f=e&&e.closest('form');if(!e||privateField(e)||f&&Array.from(f.querySelectorAll('input,textarea,select')).some(privateField))return false;
+                        e.click();return true})()""") { }
                     JSONObject().put("ok", true)
                 }
                 "type_text" -> {
                     val text = JSONObject.quote(command.optString("text"))
                     val selector = command.optString("selector").trim()
-                    val script = if (selector.isBlank()) "document.activeElement?.value!==undefined?(document.activeElement.value=$text,document.activeElement.dispatchEvent(new Event('input',{bubbles:true})),true):false" else "(()=>{const e=document.querySelector(${JSONObject.quote(selector)});if(!e)return false;e.focus();e.value=$text;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()"
+                    val selectorExpr = if (selector.isBlank()) "document.activeElement" else "document.querySelector(${JSONObject.quote(selector)})"
+                    val sensitivePattern = JSONObject.quote(PhormiSensitiveFieldPolicy.javascriptPattern)
+                    val script = """(function(){var e=$selectorExpr;if(!e||!(e.isContentEditable||e.tagName==='INPUT'||e.tagName==='TEXTAREA')||e.disabled||e.readOnly)return false;
+                        var sensitive=new RegExp($sensitivePattern,'i');
+                        function privateField(x){var h=((x.type||'')+' '+(x.name||'')+' '+(x.autocomplete||'')+' '+(x.placeholder||'')+' '+(x.getAttribute('aria-label')||'')+' '+(x.id||'')+' '+(x.getAttribute('inputmode')||''));
+                          h=h.replace(/([A-Z]+)([A-Z][a-z])/g,function(_,a,b){return a+' '+b;}).replace(/([a-z])([A-Z])/g,function(_,a,b){return a+' '+b;}).toLowerCase();return sensitive.test(h)}
+                        var f=e.closest('form');if(privateField(e)||f&&Array.from(f.querySelectorAll('input,textarea,select')).some(privateField))return false;
+                        e.focus();var v=$text;if(e.isContentEditable)e.textContent=v;else{var p=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+                          var d=Object.getOwnPropertyDescriptor(p,'value');if(d&&d.set)d.set.call(e,v);else e.value=v}
+                        e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()""".trimIndent()
                     activeWebView()?.evaluateJavascript(script) { }
                     JSONObject().put("ok", true)
                 }

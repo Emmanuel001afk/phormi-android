@@ -39,12 +39,13 @@ class PhormiNetworkPolicyTest {
         assertFalse(PhormiNetworkPolicy.reach("http://other.com", trusted).allowed)
     }
 
-    @Test fun `turning lan convenience off keeps the address usable but unprivileged`() {
-        // The setting no longer silently blocks a LAN address; it only stops it being
-        // classified as an automatic convenience. The warning prompt still applies to
-        // public hosts.
-        val reach = PhormiNetworkPolicy.reach("http://192.168.1.2", allowLan = false)
-        assertTrue(reach.allowed)
+    @Test fun `local network preference changes only the label not reachability`() {
+        val flagged = PhormiNetworkPolicy.reach("http://192.168.1.2", allowLan = true)
+        val unflagged = PhormiNetworkPolicy.reach("http://192.168.1.2", allowLan = false)
+        assertTrue(flagged.allowed)
+        assertTrue(unflagged.allowed)
+        assertTrue(flagged.reason.contains("Local network"))
+        assertFalse(unflagged.reason.contains("Local network page"))
         assertFalse(PhormiNetworkPolicy.reach("http://example.com", allowLan = false).allowed)
     }
 
@@ -52,6 +53,11 @@ class PhormiNetworkPolicyTest {
         for (url in listOf("file:///sdcard/a.html", "javascript:alert(1)", "intent://x", "")) {
             assertFalse(url, PhormiNetworkPolicy.reach(url).allowed)
         }
+    }
+
+    @Test fun `web addresses reject missing hosts and embedded credentials`() {
+        assertFalse(PhormiNetworkPolicy.reach("https:example.com").allowed)
+        assertFalse(PhormiNetworkPolicy.reach("https://user:pass@example.com").allowed)
     }
 
     @Test fun `private ranges are recognised without catching public addresses`() {

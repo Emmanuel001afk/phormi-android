@@ -90,10 +90,15 @@ class PhormiSecurityCenterActivity : AppCompatActivity() {
     }
 
     private fun promptPin() {
-        val input = EditText(this).apply { inputType = 2; hint = "4+ digit PIN" }
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters = arrayOf(android.text.InputFilter.LengthFilter(PhormiPinVerifier.MAX_PIN_LENGTH))
+            setSingleLine(true)
+            hint = "8–64 digit PIN"
+        }
         AlertDialog.Builder(this).setTitle("Set Phormi PIN").setView(input)
             .setPositiveButton("Save") { _, _ ->
-                if (!browserLock.setPin(prefs, input.text.toString())) Toast.makeText(this, "PIN must be at least 4 digits", Toast.LENGTH_LONG).show()
+                if (!browserLock.setPin(prefs, input.text.toString())) Toast.makeText(this, "PIN must contain 8–64 digits", Toast.LENGTH_LONG).show()
             }.setNegativeButton("Cancel", null).show()
     }
 

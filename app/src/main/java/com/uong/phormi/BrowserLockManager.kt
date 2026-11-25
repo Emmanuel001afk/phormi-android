@@ -7,7 +7,6 @@ import android.os.Build
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
-import java.security.MessageDigest
 import java.util.concurrent.Executor
 
 /**
@@ -26,6 +25,8 @@ class BrowserLockManager(
         const val METHOD_DEVICE = "device"
         const val METHOD_PIN = "pin"
         private const val PREF_PIN_HASH = "browser_lock_pin_hash"
+        private const val PREF_PIN_FAILURES = "browser_lock_pin_failures"
+        private const val PREF_PIN_LOCKED_UNTIL = "browser_lock_pin_locked_until"
     }
 
     private var promptInProgress = false
@@ -57,26 +58,58 @@ class BrowserLockManager(
 
     fun setPin(prefs: android.content.SharedPreferences, pin: String): Boolean {
         val normalized = pin.trim()
-        if (normalized.length < 4 || normalized.any { !it.isDigit() }) return false
+        if (!PhormiPinVerifier.isValidNewPin(normalized)) return false
+        val encoded = runCatching { PhormiPinVerifier.encode(normalized) }.getOrNull() ?: return false
         prefs.edit()
             .putString(PREF_METHOD, METHOD_PIN)
-            .putString(PREF_PIN_HASH, sha256(normalized))
+            .putString(PREF_PIN_HASH, encoded)
+            .putInt(PREF_PIN_FAILURES, 0)
+            .putLong(PREF_PIN_LOCKED_UNTIL, 0L)
             .apply()
         return true
     }
 
     fun verifyPin(prefs: android.content.SharedPreferences, pin: String): Boolean {
-        val stored = prefs.getString(PREF_PIN_HASH, null) ?: return false
-        return MessageDigest.isEqual(
-            stored.toByteArray(Charsets.UTF_8),
-            sha256(pin.trim()).toByteArray(Charsets.UTF_8)
-        )
+        val now = System.currentTimeMillis()
+        val state = pinAttemptState(prefs)
+        if (PhormiPinAttemptPolicy.remainingMs(state, now) > 0L) return false
+        val stored = prefs.getString(PREF_PIN_HASH, null) ?: return recordPinFailure(prefs, now)
+        val verification = PhormiPinVerifier.verify(stored, pin)
+        if (verification.valid) {
+            val migrated = if (verification.needsUpgrade) {
+                runCatching { PhormiPinVerifier.encode(pin.trim()) }.getOrNull()
+            } else null
+            val editor = prefs.edit()
+                .putInt(PREF_PIN_FAILURES, 0)
+                .putLong(PREF_PIN_LOCKED_UNTIL, 0L)
+            if (migrated != null) editor.putString(PREF_PIN_HASH, migrated)
+            editor.apply()
+            return true
+        }
+        return recordPinFailure(prefs, now)
     }
 
-    private fun sha256(value: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }
+    fun pinFailureMessage(prefs: android.content.SharedPreferences): String {
+        val remaining = PhormiPinAttemptPolicy.remainingMs(pinAttemptState(prefs), System.currentTimeMillis())
+        if (remaining <= 0L) return "Incorrect PIN"
+        val seconds = ((remaining + 999L) / 1000L).coerceAtLeast(1L)
+        return "Too many incorrect attempts. Try again in $seconds seconds."
     }
+
+    private fun recordPinFailure(prefs: android.content.SharedPreferences, now: Long): Boolean {
+        val next = PhormiPinAttemptPolicy.afterFailure(pinAttemptState(prefs), now)
+        prefs.edit()
+            .putInt(PREF_PIN_FAILURES, next.failures)
+            .putLong(PREF_PIN_LOCKED_UNTIL, next.lockedUntilMs)
+            .apply()
+        return false
+    }
+
+    private fun pinAttemptState(prefs: android.content.SharedPreferences): PhormiPinAttemptPolicy.State =
+        PhormiPinAttemptPolicy.State(
+            failures = prefs.getInt(PREF_PIN_FAILURES, 0).coerceAtLeast(0),
+            lockedUntilMs = prefs.getLong(PREF_PIN_LOCKED_UNTIL, 0L).coerceAtLeast(0L)
+        )
 
     fun authenticate(onSuccess: () -> Unit, onFailure: () -> Unit) {
         if (promptInProgress) return

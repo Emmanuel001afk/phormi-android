@@ -42,7 +42,8 @@ object PhormiDownloadEngine {
     private const val KEY_ITEMS = "items"
     private val lock = Any()
     private val webRequestHeaders = ConcurrentHashMap<String, Map<String, String>>()
-    private val webOriginHeaders = ConcurrentHashMap<String, Map<String, String>>()
+    /** Credentials are deliberately memory-only and disappear when the process exits. */
+    private val runtimeHeaders = ConcurrentHashMap<String, Map<String, String>>()
 
     enum class State { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
 
@@ -78,29 +79,22 @@ object PhormiDownloadEngine {
     )
 
     fun rememberWebRequestHeaders(url: String, headers: Map<String, String>?) {
-        if (url.isBlank() || headers.isNullOrEmpty()) return
+        if (url.isBlank() || headers.isNullOrEmpty() || !PhormiDownloadRequestPolicy.isHttpUrl(url)) return
         val clean = headers.filterKeys { key ->
-            key.isNotBlank() && !key.equals("Host", true) && !key.equals("Content-Length", true)
+            key.isNotBlank() && !key.equals("Host", true) && !key.equals("Content-Length", true) &&
+                !key.equals("Transfer-Encoding", true)
         }.filterValues { it.isNotBlank() }
-        if (clean.isNotEmpty()) {
-            webRequestHeaders[normalizeSourceUrl(url)] = clean
-            runCatching {
-                val parsed = Uri.parse(url)
-                if (!parsed.scheme.isNullOrBlank() && !parsed.host.isNullOrBlank()) {
-                    val origin = parsed.scheme + "://" + parsed.host + if (parsed.port > 0) ":" + parsed.port else ""
-                    webOriginHeaders[origin] = clean
-                }
-            }
-        }
+        if (clean.isNotEmpty()) webRequestHeaders[normalizeSourceUrl(url)] = clean
     }
 
-    private fun rememberedHeaders(url: String): Map<String, String> {
-        webRequestHeaders[normalizeSourceUrl(url)]?.let { return it }
-        return runCatching {
-            val parsed = Uri.parse(url)
-            val origin = parsed.scheme + "://" + parsed.host + if (parsed.port > 0) ":" + parsed.port else ""
-            webOriginHeaders[origin].orEmpty()
-        }.getOrDefault(emptyMap())
+    private fun rememberedHeaders(url: String): Map<String, String> =
+        webRequestHeaders.remove(normalizeSourceUrl(url)).orEmpty()
+
+    internal fun headersForRequest(record: Record): Map<String, String> =
+        runtimeHeaders[record.id]?.toMap() ?: record.headers
+
+    internal fun forgetRuntimeHeaders(id: String) {
+        runtimeHeaders.remove(id)
     }
 
     fun enqueue(context: Context, webView: WebView?, url: String, contentDisposition: String?, mimeType: String?, userAgentOverride: String? = null, contentLength: Long = -1L) {
@@ -110,27 +104,31 @@ object PhormiDownloadEngine {
             invokeExistingStartDownload(context, url, contentDisposition, mimeType)
             return
         }
+        if (!PhormiDownloadRequestPolicy.isHttpUrl(url)) return
+        val browserPrefs = context.getSharedPreferences(PhormiBrowserPreferences.STORE, Context.MODE_PRIVATE)
+        val cleartextReach = PhormiDownloadRequestPolicy.addressReach(
+            url,
+            browserPrefs.getStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, emptySet()).orEmpty(),
+            browserPrefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+        )
+        if (!cleartextReach.allowed) return
         val userAgent = userAgentOverride?.takeIf { it.isNotBlank() }
             ?: webView?.settings?.userAgentString?.takeIf { it.isNotBlank() }
             ?: WebSettings.getDefaultUserAgent(context)
-        val referer = webView?.url?.takeIf { it.startsWith("http", true) }
+        val referer = webView?.url?.takeIf { PhormiDownloadRequestPolicy.isHttpUrl(it) }
         runCatching { CookieManager.getInstance().flush() }
-        val cookies = CookieManager.getInstance().getCookie(url)
-            ?: referer?.let { CookieManager.getInstance().getCookie(it) }
+        // Never substitute referrer-page cookies for a destination URL without cookies.
+        val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
         val info = PhormiDownloadSupport.resolve(url, contentDisposition, mimeType, userAgent, referer, cookies)
         val sourceKey = normalizeSourceUrl(info.sourceUrl)
         val exactWebHeaders = rememberedHeaders(info.sourceUrl)
-        val mergedHeaders = info.headers.toMutableMap().apply {
-            exactWebHeaders.forEach { (key, value) ->
-                if (!key.equals("Host", true) && !key.equals("Content-Length", true)) put(key, value)
-            }
-            put("User-Agent", userAgent)
-            if (!referer.isNullOrBlank() && !containsKey("Referer")) put("Referer", referer)
-            if (!cookies.isNullOrBlank() && !containsKey("Cookie")) put("Cookie", cookies)
-            val u = referer?.let { runCatching { Uri.parse(it) }.getOrNull() }
-            val origin = u?.let { if (!it.scheme.isNullOrBlank() && !it.host.isNullOrBlank()) "${it.scheme}://${it.host}${if (it.port > 0) ":${it.port}" else ""}" else null }
-            if (!origin.isNullOrBlank() && !containsKey("Origin")) put("Origin", origin)
-        }
+        val requestHeaders = PhormiDownloadRequestPolicy.initialHeaders(
+            defaults = info.headers,
+            observedForExactUrl = exactWebHeaders,
+            destinationUrl = info.sourceUrl,
+            destinationCookies = cookies
+        )
+        val persistentHeaders = PhormiDownloadRequestPolicy.headersForPersistence(requestHeaders)
         val id = UUID.randomUUID().toString()
         val record = Record(
             id = id,
@@ -138,7 +136,7 @@ object PhormiDownloadEngine {
             sourceUrl = sourceKey,
             mimeType = info.mimeType,
             category = info.category,
-            headers = mergedHeaders,
+            headers = persistentHeaders,
             state = State.QUEUED,
             downloaded = 0L,
             total = contentLength.takeIf { it > 0L } ?: -1L,
@@ -155,6 +153,7 @@ object PhormiDownloadEngine {
             }
             if (existingActive != null) return
             save(context, record)
+            runtimeHeaders[id] = requestHeaders
         }
         start(context, ACTION_ENQUEUE, id)
     }
@@ -237,6 +236,7 @@ object PhormiDownloadEngine {
         }
 
         remove(context, id)
+        forgetRuntimeHeaders(id)
     }
 
     fun record(context: Context, id: String): Record? = records(context).firstOrNull { it.id == id }
@@ -277,11 +277,14 @@ object PhormiDownloadEngine {
     private fun records(context: Context): List<Record> = synchronized(lock) {
         val array = runCatching { JSONArray(prefs(context).getString(KEY_ITEMS, "[]") ?: "[]") }.getOrElse { JSONArray() }
         val out = mutableListOf<Record>()
+        var hadPersistedSecrets = false
         for (i in 0 until array.length()) {
             val o = array.optJSONObject(i) ?: continue
-            val headers = mutableMapOf<String, String>()
+            val storedHeaders = mutableMapOf<String, String>()
             val h = o.optJSONObject("headers")
-            if (h != null) h.keys().forEach { key -> headers[key] = h.optString(key) }
+            if (h != null) h.keys().forEach { key -> storedHeaders[key] = h.optString(key) }
+            val headers = PhormiDownloadRequestPolicy.headersForPersistence(storedHeaders)
+            if (headers != storedHeaders) hadPersistedSecrets = true
             val state = runCatching { State.valueOf(o.optString("state", State.FAILED.name)) }.getOrDefault(State.FAILED)
             out += Record(
                 id = o.optString("id"),
@@ -300,7 +303,9 @@ object PhormiDownloadEngine {
                 lastModified = o.optString("lastModified").takeIf { it.isNotBlank() }
             )
         }
-        out.filter { it.id.isNotBlank() }
+        val result = out.filter { it.id.isNotBlank() }
+        if (hadPersistedSecrets) write(context, result)
+        result
     }
 
     internal fun save(context: Context, record: Record) = synchronized(lock) {
@@ -318,7 +323,7 @@ object PhormiDownloadEngine {
         val array = JSONArray()
         list.forEach { r ->
             val headers = JSONObject()
-            r.headers.forEach { (k, v) -> headers.put(k, v) }
+            PhormiDownloadRequestPolicy.headersForPersistence(r.headers).forEach { (k, v) -> headers.put(k, v) }
             array.put(JSONObject()
                 .put("id", r.id)
                 .put("title", r.title)
@@ -341,6 +346,7 @@ object PhormiDownloadEngine {
     internal fun updateState(context: Context, id: String, state: State, error: String? = null) {
         val current = record(context, id) ?: return
         save(context, current.copy(state = state, error = error))
+        if (state == State.COMPLETED || state == State.CANCELLED) forgetRuntimeHeaders(id)
     }
 
     internal fun updateProgress(context: Context, id: String, downloaded: Long, total: Long) {
@@ -415,6 +421,7 @@ class PhormiDownloadService : Service() {
         private var live: PhormiDownloadService? = null
         private const val CHANNEL_ID = "phormi_downloads"
         private const val NOTIFICATION_ID = 4417
+        private const val MAX_HTTP_REDIRECTS = 10
 
         fun dispatch(action: String, id: String): Boolean {
             val service = live ?: return false
@@ -427,8 +434,8 @@ class PhormiDownloadService : Service() {
     private val running = ConcurrentHashMap<String, Boolean>()
     private val activeCalls = ConcurrentHashMap<String, Call>()
     private val httpClient = OkHttpClient.Builder()
-        .followRedirects(true)
-        .followSslRedirects(true)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .retryOnConnectionFailure(true)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -512,6 +519,7 @@ class PhormiDownloadService : Service() {
 
     private fun download(id: String) {
         var attempts = 0
+        var cleanRestarts = 0
         while (true) {
             val record = PhormiDownloadEngine.record(this, id) ?: return
             when (cancelSignals[id]) {
@@ -524,7 +532,7 @@ class PhormiDownloadService : Service() {
             }
             PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.RUNNING, null)
             try {
-                val result = performRequest(record)
+                val result = performRequest(record, cleanRestarts)
                 if (result) return
             } catch (paused: PauseException) {
                 if (cancelSignals[id] == Control.CANCEL) return
@@ -537,6 +545,14 @@ class PhormiDownloadService : Service() {
                     PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.CANCELLED, "Download cancelled")
                 }
                 return
+            } catch (_: CleanRestartException) {
+                if (!PhormiDownloadResumePolicy.mayRestart(cleanRestarts)) {
+                    PhormiDownloadEngine.updateState(this, id, PhormiDownloadEngine.State.FAILED,
+                        "Server returned an invalid byte range after a clean restart")
+                    return
+                }
+                cleanRestarts++
+                continue
             } catch (http: HttpFailure) {
                 if (cancelSignals[id] == Control.CANCEL) return
                 if (http.code == 429 || http.code in 500..599) {
@@ -573,10 +589,33 @@ class PhormiDownloadService : Service() {
         }
     }
 
-    private fun performRequest(record: PhormiDownloadEngine.Record): Boolean {
-        val existing = maxOf(record.downloaded.coerceAtLeast(0L), localByteLength(record.localUri))
+    private fun downloadAddressReach(url: String): PhormiNetworkPolicy.Reach {
+        val browserPrefs = getSharedPreferences(PhormiBrowserPreferences.STORE, Context.MODE_PRIVATE)
+        return PhormiDownloadRequestPolicy.addressReach(
+            url,
+            browserPrefs.getStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, emptySet()).orEmpty(),
+            browserPrefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+        )
+    }
+
+    private fun performRequest(record: PhormiDownloadEngine.Record, cleanRestartsUsed: Int): Boolean {
+        when (cancelSignals[record.id]) {
+            Control.CANCEL -> throw CancelException()
+            Control.PAUSE -> throw PauseException()
+            else -> Unit
+        }
+        val destinationReach = downloadAddressReach(record.sourceUrl)
+        if (!destinationReach.allowed) throw DownloadPolicyException("Download blocked: ${destinationReach.reason}")
+        // The on-disk partial length is authoritative: persisted progress may be ahead
+        // of buffered bytes if Android killed the process during a write.
+        val hasPartialFile = !record.localUri.isNullOrBlank()
+        val existing = PhormiDownloadResumePolicy.resumeOffset(
+            persistedProgress = record.downloaded,
+            actualFileLength = if (hasPartialFile) localByteLength(record.localUri) else null,
+            hasPartialFile = hasPartialFile
+        )
         val requestBuilder = Request.Builder().url(record.sourceUrl).get()
-        record.headers.forEach { (key, value) ->
+        PhormiDownloadEngine.headersForRequest(record).forEach { (key, value) ->
             if (key.isNotBlank() && value.isNotBlank()) requestBuilder.header(key, value)
         }
         requestBuilder.header("Accept", "*/*")
@@ -588,37 +627,33 @@ class PhormiDownloadService : Service() {
                 ?: record.lastModified?.takeIf { it.isNotBlank() }?.let { requestBuilder.header("If-Range", it) }
         }
 
-        val call = httpClient.newCall(requestBuilder.build())
-        activeCalls[record.id] = call
         try {
-            call.execute().use { response ->
+            executeWithSafeRedirects(record.id, requestBuilder.build()).use { response ->
                 val code = response.code
-                if (code == 416 && existing > 0L) {
-                    // The saved partial byte range is no longer valid. Restart the same download
-                    // cleanly instead of leaving a permanently broken resume state.
-                    PhormiDownloadEngine.updateProgress(this, record.id, 0L, -1L)
-                    return performRequest(record.copy(downloaded = 0L, localUri = record.localUri))
-                }
-                if (!response.isSuccessful) throw HttpFailure(code)
-                val body = response.body ?: throw IOException("Server returned an empty download")
                 val contentRange = response.header("Content-Range")
                 val rangeStart = contentRange
                     ?.substringAfter("bytes ", "")
                     ?.substringBefore("-")
                     ?.toLongOrNull()
-                val append = existing > 0L && code == 206 && rangeStart == existing
-
-                // Never append a response whose byte range cannot be proven to continue
-                // the existing partial file.
-                if (existing > 0L && code == 206 && !append) {
-                    PhormiDownloadEngine.updateProgress(this, record.id, 0L, -1L)
-                    return performRequest(record.copy(downloaded = 0L))
+                when (PhormiDownloadResumePolicy.responseAction(existing, code, rangeStart, cleanRestartsUsed)) {
+                    PhormiDownloadResumePolicy.ResponseAction.CLEAN_RESTART -> {
+                        clearPartialFile(record.localUri)
+                        PhormiDownloadEngine.updateProgress(this, record.id, 0L, -1L)
+                        throw CleanRestartException()
+                    }
+                    PhormiDownloadResumePolicy.ResponseAction.FAIL -> {
+                        if (code == 416) throw HttpFailure(code)
+                        throw InvalidPartialResponseException("Server returned an invalid Content-Range")
+                    }
+                    PhormiDownloadResumePolicy.ResponseAction.ACCEPT -> Unit
                 }
-
+                if (!response.isSuccessful) throw HttpFailure(code)
+                val body = response.body ?: throw IOException("Server returned an empty download")
+                val append = existing > 0L && code == 206 && rangeStart == existing
+                val rangeTotal = contentRange?.substringAfter("/", "")?.toLongOrNull()
                 val bodyLength = body.contentLength()
                 val total = when {
-                    append && contentRange?.substringAfter("/")?.toLongOrNull() != null ->
-                        contentRange.substringAfter("/").toLong()
+                    code == 206 && rangeTotal != null -> rangeTotal
                     code == 206 && bodyLength >= 0L -> existing + bodyLength
                     bodyLength >= 0L -> bodyLength
                     else -> record.total
@@ -675,7 +710,50 @@ class PhormiDownloadService : Service() {
                 }
             }
         } finally {
-            activeCalls.remove(record.id, call)
+            activeCalls.remove(record.id)
+        }
+    }
+
+    private fun executeWithSafeRedirects(id: String, initialRequest: Request): okhttp3.Response {
+        var request = initialRequest
+        for (redirectCount in 0..MAX_HTTP_REDIRECTS) {
+            when (cancelSignals[id]) {
+                Control.CANCEL -> throw CancelException()
+                Control.PAUSE -> throw PauseException()
+                else -> Unit
+            }
+            val call = httpClient.newCall(request)
+            activeCalls[id] = call
+            val response = call.execute()
+            if (!PhormiDownloadRequestPolicy.isRedirectCode(response.code) || redirectCount == MAX_HTTP_REDIRECTS) {
+                return response
+            }
+            val nextUrl = PhormiDownloadRequestPolicy.resolveRedirect(request.url.toString(), response.header("Location"))
+                ?: return response
+            val nextReach = downloadAddressReach(nextUrl)
+            if (!nextReach.allowed) {
+                response.close()
+                throw DownloadPolicyException("Download redirect blocked: ${nextReach.reason}")
+            }
+            val headers = request.headers.names().associateWith { name -> request.header(name).orEmpty() }
+            val safeHeaders = PhormiDownloadRequestPolicy.headersForRedirect(
+                request.url.toString(), nextUrl, headers
+            )
+            response.close()
+            activeCalls.remove(id, call)
+            request = Request.Builder().url(nextUrl).get().apply {
+                safeHeaders.forEach { (name, value) -> header(name, value) }
+            }.build()
+        }
+        throw IOException("Too many download redirects")
+    }
+
+    private fun clearPartialFile(uriString: String?) {
+        if (uriString.isNullOrBlank()) return
+        try {
+            openOutput(uriString, append = false).use { it.flush() }
+        } catch (error: Exception) {
+            throw InvalidPartialFileException(error)
         }
     }
 
@@ -829,5 +907,9 @@ class PhormiDownloadService : Service() {
 
     private class PauseException : Exception()
     private class CancelException : Exception()
+    private class CleanRestartException : Exception()
+    private class InvalidPartialResponseException(message: String) : Exception(message)
+    private class InvalidPartialFileException(cause: Throwable) : Exception("Could not clear an invalid partial download", cause)
+    private class DownloadPolicyException(message: String) : Exception(message)
     private class HttpFailure(val code: Int) : Exception()
 }

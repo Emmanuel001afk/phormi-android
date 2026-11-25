@@ -57,6 +57,10 @@ class GhostActivity : Activity() {
     private lateinit var selectAllButton: TextView
     private lateinit var closeSelectedButton: TextView
     private var ghostProfileName: String? = null
+    private val pendingHttpWarnings = mutableSetOf<String>()
+    private val browserPrefs by lazy {
+        getSharedPreferences(PhormiBrowserPreferences.STORE, MODE_PRIVATE)
+    }
     private val sitePermissions by lazy { PhormiSitePermissions(this, isActive = { it === active() }) }
     private var fileCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
     private var fullscreen: View? = null
@@ -311,6 +315,48 @@ class GhostActivity : Activity() {
                 }.show()
         }
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): android.webkit.WebResourceResponse? {
+                val target = request?.takeIf { it.isForMainFrame }?.url?.toString()
+                if (!target.isNullOrBlank() && PhormiNetworkPolicy.isCleartext(target) && !networkReach(target).allowed) {
+                    val blockedView = view
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && blockedView != null && tabs.any { it.webView === blockedView }) {
+                            requestLoadUrl(blockedView, target)
+                        }
+                    }
+                    return android.webkit.WebResourceResponse(
+                        "text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0))
+                    )
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?
+            ): Boolean {
+                val targetUri = request?.url ?: return false
+                val target = targetUri.toString()
+                val scheme = targetUri.scheme?.lowercase(java.util.Locale.ROOT).orEmpty()
+                if (request?.isForMainFrame == true && scheme == "http" && !networkReach(target).allowed) {
+                    if (view != null) requestLoadUrl(view, target)
+                    return true
+                }
+                if (scheme == "file" || scheme == "javascript") return true
+                if (scheme in setOf("http", "https", "data", "blob")) return false
+                return try {
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, targetUri)
+                        .addCategory(android.content.Intent.CATEGORY_BROWSABLE))
+                    true
+                } catch (_: Exception) {
+                    Toast.makeText(this@GhostActivity, "No app can open this link", Toast.LENGTH_SHORT).show()
+                    true
+                }
+            }
+
             override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: android.graphics.Bitmap?) {
                 sitePermissions.cancel(webView)
                 val tab = tabs.firstOrNull { it.id == id } ?: return
@@ -375,7 +421,7 @@ class GhostActivity : Activity() {
         host.addView(webView, FrameLayout.LayoutParams(-1, -1))
         refreshChipLabel(tab)
         switchTo(id)
-        if (initial != "about:blank") webView.loadUrl(initial)
+        if (initial != "about:blank") navigateTopLevel(webView, initial)
     }
 
     private fun refreshChipLabel(tab: GhostTab) {
@@ -509,13 +555,80 @@ class GhostActivity : Activity() {
 
     private fun active(): WebView? = tabs.firstOrNull { it.id == activeId }?.webView
 
+    private fun networkReach(target: String): PhormiNetworkPolicy.Reach = PhormiNetworkPolicy.reach(
+        target,
+        browserPrefs.getStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, emptySet()).orEmpty(),
+        browserPrefs.getBoolean(PhormiNetworkPolicy.KEY_ALLOW_LAN_HTTP, true)
+    )
+
+    private fun trustCleartextHost(target: String) {
+        val trusted = browserPrefs.getStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, emptySet()).orEmpty()
+        browserPrefs.edit()
+            .putStringSet(PhormiNetworkPolicy.KEY_CLEARTEXT_HOSTS, PhormiNetworkPolicy.withTrustedHost(trusted, target))
+            .apply()
+    }
+
+    private fun requestLoadUrl(webView: WebView, target: String): Boolean {
+        val reach = networkReach(target)
+        if (reach.allowed) {
+            webView.loadUrl(target)
+            return true
+        }
+        if (!PhormiNetworkPolicy.isCleartext(target) ||
+            !reach.reason.startsWith("This address uses HTTP", ignoreCase = true)) {
+            Toast.makeText(this, reach.reason, Toast.LENGTH_SHORT).show()
+            return false
+        }
+        val key = "${System.identityHashCode(webView)}|$target"
+        if (!pendingHttpWarnings.add(key)) return false
+        try {
+            AlertDialog.Builder(this)
+                .setTitle("Open this address over HTTP?")
+                .setMessage(PhormiNetworkPolicy.warningMessage(target))
+                .setNegativeButton("Cancel") { _, _ -> pendingHttpWarnings.remove(key) }
+                .setPositiveButton("Continue") { _, _ ->
+                    pendingHttpWarnings.remove(key)
+                    trustCleartextHost(target)
+                    webView.loadUrl(target)
+                }
+                .setOnCancelListener { pendingHttpWarnings.remove(key) }
+                .show()
+        } catch (_: Exception) {
+            pendingHttpWarnings.remove(key)
+            return false
+        }
+        return false
+    }
+
+    private fun navigateTopLevel(webView: WebView, rawTarget: String): Boolean {
+        val target = rawTarget.trim()
+        val scheme = runCatching { android.net.Uri.parse(target).scheme?.lowercase(java.util.Locale.ROOT) }.getOrNull().orEmpty()
+        return when (scheme) {
+            "http", "https" -> requestLoadUrl(webView, target)
+            "about" -> if (target.equals("about:blank", true)) { webView.loadUrl(target); true } else false
+            "data", "blob" -> { webView.loadUrl(target); true }
+            "file", "javascript", "" -> {
+                Toast.makeText(this, "Blocked unsafe or invalid address", Toast.LENGTH_SHORT).show()
+                false
+            }
+            else -> try {
+                startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(target))
+                    .addCategory(android.content.Intent.CATEGORY_BROWSABLE))
+                true
+            } catch (_: Exception) {
+                Toast.makeText(this, "No app can open this link", Toast.LENGTH_SHORT).show()
+                false
+            }
+        }
+    }
+
     private fun navigate() {
         val raw = url.text.toString().trim()
         val target = PhormiNavigation.resolve(raw) ?: return
         val destination = if (target.kind == PhormiNavigation.Kind.SEARCH) {
             "https://www.google.com/search?q=" + java.net.URLEncoder.encode(target.value, "UTF-8")
         } else target.value
-        active()?.loadUrl(destination)
+        active()?.let { navigateTopLevel(it, destination) }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

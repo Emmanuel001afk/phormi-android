@@ -22,10 +22,16 @@ Settings → **Networks and data** has:
   convenience label.
 - **Allow again: HTTP sites I blocked** — clears the remembered hosts.
 
-The OS-level `network_security_config.xml` previously set `cleartextTrafficPermitted=false`
-for everything, so WebView could not even start a LAN request. Cleartext is now
-permitted at the platform layer and the *browser policy above* is what gates each load.
-This is the same shape as Chrome: platform allows it, the browser warns and asks.
+The policy is applied to address-bar loads, link clicks, restored tabs/history,
+incoming browser intents, app/AI navigation, and Ghost mode. A main-frame request is
+also checked before WebView opens its socket, including redirect targets, so a direct
+`loadUrl` or an HTTPS-to-HTTP redirect cannot silently skip the warning.
+
+The OS-level `network_security_config.xml` permits cleartext at the platform layer;
+the browser policy above gates public HTTP before the top-level request proceeds.
+Private-network HTTP remains usable, but the **Flag local-network HTTP pages** setting
+controls the extra local-network label in site information. Turning it off does not
+block the page; it is still identified as unencrypted HTTP.
 
 The security chip in the address bar shows `!` with "Not secure" for any HTTP page and
 the site-information sheet explains the connection state.

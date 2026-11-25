@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, arena/f4427420-phormi-android ]
   pull_request:
     branches: [ main ]
   workflow_dispatch: {}
