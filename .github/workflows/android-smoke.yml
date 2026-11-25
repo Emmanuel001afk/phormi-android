@@ -1,7 +1,7 @@
 name: Android interaction smoke tests
 on:
   push:
-    branches: [arena/d4887026-phormi-android]
+    branches: [arena/d4887026-phormi-android, arena/f4427420-phormi-android]
 permissions:
   contents: read
 concurrency:

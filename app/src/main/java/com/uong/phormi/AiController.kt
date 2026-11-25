@@ -374,8 +374,10 @@ class AiController(private val context: Context) {
                 "tap" -> {
                     val x = decision.optInt("x", -1); val y = decision.optInt("y", -1)
                     if (x < 0 || y < 0) throw IOException("AI supplied invalid tap coordinates")
-                    withContext(Dispatchers.Main.immediate) { service.tapAt(x, y) }
-                    delay(450); onStatus("Step $step ($providerName): tapped ($x, $y)"); "tapped ($x, $y)"
+                    val tapped = withContext(Dispatchers.Main.immediate) { service.tapAt(x, y) }
+                    delay(450)
+                    onStatus("Step $step ($providerName): ${if (tapped) "tapped ($x, $y)" else "tap blocked or unavailable"}")
+                    if (tapped) "tapped ($x, $y)" else "tap blocked or unavailable"
                 }
                 "type" -> {
                     val text = decision.optString("text")

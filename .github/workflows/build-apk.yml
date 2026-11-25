@@ -11,6 +11,7 @@ on:
       - main
       - round12-keyboard-completion-multilingual
       - arena/d4887026-phormi-android
+      - arena/f4427420-phormi-android
   workflow_dispatch: {}
 
 permissions:

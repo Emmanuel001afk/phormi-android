@@ -5,7 +5,6 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
-import android.text.InputType
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -59,10 +58,11 @@ class PhormiAccessibilityService : AccessibilityService() {
                 val obj = JSONObject()
                 obj.put("text", when {
                     sensitive -> "[SENSITIVE INPUT REDACTED]"
-                    hasText -> node.text?.toString().orEmpty()
-                    else -> node.contentDescription?.toString().orEmpty()
+                    hasText -> PhormiSensitiveFieldPolicy.redactLikelyPaymentCardNumbers(node.text?.toString().orEmpty())
+                    else -> PhormiSensitiveFieldPolicy.redactLikelyPaymentCardNumbers(node.contentDescription?.toString().orEmpty())
                 })
-                obj.put("contentDescription", if (sensitive) "[SENSITIVE INPUT REDACTED]" else node.contentDescription?.toString().orEmpty())
+                obj.put("contentDescription", if (sensitive) "[SENSITIVE INPUT REDACTED]" else
+                    PhormiSensitiveFieldPolicy.redactLikelyPaymentCardNumbers(node.contentDescription?.toString().orEmpty()))
                 obj.put("className", node.className?.toString() ?: "")
                 obj.put("clickable", node.isClickable)
                 obj.put("editable", node.isEditable)
@@ -78,17 +78,17 @@ class PhormiAccessibilityService : AccessibilityService() {
     }
 
     private fun isSensitiveInput(node: AccessibilityNodeInfo): Boolean {
-        if (!node.isEditable) return false
-        val type = node.inputType
-        val masks = intArrayOf(
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD,
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+        val clues = listOfNotNull(
+            node.hintText?.toString(),
+            node.contentDescription?.toString(),
+            node.viewIdResourceName
+        ).joinToString(" ")
+        return PhormiSensitiveFieldPolicy.isSensitiveAccessibilityInput(
+            editable = node.isEditable,
+            isPassword = node.isPassword,
+            inputType = node.inputType,
+            clues = clues
         )
-        if (masks.any { (type and it) == it }) return true
-        val clue = listOfNotNull(node.hintText?.toString(), node.contentDescription?.toString(), node.viewIdResourceName)
-            .joinToString(" ").lowercase()
-        return listOf("password", "passcode", "pin", "security code", "otp", "one-time code", "cvv", "cvc", "secret").any(clue::contains)
     }
 
     fun typeIntoFocusedField(text: String): Boolean {
@@ -128,13 +128,30 @@ class PhormiAccessibilityService : AccessibilityService() {
         return null
     }
 
-    fun tapAt(x: Int, y: Int, onDone: ((Boolean) -> Unit)? = null) {
+    fun tapAt(x: Int, y: Int, onDone: ((Boolean) -> Unit)? = null): Boolean {
+        val root = rootInActiveWindow ?: return false
+        if (containsSensitiveInputAt(root, x, y)) {
+            onDone?.invoke(false)
+            return false
+        }
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 80)).build()
-        dispatchGesture(gesture, object : GestureResultCallback() {
+        return dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) { onDone?.invoke(true) }
             override fun onCancelled(gestureDescription: GestureDescription?) { onDone?.invoke(false) }
         }, null)
+    }
+
+    private fun containsSensitiveInputAt(node: AccessibilityNodeInfo, x: Int, y: Int): Boolean {
+        if (!node.isVisibleToUser) return false
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.contains(x, y) && isSensitiveInput(node)) return true
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            if (containsSensitiveInputAt(child, x, y)) return true
+        }
+        return false
     }
 
     fun scroll(direction: String): Boolean {

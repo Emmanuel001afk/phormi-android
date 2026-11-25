@@ -77,7 +77,7 @@ object PhormiNetworkPolicy {
 
     /**
      * @param trustedHosts hosts the user already chose to open over HTTP
-     * @param allowLan whether private-network HTTP is enabled in settings
+     * @param allowLan whether site information should apply the local-network label
      */
     fun reach(
         url: String?,
@@ -89,15 +89,23 @@ object PhormiNetworkPolicy {
         if (value.startsWith("about:", true) || value.startsWith("https://phormi.local/", true)) {
             return Reach(true, "New tab")
         }
-        val scheme = runCatching { URI(value).scheme?.lowercase(Locale.ROOT) }.getOrNull().orEmpty()
+        val parsed = runCatching { URI(value) }.getOrNull()
+            ?: return Reach(false, "The address is not a valid web URL.")
+        val scheme = parsed.scheme?.lowercase(Locale.ROOT).orEmpty()
         if (scheme != "http" && scheme != "https") return Reach(false, "Only http and https addresses can be opened.")
+        if (parsed.host.isNullOrBlank() || parsed.rawUserInfo != null) {
+            return Reach(false, "A valid web host is required; embedded username and password are not allowed.")
+        }
         if (scheme == "https") return Reach(true, "Secure connection")
         val target = host(value)
         val trusted = trustedHosts.map { it.lowercase(Locale.ROOT).removePrefix("www.") }.toSet()
         if (target.isNotEmpty() && target in trusted) return Reach(true, "You chose to open this address over HTTP.")
-        // A private target is allowed even when the user has asked not to auto-open LAN
-        // pages: that setting removes convenience, it must not make the address unusable.
-        if (isPrivateHost(target)) return Reach(true, "Local network page over HTTP")
+        // A private target remains usable regardless of the display preference. The
+        // setting controls the extra local-network label, not whether the URL can load.
+        if (isPrivateHost(target)) return Reach(
+            true,
+            if (allowLan) "Local network page over HTTP" else "HTTP page; local-network label disabled"
+        )
         return Reach(
             false,
             "This address uses HTTP, which is not encrypted. " +
